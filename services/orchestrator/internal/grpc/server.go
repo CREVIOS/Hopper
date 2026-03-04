@@ -10,9 +10,11 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	billingv1 "github.com/hopper/orchestrator/api/proto/hopper/billing/v1"
+	podv1 "github.com/hopper/orchestrator/api/proto/hopper/pod/v1"
+	"github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/config"
 	"github.com/hopper/orchestrator/internal/pod"
-	"github.com/hopper/orchestrator/internal/billing"
 )
 
 type Server struct {
@@ -36,7 +38,17 @@ func New(cfg *config.Config, logger *zap.Logger, nc *nats.Conn) (*Server, error)
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(srv.grpcServer, healthSrv)
 
-	// TODO: Register PodOrchestrator and BillingService when proto stubs are generated
+	// Register PodOrchestrator service
+	podSvc := NewPodOrchestratorService(srv)
+	podv1.RegisterPodOrchestratorServer(srv.grpcServer, podSvc)
+
+	// Register BillingService
+	billingSvc := NewBillingServiceImpl(srv)
+	billingv1.RegisterBillingServiceServer(srv.grpcServer, billingSvc)
+
+	logger.Info("gRPC services registered",
+		zap.String("services", "PodOrchestrator, BillingService, Health"),
+	)
 
 	return srv, nil
 }

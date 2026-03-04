@@ -16,5 +16,5 @@
   </div>
 
   <GpuMetrics metrics={$activePodMetrics} />
-  <Terminal sessionId={podId} />
+  <Terminal sessionId={podId ?? ''} />
 </div>

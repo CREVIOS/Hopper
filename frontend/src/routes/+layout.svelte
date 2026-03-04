@@ -2,8 +2,20 @@
   import '../app.css';
   import { user, isAuthenticated } from '$lib/stores/auth';
   import type { Snippet } from 'svelte';
+  import type { User } from '$lib/types';
 
-  let { children }: { children: Snippet } = $props();
+  let { data, children }: { data: { isAuthenticated: boolean; user: User | null }; children: Snippet } = $props();
+
+  $effect(() => {
+    isAuthenticated.set(data.isAuthenticated);
+    user.set(data.user);
+  });
+
+  function logout() {
+    fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+      window.location.href = '/login';
+    });
+  }
 </script>
 
 <div class="min-h-screen bg-gray-50">
@@ -19,6 +31,12 @@
             <a href="/admin" class="text-sm hover:underline">Admin</a>
           {/if}
           <span class="text-sm text-gray-500">{$user?.email}</span>
+          <button
+            onclick={logout}
+            class="rounded bg-gray-200 px-3 py-1 text-sm hover:bg-gray-300"
+          >
+            Logout
+          </button>
         </div>
       {:else}
         <a href="/login" class="text-sm hover:underline">Login</a>

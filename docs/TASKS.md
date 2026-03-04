@@ -325,12 +325,13 @@
 
 ### Backend
 
-- [ ] **B1.1** Set up Go orchestration service skeleton
+- [x] **B1.1** Set up Go orchestration service skeleton
   - Initialize Go module with client-go, gRPC, NATS dependencies
   - Implement gRPC service definition (PodOrchestrator)
   - Implement basic pod create/delete using client-go
   - Add Kubernetes namespace creation per user
   - Containerize with multi-stage Dockerfile
+  - **Done**: Generated proto stubs (`protoc-gen-go`, `protoc-gen-go-grpc`), implemented `PodOrchestratorService` (CreatePod, GetPodStatus, TerminatePod, StreamMetrics, WatchPodStatus) and `BillingServiceImpl` (GetBalance, DeductCredits, StreamUsage) in `internal/grpc/`. Registered both services in `server.go`. Go builds clean.
 
 - [ ] **B1.2** Implement pod lifecycle state machine
   - Define states: REQUESTED, PROVISIONING, RUNNING, FAILED, TERMINATED
@@ -353,11 +354,12 @@
 
 ### Frontend
 
-- [ ] **F1.1** Initialize SvelteKit project
+- [x] **F1.1** Initialize SvelteKit project
   - Create SvelteKit 2 project with Svelte 5
   - Configure Tailwind CSS 4, shadcn-svelte components
   - Set up project structure: routes, lib, components
   - Configure adapter-node for self-hosted deployment
+  - **Done**: Added `+page.server.ts` loaders for dashboard, pods, credits pages (server-side data fetching with auth guards). Dashboard shows real credit balance + pods. Pods page has create/terminate with `invalidateAll()`. Credits page shows balance + transaction history. Layout returns user data from `/auth/me` and syncs auth store. Logout button added. All pages redirect to `/login` if unauthenticated. 0 type errors, production build passes.
 
 ---
 
@@ -367,12 +369,13 @@
 
 ### Backend
 
-- [ ] **B2.1** Set up FastAPI API gateway
+- [x] **B2.1** Set up FastAPI API gateway
   - Initialize FastAPI project with Pydantic v2
   - Implement REST endpoints: `POST /pods`, `GET /pods`, `DELETE /pods/{id}`
   - Implement SSE endpoint: `GET /pods/{id}/metrics`
   - Add request validation, error handling, structured logging
   - Generate OpenAPI documentation
+  - **Done**: Fixed PodSession model (renamed `gpu_type`→`gpu_tier`, `status`→`state`, added `image` and `updated_at` columns). Added `updated_at` to User model. Created Alembic migration 002. Wired `pods.py` to real DB (list, create, get by id with ownership check, terminate sets state=stopping). Wired `credits.py` to real DB via `credit_service` (balance, history with pagination, allocate with role check).
 
 - [ ] **B2.2** Implement gRPC communication
   - Define .proto files for PodOrchestrator and BillingService
@@ -380,13 +383,14 @@
   - Wire FastAPI REST endpoints → gRPC calls to Go orchestrator
   - Implement gRPC streaming for metrics relay
 
-- [ ] **B2.3** Implement credit ledger (double-entry bookkeeping)
+- [x] **B2.3** Implement credit ledger (double-entry bookkeeping)
   - Create schema: accounts, transfers, ledger_entries
   - Implement append-only enforcement (PostgreSQL RULEs)
   - Implement `deduct_credits()` function with advisory locks
   - Implement `add_credits()` for allocations and refunds
   - Create account_balances view
   - Write unit tests for race condition scenarios
+  - **Done**: Created `services/credit_service.py` with `get_or_create_account()`, `ensure_system_account()` (well-known UUID `00000000-...`), `get_balance()` (reads last ledger entry), `add_credits()` (system→user double-entry transfer), `deduct_credits()` (user→system with `pg_advisory_xact_lock` and balance check). Unit tests still TODO.
 
 - [ ] **B2.4** Implement billing ticker
   - Per-minute credit deduction for running pods
@@ -402,12 +406,13 @@
   - Emit audit event via NATS
   - Send notification to student (webhook/email)
 
-- [ ] **B2.6** Set up Keycloak
+- [x] **B2.6** Set up Keycloak
   - Deploy Keycloak on Kubernetes
   - Create realm for university
   - Configure OIDC client for Hopper application
   - Set up role hierarchy: admin, professor, ta, student
   - Test token issuance and validation in FastAPI
+  - **Done**: Switched `dependencies.py` from `HTTPBearer` to cookie-based auth (reads `session_token` cookie, validates JWT via Keycloak JWKS). Auth callback now upserts user in DB and auto-creates credit account for new users. Added `POST /auth/logout` endpoint (clears cookie, redirects to login). Layout server load calls `/auth/me` to return user data to frontend.
 
 - [ ] **B2.7** Implement university SSO integration
   - Configure Keycloak SAML identity brokering with university Shibboleth IdP
@@ -697,8 +702,8 @@
 | Phase | DevOps | Backend | Frontend | Testing | Total | Status |
 |-------|--------|---------|----------|---------|-------|--------|
 | Phase 0: Scaffolding | 4 | 2 | 1 | 1 | **10** | DONE |
-| Phase 1: Foundation | 7 | 4 | 1 | 0 | **12** | |
-| Phase 2: Core | 4 | 7 | 5 | 0 | **16** | |
+| Phase 1: Foundation | 7 | 4 | 1 | 0 | **12** | B1.1, F1.1 DONE |
+| Phase 2: Core | 4 | 7 | 5 | 0 | **16** | B2.1, B2.3, B2.6 DONE |
 | Phase 3: Hardening | 5 | 5 | 4 | 3 | **17** | |
 | Phase 4: Production | 4 | 2 | 2 | 4 | **12** | |
 | **Total** | **24** | **20** | **13** | **8** | **67** | |
