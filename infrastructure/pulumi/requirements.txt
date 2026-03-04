@@ -1,0 +1,2 @@
+pulumi>=3.140.0
+pulumi-kubernetes>=4.0.0

@@ -1,0 +1,66 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: gpu-premium
+spec:
+  nodeLabels:
+    gpu-tier: premium
+    nvidia.com/mig.config: all-balanced
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: gpu-standard
+spec:
+  nodeLabels:
+    gpu-tier: standard
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: gpu-budget
+spec:
+  nodeLabels:
+    gpu-tier: budget
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: hopper-gpu-queue
+spec:
+  namespaceSelector: {}
+  resourceGroups:
+    - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+      flavors:
+        - name: gpu-premium
+          resources:
+            - name: nvidia.com/gpu
+              nominalQuota: 16
+            - name: cpu
+              nominalQuota: 64
+            - name: memory
+              nominalQuota: 256Gi
+        - name: gpu-standard
+          resources:
+            - name: nvidia.com/gpu
+              nominalQuota: 32
+            - name: cpu
+              nominalQuota: 128
+            - name: memory
+              nominalQuota: 512Gi
+        - name: gpu-budget
+          resources:
+            - name: nvidia.com/gpu
+              nominalQuota: 16
+            - name: cpu
+              nominalQuota: 32
+            - name: memory
+              nominalQuota: 128Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: default-queue
+  namespace: hopper-pods
+spec:
+  clusterQueue: hopper-gpu-queue

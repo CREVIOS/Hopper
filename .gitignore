@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.svelte-kit/
+
+# Generated code
+proto/gen/
+services/orchestrator/api/proto/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Go
+services/orchestrator/orchestrator
+
+# Python
+*.egg
+.eggs/
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Pulumi
+infrastructure/pulumi/.pulumi/
+infrastructure/pulumi/venv/
+
+# Logs
+*.log
+
+# Secrets
+*.pem
+*.key
+credentials.json

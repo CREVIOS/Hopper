@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+remote_write:
+  - url: http://timescaledb:9201/write
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: dcgm-exporter
+    kubernetes_sd_configs:
+      - role: endpoints
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        regex: dcgm-exporter
+        action: keep
+
+  - job_name: hopper-api-gateway
+    static_configs:
+      - targets: ["api-gateway:8000"]
+    metrics_path: /metrics
+
+  - job_name: hopper-orchestrator
+    static_configs:
+      - targets: ["orchestrator:50051"]
+    metrics_path: /metrics
+
+  - job_name: nats
+    static_configs:
+      - targets: ["nats:8222"]
+    metrics_path: /metrics
+
+  - job_name: node-exporter
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)

@@ -1,0 +1,42 @@
+# NVIDIA GPU Operator Helm values
+# CRITICAL: Must be v25.3.1+ to patch CVE-2025-23266
+
+driver:
+  enabled: true
+  version: "550.127.08"
+
+toolkit:
+  version: "1.17.8"
+
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+migManager:
+  enabled: true
+  config:
+    name: default-mig-parted-config
+    default: all-balanced
+
+devicePlugin:
+  config:
+    name: time-slicing-config
+    default: any
+  # Time-slicing configuration for consumer GPUs
+  # MIG-capable GPUs use MIG instead
+
+timeSlicing:
+  renameByDefault: false
+  resources:
+    - name: nvidia.com/gpu
+      replicas: 4  # 4x time-slicing for consumer GPUs
+
+gfd:
+  enabled: true
+
+nodeStatusExporter:
+  enabled: true
+
+operator:
+  defaultRuntime: containerd

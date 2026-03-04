@@ -1,0 +1,41 @@
+# KAI Scheduler (ex-Run:ai) Helm values
+# Open-sourced April 2025, Apache 2.0
+
+scheduler:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# Hierarchical queue structure: University > Department > Course > Student
+queues:
+  - name: university-root
+    weight: 100
+    children:
+      - name: cs-department
+        weight: 50
+        children:
+          - name: cs229-ml
+            weight: 30
+          - name: cs231n-cv
+            weight: 30
+          - name: cs224n-nlp
+            weight: 20
+      - name: ee-department
+        weight: 30
+      - name: scavenger
+        weight: 5
+        preemptible: true
+
+# Fairshare configuration
+fairshare:
+  halfLife: "168h"  # 7-day half-life (matches Slurm)
+
+# Fractional GPU support
+fractionalGpu:
+  enabled: true
+  minFraction: 0.25

@@ -1,0 +1,6 @@
+name: hopper-infrastructure
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Hopper GPU Cloud Platform - Infrastructure
