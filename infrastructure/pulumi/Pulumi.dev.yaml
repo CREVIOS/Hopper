@@ -1,0 +1,4 @@
+config:
+  hopper:environment: dev
+  hopper:k8s-version: "1.31"
+  hopper:gpu-operator-version: "25.3.1"

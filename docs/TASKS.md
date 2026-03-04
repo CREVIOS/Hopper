@@ -4,6 +4,275 @@
 
 ---
 
+## Phase 0: Project Scaffolding (COMPLETED)
+
+> **Goal**: Full project skeleton — frontend, backend services, infrastructure, and testing — so development can begin on Phase 1 tasks.
+
+### S0.1 Root Configuration Files
+
+- [x] **`.gitignore`** — Covers node_modules, __pycache__, .venv, .svelte-kit, proto/gen/, Go binaries, .env files, IDE files, OS files, Pulumi state, secrets (*.pem, *.key)
+- [x] **`.editorconfig`** — 2-space indent for most files, 4-space for Python, tabs for Go and Makefiles, UTF-8, LF line endings, trailing whitespace trimming
+- [x] **`Makefile`** — Targets for: `dev-up`/`dev-down` (docker-compose), `proto` (code gen), `frontend-install`/`frontend-dev`/`frontend-build`, `api-install`/`api-dev`/`api-migrate`, `orchestrator-build`/`orchestrator-dev`, `test-unit`/`test-integration`/`test-e2e`/`test-load`, `lint`, `clean`
+- [x] **`docker-compose.yml`** — Three services for local development:
+  - **PostgreSQL 16 + TimescaleDB** (`timescale/timescaledb:latest-pg16`) on port 5433 (remapped from 5432 to avoid conflicts), with healthcheck and persistent volume
+  - **NATS 2.10** with JetStream enabled, ports 4222 (client) and 8222 (monitoring), persistent volume, wget-based healthcheck
+  - **Keycloak 25.0** in dev mode, using Postgres as its backing DB, port 8080, depends on healthy Postgres
+
+### S0.2 Protocol Buffer Definitions
+
+- [x] **`proto/buf.yaml`** — Buf v2 config with STANDARD lint rules and FILE breaking change detection
+- [x] **`proto/hopper/pod/v1/pod.proto`** — Full `PodOrchestrator` gRPC service with:
+  - `CreatePod`, `TerminatePod`, `GetPodStatus` RPCs
+  - `StreamMetrics` (server-streaming GPU metrics) and `WatchPodStatus` (server-streaming state changes)
+  - Messages: `CreatePodRequest`, `PodStatus`, `PodId`, `TerminateResponse`, `GpuMetrics`
+  - `PodState` enum: UNSPECIFIED, PENDING, CREATING, RUNNING, STOPPING, TERMINATED, FAILED
+  - Go package option: `github.com/hopper/orchestrator/api/proto/pod/v1`
+- [x] **`proto/hopper/billing/v1/billing.proto`** — Full `BillingService` gRPC service with:
+  - `DeductCredits`, `GetBalance` RPCs
+  - `StreamUsage` (server-streaming usage events)
+  - Messages: `DeductRequest`, `DeductResponse`, `BalanceResponse`, `UsageEvent`, `AccountId`
+- [x] **`proto/gen/`** — Directory created, gitignored (stubs generated at build time)
+
+### S0.3 Frontend (SvelteKit 2 + Svelte 5)
+
+- [x] **`package.json`** — Dependencies: `@sveltejs/kit` ^2.0, `svelte` ^5.0, `@sveltejs/adapter-node` ^5.0, `@xterm/xterm` ^5.5, `@xterm/addon-fit`, `@xterm/addon-web-links`, `chart.js` ^4.4, `bits-ui`. Dev deps: `tailwindcss` ^4.0, `@tailwindcss/vite`, `typescript` ^5.0, `vite` ^6.0, `vitest`, `svelte-check`, `eslint`
+- [x] **`svelte.config.js`** — adapter-node for self-hosted deployment, vitePreprocess for TypeScript/CSS
+- [x] **`vite.config.ts`** — Tailwind CSS v4 vite plugin + SvelteKit vite plugin
+- [x] **`tsconfig.json`** — Extends SvelteKit generated config, strict mode, bundler module resolution
+- [x] **`Dockerfile`** — Multi-stage: pnpm install → pnpm build → production Node.js image on port 3000
+- [x] **`src/app.html`** — Standard SvelteKit shell with favicon, viewport meta, preload-data hover
+- [x] **`src/app.css`** — Single Tailwind v4 `@import 'tailwindcss'` directive
+
+#### Types (`src/lib/types/index.ts`)
+- [x] `PodState` union type: pending | creating | running | stopping | terminated | failed
+- [x] `GpuTier` union type: premium | standard | budget | scavenger
+- [x] `GPU_TIER_RATES` constant map: premium=15, standard=10, budget=5, scavenger=0 credits/hr
+- [x] `UserRole` union type: platform_admin | university_admin | department_admin | professor | ta | student
+- [x] Interfaces: `User`, `Pod`, `Credit`, `CreditTransaction`, `GpuMetrics` — all typed with proper fields
+
+#### API Client (`src/lib/api/client.ts`)
+- [x] Fetch wrapper with JSON Content-Type headers, error handling via `ApiError` class
+- [x] Methods: `get<T>`, `post<T>`, `delete<T>`, `sse` (returns EventSource with JSON parsing)
+- [x] Base URL: `/api` (will be proxied in dev, direct in production)
+
+#### Stores
+- [x] **`stores/auth.ts`** — Svelte writable stores: `user` (User | null), `isAuthenticated` (boolean)
+- [x] **`stores/pods.ts`** — Svelte writable stores: `pods` (Pod[]), `activePodMetrics` (GpuMetrics | null)
+
+#### Components (Svelte 5 `$props()` syntax)
+- [x] **`PodCard.svelte`** — Displays pod ID, state (color-coded badge), GPU tier, image. State colors: green=running, yellow=pending, blue=creating, orange=stopping, gray=terminated, red=failed
+- [x] **`CreditBadge.svelte`** — Inline pill badge showing credit balance with "credits" label, indigo color scheme
+- [x] **`GpuMetrics.svelte`** — 2x2 grid showing utilization %, temperature C, VRAM GB, power W. Graceful null state
+- [x] **`Terminal.svelte`** — xterm.js wrapper with dynamic imports (code-split), FitAddon for auto-resize, WebLinksAddon for clickable URLs. Cleanup via onDestroy. Placeholder for Teleport WebSocket connection
+
+#### Routes
+- [x] **`+layout.svelte`** — Root layout with nav bar (Hopper logo, Dashboard/Pods/Credits links, conditional Admin link for admin roles, user email), auth guard using stores, Tailwind-styled
+- [x] **`+layout.server.ts`** — Server-side auth session check via cookie (`session_token`)
+- [x] **`+page.svelte`** — Landing page: redirects to /dashboard if authenticated, /login otherwise
+- [x] **`login/+page.svelte`** — SSO login page with "Sign in with University SSO" button, redirects to `/api/auth/login`
+- [x] **`dashboard/+page.svelte`** — Main dashboard: CreditBadge, grid of PodCards from store, "Launch Pod" link
+- [x] **`pods/+page.svelte`** — Pod list: GPU tier selector dropdown (with credit rates), "Launch Pod" button, grid of clickable PodCards linking to detail view
+- [x] **`pods/[id]/+page.svelte`** — Pod detail: pod ID header, terminate button, GpuMetrics component, Terminal component. Uses `$derived` from `page.params`
+- [x] **`credits/+page.svelte`** — Credit history: CreditBadge, table with date/type/amount columns, color-coded debit (red) / credit (green)
+- [x] **`admin/+page.svelte`** — Admin dashboard stub: 3-card grid showing Users, Active Pods, GPU Nodes counts (placeholder)
+
+### S0.4 API Gateway (FastAPI / Python)
+
+- [x] **`pyproject.toml`** — Poetry config with `package-mode = false`. Dependencies: fastapi ^0.115, uvicorn[standard] ^0.30, pydantic ^2.9, pydantic-settings ^2.5, sqlalchemy[asyncio] ^2.0, asyncpg ^0.30, alembic ^1.14, nats-py ^2.9, grpcio/grpcio-tools ^1.65, structlog ^24.0, slowapi ^0.1.9, python-jose[cryptography] ^3.3, httpx ^0.27, sse-starlette ^2.0. Dev deps: pytest ^8.0, pytest-asyncio, pytest-cov, ruff ^0.8, testcontainers ^4.0. Ruff targeting Python 3.12, line length 100. Pytest in auto asyncio mode
+- [x] **`Dockerfile`** — Multi-stage: Poetry install → copy .venv → uvicorn with 4 workers on port 8000
+- [x] **`app/main.py`** — FastAPI app factory with asynccontextmanager lifespan (structlog setup, engine disposal). Registers CORS middleware (configurable origins), 4 routers (auth, pods, credits, admin) with prefixes and tags. Health endpoints: `/healthz` and `/readyz`. **Verified: 15 OpenAPI endpoints generated**
+- [x] **`app/config.py`** — Pydantic BaseSettings with `HOPPER_` env prefix. Fields: database_url (asyncpg to localhost:5433), nats_url, keycloak_url/realm/client_id, cors_origins, jwt_algorithm (RS256), debug flag
+
+#### Routers
+- [x] **`routers/auth.py`** — 4 endpoints: `GET /login` (Keycloak redirect), `GET /callback` (OIDC code exchange), `POST /refresh` (token refresh), `GET /me` (current user profile, auth-protected)
+- [x] **`routers/pods.py`** — 5 endpoints: `GET /` (list user's pods), `POST /` (create pod with credit check), `GET /{pod_id}` (pod detail), `DELETE /{pod_id}` (terminate), `GET /{pod_id}/metrics` (SSE stream via sse-starlette EventSourceResponse)
+- [x] **`routers/credits.py`** — 3 endpoints: `GET /balance` (current balance), `GET /history` (transaction list), `POST /allocate` (professor/admin credit allocation)
+- [x] **`routers/admin.py`** — 3 endpoints: `GET /users`, `GET /courses`, `GET /gpu-nodes` (all auth-protected)
+
+#### Schemas (Pydantic v2)
+- [x] **`schemas/pod.py`** — `PodState` enum (6 states), `GpuTier` enum (4 tiers), `CreatePodRequest` (gpu_tier + image with PyTorch default), `PodResponse` (full pod fields, from_attributes=True for ORM)
+- [x] **`schemas/credit.py`** — `CreditBalanceResponse` (account_id + balance), `CreditHistoryResponse` (id, account_id, amount, direction, type, pod_id, created_at)
+- [x] **`schemas/user.py`** — `TokenPayload` (sub, email, name, role, exp), `UserResponse` (id, email, name, role)
+
+#### ORM Models (SQLAlchemy 2.0 Mapped style)
+- [x] **`models/credit_ledger.py`** — Three tables implementing double-entry bookkeeping:
+  - `Account`: id (prefixed string PK), name, type (asset/liability), owner_id, owner_type
+  - `Transfer`: id (prefixed PK), type, metadata (JSON), event_at, created_at. Has relationship to entries
+  - `LedgerEntry`: id, transfer_id (FK), account_id (FK), direction (1=debit/-1=credit), amount (Numeric 12,4), previous_balance, current_balance, event_at, created_at
+- [x] **`models/session.py`** — `PodSession`: id, user_id (indexed), gpu_type, namespace, pod_name, started_at, expires_at, status, credits_charged (Numeric 12,4)
+- [x] **`models/user.py`** — `User`: id, email (unique), name, role (default student), university_id
+
+#### Middleware & Core
+- [x] **`middleware/auth.py`** — OIDC token validation: fetches JWKS from Keycloak (cached), decodes JWT with python-jose, extracts role from `realm_access.roles`. Returns `TokenPayload` or None
+- [x] **`dependencies.py`** — `get_db()` async generator yielding SQLAlchemy AsyncSession, `get_current_user()` extracting Bearer token and validating via middleware
+- [x] **`core/database.py`** — SQLAlchemy async engine from config URL, async_sessionmaker, DeclarativeBase
+- [x] **`core/logging.py`** — structlog configuration with contextvars merging, log level, ISO timestamps, ConsoleRenderer (TODO: JSONRenderer in production)
+
+#### Alembic Migrations
+- [x] **`alembic.ini`** — Configured for asyncpg URL on port 5433
+- [x] **`alembic/env.py`** — Async migration runner, imports all models for autogenerate support
+- [x] **`alembic/versions/001_initial_schema.py`** — Complete initial migration:
+  - `users` table
+  - `accounts` table (credit accounts)
+  - `transfers` table (immutable business events)
+  - `ledger_entries` table with indexes on account_id and transfer_id
+  - **4 PostgreSQL RULEs** preventing UPDATE/DELETE on `ledger_entries` and `transfers` (immutability enforcement)
+  - `pod_sessions` table with user_id index
+  - `gpu_metrics` table converted to **TimescaleDB hypertable** (1-hour chunks)
+  - **Compression policy** on gpu_metrics (after 1 day, segmented by node_id/gpu_index)
+  - **Retention policy** on gpu_metrics (30 days)
+  - Full downgrade path dropping rules and all tables
+
+### S0.5 Go Orchestrator Service
+
+- [x] **`go.mod`** — Module `github.com/hopper/orchestrator`, Go 1.23. Direct deps: google.golang.org/grpc v1.65, nats.go v1.37, zap v1.27. Indirect deps resolved via `go mod tidy`: protobuf v1.34.2, klauspost/compress, nkeys, crypto, net, sys, text
+- [x] **`go.sum`** — Fully populated by `go mod tidy` with verified checksums
+- [x] **`Dockerfile`** — Multi-stage: Go 1.23 alpine build → minimal alpine 3.20 runtime with ca-certificates, port 50051
+
+#### Entry Point (`cmd/orchestrator/main.go`)
+- [x] Production zap logger with deferred Sync
+- [x] Config loading, NATS connection with retry-on-failed-connect and unlimited reconnects
+- [x] gRPC server startup in goroutine
+- [x] Graceful shutdown on SIGINT/SIGTERM with signal channel
+
+#### Internal Packages
+- [x] **`internal/config/config.go`** — `Config` struct (GRPCPort, NatsURL, KubeConfig), `Load()` from env vars with `HOPPER_` prefix and sensible defaults
+- [x] **`internal/pod/types.go`** — `State` type with 6 constants (Pending→Creating→Running→Stopping→Terminated, Failed). `ValidTransitions` map encoding the state machine. `Pod` struct with all fields
+- [x] **`internal/pod/manager.go`** — Thread-safe `Manager` with RWMutex:
+  - `Create()`: idempotent pod creation (returns existing if duplicate), assigns namespace `hopper-pod-{id}`
+  - `Transition()`: validates against `ValidTransitions` map, rejects invalid state changes
+  - `Get()`: read-locked pod lookup
+- [x] **`internal/billing/types.go`** — `GpuTier` struct (Name, CreditsPerHr). `Tiers` map: premium=15, standard=10, budget=5, scavenger=0
+- [x] **`internal/billing/ticker.go`** — Per-pod billing ticker:
+  - `Start()`: skips scavenger tier (0 credits), spawns goroutine with 1-minute ticker calling `onTick` callback with per-minute credit amount
+  - `Stop()`: cancels context, removes from map, logs with zap
+  - Thread-safe via Mutex on timers map
+- [x] **`internal/events/nats.go`** — NATS helpers:
+  - `Connect()`: with RetryOnFailedConnect and unlimited MaxReconnects
+  - `Publish()`: JSON-marshals any value and publishes
+  - `Subscribe()`: thin wrapper
+  - Subject constants: `pod.{created,started,stopped,failed}`, `billing.{deducted,exhausted,allocated}`
+- [x] **`internal/grpc/server.go`** — gRPC server setup:
+  - Creates `grpc.NewServer()`, initializes PodManager and billing Ticker
+  - Registers gRPC health service (`grpc_health_v1`)
+  - `Start()` on configurable port, `Stop()` with GracefulStop
+  - TODO placeholder for registering PodOrchestrator/BillingService after proto gen
+
+### S0.6 Infrastructure
+
+#### Pulumi (Python SDK)
+- [x] **`Pulumi.yaml`** — Python runtime with virtualenv, project name `hopper-infrastructure`
+- [x] **`Pulumi.dev.yaml`** — Dev stack config: environment=dev, k8s-version=1.31, gpu-operator-version=25.3.1
+- [x] **`__main__.py`** — Stub with config loading, TODO comments for all infrastructure resources
+- [x] **`requirements.txt`** — pulumi >=3.140, pulumi-kubernetes >=4.0
+
+#### Ansible
+- [x] **`inventory/hosts.yml`** — Example inventory: k8s_masters (master-01), gpu_nodes (gpu-node-01 with rtx_pro_6000, gpu-node-02 with rtx_4090), cpu_nodes (cpu-node-01). Group vars: ansible_user=hopper, become=true, k8s_version=1.31
+- [x] **`playbooks/site.yml`** — Main playbook: system package updates, common dependency installation, includes gpu-setup for GPU nodes
+- [x] **`playbooks/gpu-setup.yml`** — NVIDIA GPU node setup: add NVIDIA GPG key, add container toolkit repo, install nvidia-container-toolkit, configure containerd for NVIDIA runtime, gVisor RuntimeClass template
+- [x] **`roles/`** — Empty directory (roles added during Phase 1)
+
+#### ArgoCD
+- [x] **`app-of-apps.yaml`** — Root Application: source from Git repo `k8s/` path, destination `hopper-system` namespace, auto-sync with prune + self-heal, CreateNamespace sync option, retry with exponential backoff (5s → 3m, 5 attempts)
+
+### S0.7 Kubernetes Manifests
+
+- [x] **`k8s/base/namespaces.yaml`** — Two namespaces:
+  - `hopper-system`: labeled `app.kubernetes.io/part-of: hopper`
+  - `hopper-pods`: same label + **PodSecurity restricted** profile (enforce + audit + warn)
+- [x] **`k8s/base/rbac.yaml`** — ServiceAccount and RBAC for orchestrator:
+  - `hopper-orchestrator` ServiceAccount in hopper-system
+  - ClusterRole: namespaces/pods/services CRUD, pods/log read, deployments CRUD, runtimeclasses read
+  - ClusterRoleBinding linking SA to role
+  - `hopper-api-gateway` ServiceAccount
+- [x] **`k8s/gpu-operator/values.yaml`** — NVIDIA GPU Operator Helm values:
+  - Driver v550.127.08, Toolkit v1.17.8 (CVE-2025-23266 patch)
+  - DCGM Exporter with ServiceMonitor, MIG Manager enabled
+  - Time-slicing: 4 replicas per GPU for consumer cards
+  - GFD and node status exporter enabled, containerd runtime
+- [x] **`k8s/network-policies/default-deny.yaml`** — 5 Calico GlobalNetworkPolicies:
+  1. **default-deny** (order 100): deny all ingress/egress in hopper namespaces
+  2. **allow-dns** (order 50): allow UDP/TCP 53 to kube-dns
+  3. **allow-internet** (order 60): allow TCP 80/443 egress to 0.0.0.0/0
+  4. **allow-ssh-gateway** (order 70): allow TCP 22 ingress from teleport-proxy to student-pods
+  5. **deny-control-plane** (order 30): deny student-pod egress to control-plane nodes
+- [x] **`k8s/kai-scheduler/values.yaml`** — KAI Scheduler config:
+  - 2 replicas, 500m/512Mi request, 2/2Gi limit
+  - Hierarchical queue: university-root → cs-department (cs229-ml, cs231n-cv, cs224n-nlp) + ee-department + scavenger (preemptible)
+  - Fairshare: 168h (7-day) half-life
+  - Fractional GPU: enabled, min 0.25
+- [x] **`k8s/kueue/resource-flavors.yaml`** — 3 ResourceFlavors + ClusterQueue + LocalQueue:
+  - `gpu-premium` (MIG nodes), `gpu-standard`, `gpu-budget` with node label selectors
+  - `hopper-gpu-queue` ClusterQueue: 16 premium GPUs/64 CPU/256Gi, 32 standard GPUs/128 CPU/512Gi, 16 budget GPUs/32 CPU/128Gi
+  - `default-queue` LocalQueue in hopper-pods namespace
+
+### S0.8 Observability
+
+- [x] **`prometheus/prometheus.yml`** — Scrape config for 6 targets: prometheus (self), dcgm-exporter (K8s SD), api-gateway (:8000/metrics), orchestrator (:50051/metrics), nats (:8222/metrics), node-exporter (K8s node SD). Remote write to TimescaleDB. AlertManager integration
+- [x] **`prometheus/alerts/gpu-alerts.yml`** — 7 alert rules:
+  1. GPUTemperatureCritical: > 90C for 5min (critical)
+  2. GPUMemoryNearFull: > 95% for 2min (warning)
+  3. GPUUtilizationStuck: 100% for 30min (warning, may indicate hung process)
+  4. DCGMExporterDown: down for 5min (critical)
+  5. PodStuckPending: Pending > 10min in hopper namespaces (warning)
+  6. NodeUnreachable: Ready=false for 5min (critical)
+  7. NATSJetStreamLag: > 1000 pending messages for 5min (warning)
+- [x] **`grafana/dashboards/gpu-overview.json`** — Hopper GPU Overview dashboard: GPU utilization timeseries, GPU temperature timeseries, GPU memory usage %, active student pods stat panel. 30s auto-refresh, 1h default time range
+- [x] **`loki/loki-config.yml`** — Loki config: auth disabled, filesystem storage, TSDB schema v13, 720h (30-day) retention, 10MB/s ingestion rate, compactor with retention enabled
+
+### S0.9 Test Scaffolding
+
+- [x] **`tests/unit/.gitkeep`** — Placeholder (unit tests live in-service: pytest for Python, Go testing for Go)
+- [x] **`tests/integration/conftest.py`** — Testcontainers fixtures:
+  - `postgres_container`: TimescaleDB PG16, session-scoped
+  - `nats_container`: NATS 2.10 with JetStream, session-scoped
+  - `db_session`: creates async SQLAlchemy session, runs Alembic migrations against test container
+  - `nats_url`: extracts connection URL from container
+- [x] **`tests/e2e/playwright.config.ts`** — Playwright config: tests in `specs/`, fully parallel, 2 retries in CI, HTML reporter, trace on first retry, screenshot on failure. Projects: Chromium + Firefox. Web server: starts `pnpm dev` in frontend/
+- [x] **`tests/e2e/specs/auth.spec.ts`** — 4 test stubs for TC-AUTH-001:
+  - Unauthenticated redirect to /login
+  - SSO button visibility
+  - User info after login (skipped, needs Keycloak mock)
+  - Expired session handling (skipped)
+- [x] **`tests/load/class-start.js`** — k6 load test scenario: 30 VUs, 30 iterations, 5min max. Flow: login → check balance → create pod → poll status until running. Thresholds: p95 < 2000ms, error rate < 1%
+- [x] **`tests/chaos/kill-gpu-pod.yaml`** — Chaos Mesh PodChaos experiment: kills one random student-pod in hopper-pods namespace every 5 minutes (cron scheduled), 30s duration
+
+### S0.10 Scripts
+
+- [x] **`scripts/dev-setup.sh`** — Automated dev environment setup:
+  - Prerequisite checks: docker, pnpm, poetry, go
+  - `docker compose up -d` and wait for Postgres healthy
+  - `pnpm install` in frontend/
+  - `poetry install` in services/api-gateway/
+  - `alembic upgrade head` for DB migrations
+  - `go mod download` for Go deps
+  - Prints startup commands for all 3 services
+- [x] **`scripts/generate-proto.sh`** — Proto code generation:
+  - Supports both `buf generate` and `protoc` fallback
+  - Cleans proto/gen/ and services/orchestrator/api/proto/
+  - Generates Python stubs (grpc_tools.protoc with pyi type stubs)
+  - Generates Go stubs (protoc with go and go-grpc plugins, source_relative paths)
+
+### Verification Results
+
+| Check | Result |
+|-------|--------|
+| `cd frontend && pnpm install && pnpm dev` | Installed, HTTP 200 on :5173 |
+| `docker compose up -d` | Postgres (healthy, :5433), NATS (healthy, :4222), Keycloak (up, :8080) |
+| `cd services/api-gateway && poetry install && uvicorn app.main:app` | 15 OpenAPI endpoints, `/healthz` returns `{"status":"ok"}` |
+| `cd services/orchestrator && go build ./cmd/orchestrator/` | BUILD OK (clean compile, all deps resolved) |
+| Directory structure | 70+ files across 10 top-level directories |
+
+### Notes
+
+- Postgres is mapped to **port 5433** (not 5432) to avoid conflicts with other local databases. All config files reflect this
+- NATS healthcheck uses `wget --spider` against the monitoring endpoint (the `--signal ldm` approach was causing NATS to enter lame duck mode and shut down)
+- `pyproject.toml` uses `package-mode = false` since the API gateway is not a distributable package
+- All Svelte components use **Svelte 5 `$props()` syntax** (not the Svelte 4 `export let` pattern)
+- Go module pinned exact dependency versions via `go mod tidy` — `go.sum` fully populated
+
+---
+
 ## Phase 1: Foundation (Weeks 1-4)
 
 > **Goal**: Bare-metal Kubernetes cluster with GPU support, basic pod creation, and SSH access.
@@ -425,13 +694,14 @@
 
 ## Task Count Summary
 
-| Phase | DevOps | Backend | Frontend | Testing | Total |
-|-------|--------|---------|----------|---------|-------|
-| Phase 1: Foundation | 7 | 4 | 1 | 0 | **12** |
-| Phase 2: Core | 4 | 7 | 5 | 0 | **16** |
-| Phase 3: Hardening | 5 | 5 | 4 | 3 | **17** |
-| Phase 4: Production | 4 | 2 | 2 | 4 | **12** |
-| **Total** | **20** | **18** | **12** | **7** | **57** |
+| Phase | DevOps | Backend | Frontend | Testing | Total | Status |
+|-------|--------|---------|----------|---------|-------|--------|
+| Phase 0: Scaffolding | 4 | 2 | 1 | 1 | **10** | DONE |
+| Phase 1: Foundation | 7 | 4 | 1 | 0 | **12** | |
+| Phase 2: Core | 4 | 7 | 5 | 0 | **16** | |
+| Phase 3: Hardening | 5 | 5 | 4 | 3 | **17** | |
+| Phase 4: Production | 4 | 2 | 2 | 4 | **12** | |
+| **Total** | **24** | **20** | **13** | **8** | **67** | |
 
 ---
 

@@ -1,0 +1,27 @@
+---
+- name: Hopper Platform Setup
+  hosts: all
+  become: true
+  tasks:
+    - name: Update system packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+      when: ansible_os_family == "Debian"
+
+    - name: Install common dependencies
+      ansible.builtin.apt:
+        name:
+          - curl
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+        state: present
+      when: ansible_os_family == "Debian"
+
+- name: Setup GPU nodes
+  hosts: gpu_nodes
+  become: true
+  tasks:
+    - name: Include GPU setup
+      ansible.builtin.include_tasks: gpu-setup.yml

@@ -1,0 +1,18 @@
+# Chaos Mesh experiment: Kill a random GPU pod
+# Tests: Pod cleanup, billing stops, session status updated
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: kill-gpu-pod
+  namespace: hopper-system
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - hopper-pods
+    labelSelectors:
+      app.kubernetes.io/component: student-pod
+  duration: "30s"
+  scheduler:
+    cron: "@every 5m"

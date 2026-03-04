@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package hopper.pod.v1;
+
+option go_package = "github.com/hopper/orchestrator/api/proto/pod/v1;podv1";
+
+import "google/protobuf/timestamp.proto";
+
+service PodOrchestrator {
+  rpc CreatePod(CreatePodRequest) returns (PodStatus);
+  rpc TerminatePod(PodId) returns (TerminateResponse);
+  rpc GetPodStatus(PodId) returns (PodStatus);
+  rpc StreamMetrics(PodId) returns (stream GpuMetrics);
+  rpc WatchPodStatus(PodId) returns (stream PodStatus);
+}
+
+message PodId {
+  string id = 1;
+}
+
+message CreatePodRequest {
+  string user_id = 1;
+  string gpu_tier = 2;
+  string image = 3;
+  map<string, string> labels = 4;
+}
+
+message PodStatus {
+  string id = 1;
+  string user_id = 2;
+  PodState state = 3;
+  string gpu_tier = 4;
+  string node_name = 5;
+  string namespace = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  string message = 9;
+}
+
+enum PodState {
+  POD_STATE_UNSPECIFIED = 0;
+  POD_STATE_PENDING = 1;
+  POD_STATE_CREATING = 2;
+  POD_STATE_RUNNING = 3;
+  POD_STATE_STOPPING = 4;
+  POD_STATE_TERMINATED = 5;
+  POD_STATE_FAILED = 6;
+}
+
+message TerminateResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GpuMetrics {
+  string pod_id = 1;
+  string node_id = 2;
+  int32 gpu_index = 3;
+  double gpu_utilization = 4;
+  int64 memory_used = 5;
+  int64 memory_total = 6;
+  double temperature = 7;
+  double power_usage = 8;
+  google.protobuf.Timestamp timestamp = 9;
+}

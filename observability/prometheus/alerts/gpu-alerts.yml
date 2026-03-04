@@ -1,0 +1,65 @@
+groups:
+  - name: gpu-alerts
+    rules:
+      - alert: GPUTemperatureCritical
+        expr: DCGM_FI_DEV_GPU_TEMP > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU temperature critical on {{ $labels.gpu }}"
+          description: "GPU {{ $labels.gpu }} on node {{ $labels.instance }} has been above 90C for 5 minutes. Current: {{ $value }}C"
+
+      - alert: GPUMemoryNearFull
+        expr: (DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_FREE) * 100 > 95
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU memory near full on {{ $labels.gpu }}"
+          description: "GPU {{ $labels.gpu }} memory usage above 95%"
+
+      - alert: GPUUtilizationStuck
+        expr: DCGM_FI_DEV_GPU_UTIL == 100
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU stuck at 100% utilization"
+          description: "GPU {{ $labels.gpu }} has been at 100% for 30 minutes, may indicate a hung process"
+
+      - alert: DCGMExporterDown
+        expr: up{job="dcgm-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DCGM Exporter is down"
+          description: "DCGM Exporter on {{ $labels.instance }} has been down for 5 minutes"
+
+      - alert: PodStuckPending
+        expr: kube_pod_status_phase{phase="Pending", namespace=~"hopper-.*"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod stuck in Pending state"
+          description: "Pod {{ $labels.pod }} in {{ $labels.namespace }} has been Pending for 10 minutes"
+
+      - alert: NodeUnreachable
+        expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} is unreachable"
+          description: "Kubernetes node {{ $labels.node }} has been unreachable for 5 minutes"
+
+      - alert: NATSJetStreamLag
+        expr: nats_consumer_num_pending > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NATS JetStream consumer lag"
+          description: "Consumer {{ $labels.consumer }} has {{ $value }} pending messages"

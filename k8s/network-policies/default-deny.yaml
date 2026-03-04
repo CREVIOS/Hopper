@@ -1,0 +1,94 @@
+# Calico GlobalNetworkPolicy: Default deny all inter-namespace traffic
+# Platform admins set this baseline; namespace-level policies cannot weaken it
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: hopper-default-deny
+spec:
+  order: 100
+  namespaceSelector: 'app.kubernetes.io/part-of == "hopper"'
+  types:
+    - Ingress
+    - Egress
+  ingress:
+    - action: Deny
+  egress:
+    - action: Deny
+---
+# Allow DNS resolution
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: hopper-allow-dns
+spec:
+  order: 50
+  namespaceSelector: 'app.kubernetes.io/part-of == "hopper"'
+  types:
+    - Egress
+  egress:
+    - action: Allow
+      protocol: UDP
+      destination:
+        selector: k8s-app == "kube-dns"
+        ports:
+          - 53
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: k8s-app == "kube-dns"
+        ports:
+          - 53
+---
+# Allow internet egress on 80/443 (pip install, dataset downloads)
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: hopper-allow-internet
+spec:
+  order: 60
+  namespaceSelector: 'app.kubernetes.io/part-of == "hopper"'
+  types:
+    - Egress
+  egress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        nets:
+          - 0.0.0.0/0
+        ports:
+          - 80
+          - 443
+---
+# Allow SSH gateway to student pods
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: hopper-allow-ssh-gateway
+spec:
+  order: 70
+  selector: 'app.kubernetes.io/component == "student-pod"'
+  types:
+    - Ingress
+  ingress:
+    - action: Allow
+      protocol: TCP
+      source:
+        selector: 'app.kubernetes.io/component == "teleport-proxy"'
+      destination:
+        ports:
+          - 22
+---
+# Deny student pod to control plane
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
+metadata:
+  name: hopper-deny-control-plane
+spec:
+  order: 30
+  selector: 'app.kubernetes.io/component == "student-pod"'
+  types:
+    - Egress
+  egress:
+    - action: Deny
+      destination:
+        selector: node-role.kubernetes.io/control-plane == ""
