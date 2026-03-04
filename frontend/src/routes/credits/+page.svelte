@@ -2,13 +2,13 @@
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import type { CreditTransaction } from '$lib/types';
 
-  let transactions: CreditTransaction[] = $state([]);
+  let { data }: { data: { balance: number; transactions: CreditTransaction[] } } = $props();
 </script>
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">Credits</h1>
-    <CreditBadge balance={0} />
+    <CreditBadge balance={data.balance} />
   </div>
 
   <div class="rounded-lg border bg-white">
@@ -21,12 +21,12 @@
         </tr>
       </thead>
       <tbody>
-        {#each transactions as tx (tx.id)}
+        {#each data.transactions as tx (tx.id)}
           <tr class="border-b">
-            <td class="px-4 py-2 text-sm">{tx.created_at}</td>
+            <td class="px-4 py-2 text-sm">{new Date(tx.created_at).toLocaleString()}</td>
             <td class="px-4 py-2 text-sm">{tx.type}</td>
             <td class="px-4 py-2 text-right text-sm {tx.direction === 'debit' ? 'text-red-600' : 'text-green-600'}">
-              {tx.direction === 'debit' ? '-' : '+'}{tx.amount}
+              {tx.direction === 'debit' ? '-' : '+'}{tx.amount.toFixed(2)}
             </td>
           </tr>
         {:else}
