@@ -21,9 +21,9 @@ func NewTicker(logger *zap.Logger) *Ticker {
 	}
 }
 
-func (t *Ticker) Start(podID string, tier GpuTier, onTick func(podID string, amount float64)) {
-	if tier.CreditsPerHr == 0 {
-		return // Scavenger tier: no billing
+func (t *Ticker) Start(podID string, plan VmPlan, onTick func(podID string, amount float64)) {
+	if plan.CreditsPerHr == 0 {
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -32,7 +32,7 @@ func (t *Ticker) Start(podID string, tier GpuTier, onTick func(podID string, amo
 	t.timers[podID] = cancel
 	t.mu.Unlock()
 
-	creditsPerMinute := tier.CreditsPerHr / 60.0
+	creditsPerMinute := plan.CreditsPerHr / 60.0
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
@@ -48,7 +48,7 @@ func (t *Ticker) Start(podID string, tier GpuTier, onTick func(podID string, amo
 		}
 	}()
 
-	t.logger.Info("billing started", zap.String("pod_id", podID), zap.Float64("rate_per_hr", tier.CreditsPerHr))
+	t.logger.Info("billing started", zap.String("pod_id", podID), zap.Float64("rate_per_hr", plan.CreditsPerHr))
 }
 
 func (t *Ticker) Stop(podID string) {

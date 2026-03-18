@@ -13,13 +13,21 @@
   };
 </script>
 
-<div class="rounded-lg border p-4 shadow-sm">
+<div class="rounded-lg border bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
   <div class="flex items-center justify-between">
-    <h3 class="font-semibold">{pod.id}</h3>
+    <h3 class="font-mono text-sm font-semibold">{pod.id.slice(0, 8)}</h3>
     <span class="rounded-full px-2 py-1 text-xs {stateColors[pod.state]}">
       {pod.state}
     </span>
   </div>
-  <p class="mt-2 text-sm text-gray-600">GPU: {pod.gpu_tier}</p>
-  <p class="text-sm text-gray-600">Image: {pod.image}</p>
+  <div class="mt-3 space-y-1 text-sm text-gray-600">
+    <p>Plan: <span class="font-medium text-gray-900 capitalize">{pod.plan}</span></p>
+    <p>Image: <span class="font-medium text-gray-900">{pod.image}</span></p>
+    {#if pod.cpu && pod.memory}
+      <p>Resources: {pod.cpu} CPU / {pod.memory}</p>
+    {/if}
+    {#if pod.ssh_port && pod.state === 'running'}
+      <p class="text-indigo-600">SSH port: {pod.ssh_port}</p>
+    {/if}
+  </div>
 </div>

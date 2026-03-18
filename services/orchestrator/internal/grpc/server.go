@@ -14,21 +14,24 @@ import (
 	podv1 "github.com/hopper/orchestrator/api/proto/hopper/pod/v1"
 	"github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/config"
+	"github.com/hopper/orchestrator/internal/k8s"
 	"github.com/hopper/orchestrator/internal/pod"
 )
 
 type Server struct {
 	grpcServer *grpc.Server
 	podManager *pod.Manager
+	k8sPods    *k8s.PodManager
 	ticker     *billing.Ticker
 	logger     *zap.Logger
 	nc         *nats.Conn
 }
 
-func New(cfg *config.Config, logger *zap.Logger, nc *nats.Conn) (*Server, error) {
+func New(cfg *config.Config, logger *zap.Logger, nc *nats.Conn, k8sPods *k8s.PodManager) (*Server, error) {
 	srv := &Server{
 		grpcServer: grpc.NewServer(),
 		podManager: pod.NewManager(),
+		k8sPods:    k8sPods,
 		ticker:     billing.NewTicker(logger),
 		logger:     logger,
 		nc:         nc,
@@ -63,4 +66,12 @@ func (s *Server) Start(port int) error {
 
 func (s *Server) Stop() {
 	s.grpcServer.GracefulStop()
+}
+
+func (s *Server) PodManager() *pod.Manager {
+	return s.podManager
+}
+
+func (s *Server) Ticker() *billing.Ticker {
+	return s.ticker
 }

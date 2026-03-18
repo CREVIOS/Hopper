@@ -1,13 +1,12 @@
 package billing
 
-type GpuTier struct {
+type VmPlan struct {
 	Name         string
 	CreditsPerHr float64
 }
 
-var Tiers = map[string]GpuTier{
-	"premium":   {Name: "Premium", CreditsPerHr: 15},
-	"standard":  {Name: "Standard", CreditsPerHr: 10},
-	"budget":    {Name: "Budget", CreditsPerHr: 5},
-	"scavenger": {Name: "Scavenger", CreditsPerHr: 0},
+var Plans = map[string]VmPlan{
+	"small":  {Name: "Small", CreditsPerHr: 1},
+	"medium": {Name: "Medium", CreditsPerHr: 2},
+	"large":  {Name: "Large", CreditsPerHr: 4},
 }

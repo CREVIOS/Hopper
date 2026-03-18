@@ -1,0 +1,203 @@
+##############################################################################
+# PostgreSQL + TimescaleDB — The database for everything
+#
+# Teaching: A StatefulSet (not Deployment) is used because databases need
+# stable storage. If the pod restarts, it reconnects to the same disk.
+# A Deployment would give it a fresh empty disk each time = data loss.
+##############################################################################
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: hopper
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: timescale/timescaledb:latest-pg16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: hopper
+            - name: POSTGRES_USER
+              value: hopper
+            - name: POSTGRES_PASSWORD
+              value: hopper_dev
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hopper"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+---
+# Teaching: A Service gives postgres a stable DNS name "postgres.hopper.svc.cluster.local"
+# Other pods just connect to "postgres:5432" and K8s handles the routing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: hopper
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+
+---
+##############################################################################
+# NATS JetStream — Message bus for async events between services
+#
+# Teaching: NATS is like a postal service inside the cluster. The API gateway
+# publishes "pod.created" events, the orchestrator subscribes and acts on them.
+# This decouples services — they don't call each other directly.
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nats
+  template:
+    metadata:
+      labels:
+        app: nats
+    spec:
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          args: ["--jetstream", "--store_dir", "/data"]
+          ports:
+            - containerPort: 4222
+            - containerPort: 8222
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: hopper
+spec:
+  selector:
+    app: nats
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+    - name: monitoring
+      port: 8222
+      targetPort: 8222
+
+---
+##############################################################################
+# Keycloak — Identity provider (login, SSO, user management)
+#
+# Teaching: Keycloak handles ALL authentication. Users log in through Keycloak,
+# which issues JWT tokens. Our API just validates those tokens. This means we
+# never store passwords ourselves — Keycloak does it, and it supports
+# university SSO (SAML) out of the box.
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          args: ["start-dev"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres:5432/hopper
+            - name: KC_DB_USERNAME
+              value: hopper
+            - name: KC_DB_PASSWORD
+              value: hopper_dev
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HOSTNAME
+              value: "https://20.193.138.159"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: hopper
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -6,20 +6,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.database import engine
 from app.core.logging import setup_logging
+from app.core import nats as nats_client
 from app.routers import auth, pods, credits, admin
+from app.services.orchestrator_client import orchestrator_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    await orchestrator_client.connect()
+    await nats_client.connect()
+
+    # Import here to avoid circular — starts NATS subscriptions
+    from app.services.billing_consumer import start_billing_consumer
+    await start_billing_consumer()
+
     yield
+
+    await nats_client.disconnect()
+    await orchestrator_client.close()
     await engine.dispose()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Hopper API",
-        description="GPU Cloud Platform for Universities",
+        description="VM Cloud Platform — Slice & share compute resources",
         version="0.1.0",
         lifespan=lifespan,
     )

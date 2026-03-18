@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { apiUrl } from '$lib/api/server';
 
 export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const { isAuthenticated } = await parent();
@@ -13,8 +14,8 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     : {};
 
   const [balanceRes, historyRes] = await Promise.all([
-    fetch('/api/credits/balance', { headers }).catch(() => null),
-    fetch('/api/credits/history', { headers }).catch(() => null)
+    fetch(apiUrl('/credits/balance'), { headers }).catch(() => null),
+    fetch(apiUrl('/credits/history'), { headers }).catch(() => null)
   ]);
 
   const balance = balanceRes?.ok ? (await balanceRes.json()).balance : 0;

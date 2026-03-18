@@ -1,4 +1,5 @@
 import type { LayoutServerLoad } from './$types';
+import { apiUrl } from '$lib/api/server';
 
 export const load: LayoutServerLoad = async ({ cookies, fetch }) => {
   const token = cookies.get('session_token');
@@ -7,7 +8,7 @@ export const load: LayoutServerLoad = async ({ cookies, fetch }) => {
   }
 
   try {
-    const res = await fetch('/api/auth/me', {
+    const res = await fetch(apiUrl('/auth/me'), {
       headers: { Cookie: `session_token=${token}` }
     });
     if (res.ok) {
@@ -18,5 +19,5 @@ export const load: LayoutServerLoad = async ({ cookies, fetch }) => {
     // Token invalid or API unreachable
   }
 
-  return { isAuthenticated: true, user: null };
+  return { isAuthenticated: false, user: null };
 };
