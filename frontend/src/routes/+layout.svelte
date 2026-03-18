@@ -1,18 +1,12 @@
 <script lang="ts">
   import '../app.css';
-  import { user, isAuthenticated } from '$lib/stores/auth';
   import type { Snippet } from 'svelte';
   import type { User } from '$lib/types';
 
   let { data, children }: { data: { isAuthenticated: boolean; user: User | null }; children: Snippet } = $props();
 
-  $effect(() => {
-    isAuthenticated.set(data.isAuthenticated);
-    user.set(data.user);
-  });
-
   function logout() {
-    fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).then(() => {
       window.location.href = '/login';
     });
   }
@@ -22,15 +16,15 @@
   <nav class="border-b bg-white px-6 py-3">
     <div class="mx-auto flex max-w-7xl items-center justify-between">
       <a href="/" class="text-xl font-bold">Hopper</a>
-      {#if $isAuthenticated}
+      {#if data.isAuthenticated}
         <div class="flex items-center gap-4">
           <a href="/dashboard" class="text-sm hover:underline">Dashboard</a>
-          <a href="/pods" class="text-sm hover:underline">Pods</a>
+          <a href="/pods" class="text-sm hover:underline">VMs</a>
           <a href="/credits" class="text-sm hover:underline">Credits</a>
-          {#if $user?.role === 'platform_admin' || $user?.role === 'university_admin'}
+          {#if data.user?.role === 'admin' || data.user?.role === 'professor'}
             <a href="/admin" class="text-sm hover:underline">Admin</a>
           {/if}
-          <span class="text-sm text-gray-500">{$user?.email}</span>
+          <span class="text-sm text-gray-500">{data.user?.email}</span>
           <button
             onclick={logout}
             class="rounded bg-gray-200 px-3 py-1 text-sm hover:bg-gray-300"

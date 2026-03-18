@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Numeric, func
+from sqlalchemy import String, Integer, DateTime, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -11,10 +11,13 @@ class PodSession(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    gpu_tier: Mapped[str] = mapped_column(String, nullable=False)
-    image: Mapped[str] = mapped_column(String, nullable=False, default="pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")
+    plan: Mapped[str] = mapped_column(String, nullable=False)
+    image: Mapped[str] = mapped_column(String, nullable=False, default="hopper/vm-ubuntu:22.04")
+    cpu: Mapped[str] = mapped_column(String, nullable=False, default="1")
+    memory: Mapped[str] = mapped_column(String, nullable=False, default="2Gi")
     namespace: Mapped[str] = mapped_column(String, nullable=False)
     pod_name: Mapped[str] = mapped_column(String, nullable=False)
+    ssh_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     state: Mapped[str] = mapped_column(String, default="pending")
