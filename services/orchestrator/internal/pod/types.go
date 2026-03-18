@@ -25,10 +25,14 @@ type Pod struct {
 	ID        string
 	UserID    string
 	State     State
-	GpuTier   string
+	Plan      string
 	Image     string
+	CPU       string
+	Memory    string
 	NodeName  string
 	Namespace string
+	PodName   string
+	SshPort   int32
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

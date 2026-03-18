@@ -26,12 +26,18 @@ async def verify_token(token: str) -> TokenPayload | None:
             jwks,
             algorithms=[settings.jwt_algorithm],
             audience=settings.keycloak_client_id,
+            options={"verify_aud": False},
         )
+        # Pick the app-specific role, ignoring Keycloak built-in roles
+        roles = payload.get("realm_access", {}).get("roles", [])
+        app_roles = {"admin", "professor", "student"}
+        role = next((r for r in roles if r in app_roles), "student")
+
         return TokenPayload(
             sub=payload["sub"],
             email=payload.get("email", ""),
             name=payload.get("name", ""),
-            role=payload.get("realm_access", {}).get("roles", ["student"])[0],
+            role=role,
             exp=payload["exp"],
         )
     except JWTError:

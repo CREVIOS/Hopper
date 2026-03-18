@@ -13,26 +13,37 @@ class PodState(str, Enum):
     FAILED = "failed"
 
 
-class GpuTier(str, Enum):
-    PREMIUM = "premium"
-    STANDARD = "standard"
-    BUDGET = "budget"
-    SCAVENGER = "scavenger"
+class VmPlan(str, Enum):
+    """VM plans that slice the host machine's resources."""
+    SMALL = "small"      # 1 CPU, 2GB RAM, 5GB disk  — 1 credit/hour
+    MEDIUM = "medium"    # 2 CPU, 4GB RAM, 10GB disk — 2 credits/hour
+    LARGE = "large"      # 4 CPU, 8GB RAM, 20GB disk — 4 credits/hour
+
+
+# Resource limits per plan (used by orchestrator to set cgroup limits)
+VM_PLAN_RESOURCES = {
+    VmPlan.SMALL:  {"cpu": "1",    "memory": "2Gi",  "disk": "5Gi",  "credits_per_hour": 1.0},
+    VmPlan.MEDIUM: {"cpu": "2",    "memory": "4Gi",  "disk": "10Gi", "credits_per_hour": 2.0},
+    VmPlan.LARGE:  {"cpu": "4",    "memory": "8Gi",  "disk": "20Gi", "credits_per_hour": 4.0},
+}
 
 
 class CreatePodRequest(BaseModel):
-    gpu_tier: GpuTier
-    image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
+    plan: VmPlan
+    image: str = "hopper/vm-ubuntu:22.04"
 
 
 class PodResponse(BaseModel):
     id: str
     user_id: str
     state: PodState
-    gpu_tier: GpuTier
+    plan: str
     image: str
+    cpu: str | None = None
+    memory: str | None = None
     node_name: str | None = None
     namespace: str
+    ssh_port: int | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +69,7 @@ async def add_credits(
     db: AsyncSession, user_id: str, amount: float, description: str = "allocation"
 ) -> Transfer:
     """Add credits to a user account (system -> user transfer)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     user_account = await get_or_create_account(db, user_id)
     system_account = await ensure_system_account(db)
 
@@ -135,7 +135,7 @@ async def deduct_credits(
     if balance < amount:
         raise ValueError(f"Insufficient credits: have {balance}, need {amount}")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     system_account = await ensure_system_account(db)
 
     sys_result = await db.execute(

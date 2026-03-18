@@ -15,13 +15,15 @@ from app.services.credit_service import get_or_create_account
 
 router = APIRouter()
 
+# Browser-facing URL (goes through ingress)
 KEYCLOAK_AUTH_URL = (
-    f"{settings.keycloak_url}/realms/{settings.keycloak_realm}/protocol/openid-connect/auth"
+    f"{settings.keycloak_external_url}/realms/{settings.keycloak_realm}/protocol/openid-connect/auth"
 )
+# Server-to-server URL (internal K8s DNS)
 KEYCLOAK_TOKEN_URL = (
     f"{settings.keycloak_url}/realms/{settings.keycloak_realm}/protocol/openid-connect/token"
 )
-CALLBACK_URL = "http://localhost:5173/api/auth/callback"
+CALLBACK_URL = settings.callback_url
 
 
 @router.get("/login")
@@ -79,13 +81,15 @@ async def callback(code: str, response: Response, db: AsyncSession = Depends(get
         # Auto-create credit account for new users
         await get_or_create_account(db, payload.sub)
 
-    resp = RedirectResponse(url="http://localhost:5173/dashboard")
+    resp = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
     resp.set_cookie(
         key="session_token",
         value=access_token,
         httponly=True,
+        secure=True,
+        path="/",
         max_age=tokens.get("expires_in", 300),
-        samesite="lax",
+        samesite="none",
     )
     return resp
 
@@ -119,6 +123,6 @@ async def me(current_user: TokenPayload = Depends(get_current_user)):
 @router.post("/logout")
 async def logout():
     """Clear session cookie and redirect to login."""
-    resp = RedirectResponse(url="http://localhost:5173/login", status_code=302)
+    resp = RedirectResponse(url=f"{settings.frontend_url}/login", status_code=302)
     resp.delete_cookie(key="session_token")
     return resp

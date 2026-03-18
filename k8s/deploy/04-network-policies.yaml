@@ -1,0 +1,229 @@
+##############################################################################
+# Network Policies — Multi-tenant isolation using Cilium
+#
+# Teaching: NetworkPolicies are like firewall rules for pods.
+# Without them, K8s networking is FLAT — every pod can reach every other pod.
+# For multi-tenant security, we need:
+#   1. Default deny everything
+#   2. Explicitly allow only what's needed
+# This is called "zero trust networking."
+##############################################################################
+
+# 1. DEFAULT DENY ALL — Nothing in, nothing out unless allowed
+# Teaching: This is the foundation. Like a firewall with "deny all" as the
+# default rule. Every other policy ADDS exceptions to this baseline.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: hopper
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# 2. ALLOW DNS — All pods can resolve DNS names
+# Teaching: Without DNS, pods can't resolve "postgres" to an IP address.
+# kube-dns/CoreDNS runs in kube-system on port 53. Every pod needs this.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: hopper
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# 3. PLATFORM SERVICES — Allow internal communication
+# Teaching: Platform services (API, DB, NATS, Keycloak, etc.) need to talk
+# to each other. This policy allows any pod with a "app" label in the
+# hopper namespace to communicate with other platform services.
+# User VM containers won't have these labels.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-internal
+  namespace: hopper
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - api-gateway
+          - postgres
+          - nats
+          - keycloak
+          - orchestrator
+          - frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - api-gateway
+                  - postgres
+                  - nats
+                  - keycloak
+                  - orchestrator
+                  - frontend
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - api-gateway
+                  - postgres
+                  - nats
+                  - keycloak
+                  - orchestrator
+                  - frontend
+
+---
+# 4. INGRESS → PLATFORM — Allow Nginx Ingress to reach frontend, API, Keycloak
+# Teaching: The Nginx Ingress Controller runs in the "ingress-nginx" namespace.
+# It needs to forward traffic to our services in the "hopper" namespace.
+# Without this policy, Nginx can't reach our pods and users get 502 errors.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-services
+  namespace: hopper
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - frontend
+          - api-gateway
+          - keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+
+---
+# 5. USER VM CONTAINERS — Can reach internet but NOT each other
+# Teaching: User containers (labeled role=user-vm) need internet access
+# to install packages (apt install, pip install, etc.) but MUST NOT be
+# able to reach other user containers or platform services directly.
+#
+# We allow egress to any IP EXCEPT the cluster's internal ranges:
+#   - 10.42.0.0/16 (pod CIDR) — blocks pod-to-pod
+#   - 10.43.0.0/16 (service CIDR) — blocks access to K8s services
+# Then we re-allow DNS (which is a cluster service) explicitly above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-egress
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Egress
+  egress:
+    # Allow internet (everything except cluster-internal CIDRs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+
+---
+# 6. USER VM CONTAINERS — Allow orchestrator to manage them
+# Teaching: The orchestrator needs to create, monitor, and delete user VMs.
+# It communicates with them for health checks and metrics collection.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-allow-orchestrator
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+
+---
+# 7. ORCHESTRATOR → K8S API — Allow orchestrator to reach the K8s API server
+# Teaching: Standard NetworkPolicy ipBlock rules do NOT work for ClusterIPs
+# with Cilium. You must use a CiliumNetworkPolicy with toEntities: kube-apiserver.
+# See: https://github.com/cilium/cilium/issues/20550
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: orchestrator-allow-kube-api
+  namespace: hopper
+spec:
+  endpointSelector:
+    matchLabels:
+      app: orchestrator
+  egress:
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - host
+
+---
+# 8. PLATFORM EGRESS TO INTERNET — Keycloak needs to reach external IdPs
+# Teaching: Keycloak may need to contact university SAML/OIDC endpoints
+# for SSO federation. The API gateway needs to reach Keycloak's JWKS endpoint.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-egress-internet
+  namespace: hopper
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - keycloak
+          - api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

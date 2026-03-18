@@ -17,26 +17,40 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) Create(id, userID, gpuTier, image string) (*Pod, error) {
+type CreateOpts struct {
+	ID        string
+	UserID    string
+	Plan      string
+	Image     string
+	CPU       string
+	Memory    string
+	Namespace string
+	PodName   string
+}
+
+func (m *Manager) Create(opts CreateOpts) (*Pod, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.pods[id]; exists {
-		return m.pods[id], nil // Idempotent
+	if _, exists := m.pods[opts.ID]; exists {
+		return m.pods[opts.ID], nil // Idempotent
 	}
 
 	p := &Pod{
-		ID:        id,
-		UserID:    userID,
+		ID:        opts.ID,
+		UserID:    opts.UserID,
 		State:     StatePending,
-		GpuTier:   gpuTier,
-		Image:     image,
-		Namespace: fmt.Sprintf("hopper-pod-%s", id),
+		Plan:      opts.Plan,
+		Image:     opts.Image,
+		CPU:       opts.CPU,
+		Memory:    opts.Memory,
+		Namespace: opts.Namespace,
+		PodName:   opts.PodName,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	m.pods[id] = p
+	m.pods[opts.ID] = p
 	return p, nil
 }
 
@@ -70,4 +84,25 @@ func (m *Manager) Get(id string) (*Pod, bool) {
 	defer m.mu.RUnlock()
 	p, ok := m.pods[id]
 	return p, ok
+}
+
+func (m *Manager) SetSshPort(id string, port int32) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.pods[id]; ok {
+		p.SshPort = port
+	}
+}
+
+// ListRunning returns all pods in the running state.
+func (m *Manager) ListRunning() []*Pod {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*Pod
+	for _, p := range m.pods {
+		if p.State == StateRunning {
+			result = append(result, p)
+		}
+	}
+	return result
 }

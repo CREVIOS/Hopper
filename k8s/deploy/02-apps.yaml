@@ -1,0 +1,259 @@
+##############################################################################
+# API Gateway (FastAPI) — The brain of the platform
+#
+# Teaching: This is the only service that talks to the outside world (via
+# Ingress). It handles auth, pod CRUD, credits, and admin endpoints.
+# Environment variables configure it to find other services by their
+# K8s Service DNS names (e.g., "postgres" resolves to the postgres pod).
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: hopper/api-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            # Teaching: In K8s, service names become DNS hostnames automatically.
+            # "postgres" here resolves to the postgres Service IP inside the cluster.
+            - name: HOPPER_DATABASE_URL
+              value: "postgresql+asyncpg://hopper:hopper_dev@postgres:5432/hopper"
+            - name: HOPPER_NATS_URL
+              value: "nats://nats:4222"
+            - name: HOPPER_KEYCLOAK_URL
+              value: "http://keycloak:8080"
+            - name: HOPPER_KEYCLOAK_EXTERNAL_URL
+              value: "https://20.193.138.159"
+            - name: HOPPER_KEYCLOAK_REALM
+              value: "hopper"
+            - name: HOPPER_KEYCLOAK_CLIENT_ID
+              value: "hopper-api"
+            - name: HOPPER_CORS_ORIGINS
+              value: '["*"]'
+            - name: HOPPER_ORCHESTRATOR_URL
+              value: "orchestrator:50051"
+            - name: HOPPER_FRONTEND_URL
+              value: "https://20.193.138.159"
+            - name: HOPPER_CALLBACK_URL
+              value: "https://20.193.138.159/api/auth/callback"
+            - name: HOPPER_DEBUG
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: hopper
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+##############################################################################
+# Orchestrator (Go + gRPC) — Manages pod lifecycle on Kubernetes
+#
+# Teaching: The orchestrator talks directly to the Kubernetes API to create
+# and delete pods. It needs a ServiceAccount with permissions to do this
+# (RBAC). It also connects to NATS to receive events from the API gateway.
+##############################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator
+  namespace: hopper
+---
+# Teaching: RBAC (Role-Based Access Control) — This gives the orchestrator
+# permission to create/delete pods in the hopper namespace ONLY.
+# Without this, K8s blocks it. Principle of least privilege.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: orchestrator-role
+  namespace: hopper
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+# ClusterRole for reading node info (needed for admin /nodes endpoint)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: orchestrator-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: orchestrator-node-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: orchestrator
+    namespace: hopper
+roleRef:
+  kind: ClusterRole
+  name: orchestrator-node-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: orchestrator-binding
+  namespace: hopper
+subjects:
+  - kind: ServiceAccount
+    name: orchestrator
+    namespace: hopper
+roleRef:
+  kind: Role
+  name: orchestrator-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      serviceAccountName: orchestrator
+      containers:
+        - name: orchestrator
+          image: hopper/orchestrator:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 50051
+          env:
+            - name: HOPPER_NATS_URL
+              value: "nats://nats:4222"
+            - name: GRPC_PORT
+              value: "50051"
+            - name: KUBERNETES_NAMESPACE
+              value: "hopper"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: hopper
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 50051
+      targetPort: 50051
+
+---
+##############################################################################
+# Frontend (SvelteKit) — The web UI users interact with
+#
+# Teaching: SvelteKit builds to a Node.js server. It serves the HTML/CSS/JS
+# and also does server-side rendering (SSR) — meaning the first page load
+# is fast because the server renders HTML before sending it to the browser.
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: hopper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: hopper/frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PUBLIC_API_URL
+              value: "/api"
+            - name: ORIGIN
+              value: "https://20.193.138.159"
+            - name: API_INTERNAL_URL
+              value: "http://api-gateway:8000"
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: hopper
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
