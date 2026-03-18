@@ -1,0 +1,117 @@
+##############################################################################
+# Nginx Ingress — Routes external traffic to internal services
+#
+# Traffic flow:
+#   Browser → https://20.193.138.159/           → frontend:3000
+#   Browser → https://20.193.138.159/api/pods   → api-gateway:8000/pods
+#   Browser → https://20.193.138.159/realms/... → keycloak:8080/realms/...
+#   Browser → https://20.193.138.159/admin/...  → keycloak:8080/admin/...
+##############################################################################
+
+# Keycloak Ingress — routes Keycloak paths directly (no rewrite needed).
+# Keycloak 25+ serves at root: /realms, /resources, /admin, /js
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-keycloak-ingress
+  namespace: hopper
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: hopper-tls
+  rules:
+    - http:
+        paths:
+          - path: /realms
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+          - path: /resources
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+          - path: /admin/master
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+          - path: /admin/realms
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+          - path: /js
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+
+---
+# API Ingress — strips /api prefix before forwarding to the gateway.
+#   /api/pods → api-gateway:8000/pods
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-api-ingress
+  namespace: hopper
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: hopper-tls
+  rules:
+    - http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8000
+
+---
+# Frontend Ingress — catch-all (must be last / lowest priority)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-ingress
+  namespace: hopper
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - secretName: hopper-tls
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

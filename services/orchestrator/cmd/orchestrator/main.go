@@ -12,6 +12,7 @@ import (
 	"github.com/hopper/orchestrator/internal/config"
 	"github.com/hopper/orchestrator/internal/events"
 	grpcserver "github.com/hopper/orchestrator/internal/grpc"
+	"github.com/hopper/orchestrator/internal/k8s"
 )
 
 func main() {
@@ -33,11 +34,27 @@ func main() {
 	}
 	defer nc.Close()
 
+	// Initialize K8s client
+	clientset, err := k8s.NewClientset(cfg.KubeConfig)
+	if err != nil {
+		logger.Fatal("failed to create k8s client", zap.Error(err))
+	}
+	k8sPods := k8s.NewPodManager(clientset, cfg.KubeNamespace)
+	logger.Info("k8s client initialized", zap.String("namespace", cfg.KubeNamespace))
+
 	// Start gRPC server
-	srv, err := grpcserver.New(cfg, logger, nc)
+	srv, err := grpcserver.New(cfg, logger, nc, k8sPods)
 	if err != nil {
 		logger.Fatal("failed to create gRPC server", zap.Error(err))
 	}
+
+	// Subscribe to NATS events (billing.exhausted → auto-terminate pods)
+	if err := events.SubscribeAll(nc, logger, srv.PodManager(), k8sPods, srv.Ticker()); err != nil {
+		logger.Fatal("failed to subscribe to NATS events", zap.Error(err))
+	}
+
+	// Start background metrics publisher (publishes to NATS every 5s for all running pods)
+	events.StartMetricsPublisher(ctx, nc, logger, srv.PodManager(), k8sPods)
 
 	go func() {
 		if err := srv.Start(cfg.GRPCPort); err != nil {

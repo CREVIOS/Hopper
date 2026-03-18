@@ -6,39 +6,34 @@ export type PodState =
   | 'terminated'
   | 'failed';
 
-export type GpuTier = 'premium' | 'standard' | 'budget' | 'scavenger';
+export type VmPlan = 'small' | 'medium' | 'large';
 
-export const GPU_TIER_RATES: Record<GpuTier, number> = {
-  premium: 15,
-  standard: 10,
-  budget: 5,
-  scavenger: 0
+export const VM_PLAN_INFO: Record<VmPlan, { cpu: string; memory: string; rate: number }> = {
+  small: { cpu: '1 CPU', memory: '2 GB', rate: 1 },
+  medium: { cpu: '2 CPU', memory: '4 GB', rate: 2 },
+  large: { cpu: '4 CPU', memory: '8 GB', rate: 4 }
 };
 
-export type UserRole =
-  | 'platform_admin'
-  | 'university_admin'
-  | 'department_admin'
-  | 'professor'
-  | 'ta'
-  | 'student';
+export type UserRole = 'admin' | 'professor' | 'student';
 
 export interface User {
   id: string;
   email: string;
   name: string;
   role: UserRole;
-  university_id: string;
 }
 
 export interface Pod {
   id: string;
   user_id: string;
   state: PodState;
-  gpu_tier: GpuTier;
+  plan: string;
   image: string;
+  cpu?: string;
+  memory?: string;
   node_name?: string;
   namespace: string;
+  ssh_port?: number;
   created_at: string;
   updated_at: string;
 }
@@ -46,7 +41,6 @@ export interface Pod {
 export interface Credit {
   account_id: string;
   balance: number;
-  as_of: string;
 }
 
 export interface CreditTransaction {
@@ -59,12 +53,9 @@ export interface CreditTransaction {
   created_at: string;
 }
 
-export interface GpuMetrics {
+export interface VmMetrics {
   pod_id: string;
-  gpu_utilization: number;
-  memory_used: number;
-  memory_total: number;
-  temperature: number;
-  power_usage: number;
-  timestamp: string;
+  cpu_percent: number;
+  memory_used_bytes: number;
+  memory_limit_bytes: number;
 }

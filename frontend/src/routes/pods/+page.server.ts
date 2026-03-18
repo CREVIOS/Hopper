@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { apiUrl } from '$lib/api/server';
 
 export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const { isAuthenticated } = await parent();
@@ -12,7 +13,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const res = await fetch('/api/pods', { headers }).catch(() => null);
+  const res = await fetch(apiUrl('/pods/'), { headers }).catch(() => null);
   const pods = res?.ok ? await res.json() : [];
 
   return { pods };

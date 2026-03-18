@@ -10,6 +10,7 @@ import (
 
 	billingpkg "github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/events"
+	"github.com/hopper/orchestrator/internal/k8s"
 	"github.com/hopper/orchestrator/internal/pod"
 
 	podv1 "github.com/hopper/orchestrator/api/proto/hopper/pod/v1"
@@ -48,41 +49,84 @@ func podToProto(p *pod.Pod) *podv1.PodStatus {
 		Id:        p.ID,
 		UserId:    p.UserID,
 		State:     podToProtoState(p.State),
-		GpuTier:   p.GpuTier,
+		Plan:      p.Plan,
 		NodeName:  p.NodeName,
 		Namespace: p.Namespace,
+		SshPort:   p.SshPort,
+		Cpu:       p.CPU,
+		Memory:    p.Memory,
 		CreatedAt: timestamppb.New(p.CreatedAt),
 		UpdatedAt: timestamppb.New(p.UpdatedAt),
 	}
 }
 
 func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.CreatePodRequest) (*podv1.PodStatus, error) {
+	podName := fmt.Sprintf("vm-%d", time.Now().UnixNano())
+
 	s.server.logger.Info("CreatePod",
 		zap.String("user_id", req.UserId),
-		zap.String("gpu_tier", req.GpuTier),
+		zap.String("plan", req.Plan),
 		zap.String("image", req.Image),
+		zap.String("cpu", req.Cpu),
+		zap.String("memory", req.Memory),
 	)
 
-	p, err := s.server.podManager.Create(
-		fmt.Sprintf("pod-%d", time.Now().UnixNano()),
-		req.UserId,
-		req.GpuTier,
-		req.Image,
-	)
+	// 1. Register in the in-memory state machine
+	p, err := s.server.podManager.Create(pod.CreateOpts{
+		ID:        podName,
+		UserID:    req.UserId,
+		Plan:      req.Plan,
+		Image:     req.Image,
+		CPU:       req.Cpu,
+		Memory:    req.Memory,
+		Namespace: "hopper",
+		PodName:   podName,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pod: %w", err)
+		return nil, fmt.Errorf("registering pod: %w", err)
 	}
 
-	// Publish event
-	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]string{
-		"pod_id":  p.ID,
-		"user_id": p.UserID,
+	// 2. Transition to creating
+	if err := s.server.podManager.Transition(p.ID, pod.StateCreating); err != nil {
+		return nil, fmt.Errorf("transitioning to creating: %w", err)
+	}
+
+	// 3. Create the actual K8s pod + SSH service
+	sshPort, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
+		PodName: podName,
+		PodID:   podName,
+		UserID:  req.UserId,
+		Plan:    req.Plan,
+		Image:   req.Image,
+		CPU:     req.Cpu,
+		Memory:  req.Memory,
+	})
+	if err != nil {
+		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
+		_ = events.Publish(s.server.nc, events.SubjectPodFailed, map[string]string{
+			"pod_id":  p.ID,
+			"user_id": req.UserId,
+			"error":   err.Error(),
+		})
+		return nil, fmt.Errorf("creating k8s pod: %w", err)
+	}
+
+	// 4. Record the SSH port and transition to running
+	s.server.podManager.SetSshPort(p.ID, sshPort)
+	_ = s.server.podManager.Transition(p.ID, pod.StateRunning)
+
+	// 5. Publish event
+	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]interface{}{
+		"pod_id":   p.ID,
+		"user_id":  req.UserId,
+		"ssh_port": sshPort,
+		"plan":     req.Plan,
 	})
 
-	// Start billing ticker
-	tier, ok := billingpkg.Tiers[req.GpuTier]
+	// 6. Start billing ticker
+	plan, ok := billingpkg.Plans[req.Plan]
 	if ok {
-		s.server.ticker.Start(p.ID, tier, func(podID string, amount float64) {
+		s.server.ticker.Start(p.ID, plan, func(podID string, amount float64) {
 			s.server.logger.Info("billing tick",
 				zap.String("pod_id", podID),
 				zap.Float64("amount", amount),
@@ -95,6 +139,8 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		})
 	}
 
+	// Refresh the pod to include ssh_port
+	p, _ = s.server.podManager.Get(p.ID)
 	return podToProto(p), nil
 }
 
@@ -109,6 +155,11 @@ func (s *PodOrchestratorService) GetPodStatus(ctx context.Context, req *podv1.Po
 func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.PodId) (*podv1.TerminateResponse, error) {
 	s.server.logger.Info("TerminatePod", zap.String("pod_id", req.Id))
 
+	p, ok := s.server.podManager.Get(req.Id)
+	if !ok {
+		return &podv1.TerminateResponse{Success: false, Message: "pod not found"}, nil
+	}
+
 	if err := s.server.podManager.Transition(req.Id, pod.StateStopping); err != nil {
 		return &podv1.TerminateResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -116,20 +167,29 @@ func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.Po
 	// Stop billing
 	s.server.ticker.Stop(req.Id)
 
+	// Delete the actual K8s pod + service
+	if err := s.server.k8sPods.DeletePod(ctx, p.PodName); err != nil {
+		s.server.logger.Warn("failed to delete k8s pod", zap.Error(err))
+	}
+
+	// Transition to terminated
+	_ = s.server.podManager.Transition(req.Id, pod.StateTerminated)
+
 	// Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodStopped, map[string]string{
 		"pod_id": req.Id,
 	})
 
-	// Transition to terminated
-	_ = s.server.podManager.Transition(req.Id, pod.StateTerminated)
-
 	return &podv1.TerminateResponse{Success: true, Message: "pod terminated"}, nil
 }
 
 func (s *PodOrchestratorService) StreamMetrics(req *podv1.PodId, stream podv1.PodOrchestrator_StreamMetricsServer) error {
-	// Placeholder: send fake metrics every 2 seconds for demonstration
-	ticker := time.NewTicker(2 * time.Second)
+	p, ok := s.server.podManager.Get(req.Id)
+	if !ok {
+		return fmt.Errorf("pod %s not found", req.Id)
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -137,27 +197,63 @@ func (s *PodOrchestratorService) StreamMetrics(req *podv1.PodId, stream podv1.Po
 		case <-stream.Context().Done():
 			return nil
 		case <-ticker.C:
-			metrics := &podv1.GpuMetrics{
-				PodId:          req.Id,
-				GpuUtilization: 42.0,
-				MemoryUsed:     4 * 1024 * 1024 * 1024, // 4GB
-				MemoryTotal:    16 * 1024 * 1024 * 1024, // 16GB
-				Temperature:    65.0,
-				PowerUsage:     150.0,
-				Timestamp:      timestamppb.Now(),
+			// Fetch real metrics from K8s
+			podMetrics, err := s.server.k8sPods.GetPodMetrics(stream.Context(), p.PodName)
+			if err != nil {
+				s.server.logger.Debug("metrics fetch failed", zap.Error(err))
+				continue
 			}
+
+			metrics := &podv1.VmMetrics{
+				PodId:            req.Id,
+				CpuPercent:       float64(podMetrics.CPUNanoCores) / 1e9 * 100,
+				MemoryUsedBytes:  podMetrics.MemoryBytes,
+				MemoryLimitBytes: podMetrics.MemoryLimitBytes,
+				Timestamp:        timestamppb.Now(),
+			}
+
+			// Send via gRPC stream
 			if err := stream.Send(metrics); err != nil {
 				return err
 			}
+
+			// Also publish to NATS so the gateway SSE endpoint can use it
+			_ = events.Publish(s.server.nc, fmt.Sprintf("metrics.%s", req.Id), map[string]interface{}{
+				"pod_id":             req.Id,
+				"cpu_percent":        metrics.CpuPercent,
+				"memory_used_bytes":  metrics.MemoryUsedBytes,
+				"memory_limit_bytes": metrics.MemoryLimitBytes,
+			})
 		}
 	}
 }
 
 func (s *PodOrchestratorService) WatchPodStatus(req *podv1.PodId, stream podv1.PodOrchestrator_WatchPodStatusServer) error {
-	// Placeholder: send current status once
 	p, ok := s.server.podManager.Get(req.Id)
 	if !ok {
 		return fmt.Errorf("pod %s not found", req.Id)
 	}
 	return stream.Send(podToProto(p))
+}
+
+func (s *PodOrchestratorService) ListNodes(ctx context.Context, req *podv1.ListNodesRequest) (*podv1.ListNodesResponse, error) {
+	nodes, err := s.server.k8sPods.ListNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes: %w", err)
+	}
+
+	var protoNodes []*podv1.NodeInfo
+	for _, n := range nodes {
+		protoNodes = append(protoNodes, &podv1.NodeInfo{
+			Name:              n.Name,
+			CpuCapacity:       n.CPUCapacity,
+			MemoryCapacity:    n.MemoryCapacity,
+			CpuAllocatable:    n.CPUAllocatable,
+			MemoryAllocatable: n.MemoryAllocatable,
+			PodCount:          int32(n.PodCount),
+			Ready:             n.Ready,
+		})
+	}
+
+	return &podv1.ListNodesResponse{Nodes: protoNodes}, nil
 }

@@ -13,6 +13,7 @@ class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers
@@ -20,7 +21,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, await res.text());
+    const text = await res.text();
+    let message = text;
+    try {
+      const json = JSON.parse(text);
+      message = json.detail || json.message || text;
+    } catch {}
+    throw new ApiError(res.status, message);
   }
 
   return res.json();

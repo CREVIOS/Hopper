@@ -57,7 +57,7 @@ async def get_history(
 
 
 class AllocateRequest(BaseModel):
-    account_id: str
+    user_id: str
     amount: float
     description: str = "allocation"
 
@@ -68,13 +68,12 @@ async def allocate_credits(
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Allocate credits to a student account (professor/admin only)."""
-    allowed_roles = {"platform_admin", "university_admin", "department_admin", "professor"}
-    if current_user.role not in allowed_roles:
+    """Allocate credits to a user account (professor/admin only)."""
+    if current_user.role not in ("admin", "professor"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only professors and admins can allocate credits",
         )
 
-    transfer = await add_credits(db, request.account_id, request.amount, request.description)
+    transfer = await add_credits(db, request.user_id, request.amount, request.description)
     return {"message": "allocated", "transfer_id": transfer.id}
