@@ -1,0 +1,700 @@
+\documentclass[12pt,letterpaper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{fontenc}
+\usepackage{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{titletoc}
+\usepackage{tocloft}
+\setlength{\cftbeforesecskip}{3pt}
+\setlength{\cftbeforesubsecskip}{1pt}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{amssymb}   % for \checkmark / \square
+\usepackage{pifont}    % for \ding
+
+% ── Colours ───────────────────────────────────────────────────────────────────
+\definecolor{titleblue}{RGB}{30,80,150}
+\definecolor{sectionblue}{RGB}{0,60,120}
+\definecolor{lightgray}{RGB}{245,245,245}
+\definecolor{codegray}{RGB}{80,80,80}
+
+% ── Hyperref ──────────────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=sectionblue,
+  urlcolor=sectionblue,
+  pdftitle={VMpire --- Software Requirements Specification},
+  pdfauthor={Byte Me}
+}
+
+% ── Section formatting ────────────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries\color{sectionblue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{sectionblue}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{}
+
+% ── Header / footer ───────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small VMpire SRS v0.1}
+\lhead{\small Lab 2: Problem Definition + SRS v1}
+\rfoot{\small\thepage}
+\lfoot{\small 2026-03-07}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% ── Inline code style ─────────────────────────────────────────────────────────
+\newcommand{\code}[1]{\texttt{\color{codegray}#1}}
+
+% ── Checklist helpers ─────────────────────────────────────────────────────────
+\newcommand{\checked}{\ding{51}}   % ✓
+\newcommand{\unchecked}{\square}   % □
+
+% ── Column types ──────────────────────────────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+% ── List spacing ──────────────────────────────────────────────────────────────
+\setlist[itemize]{noitemsep, topsep=4pt}
+\setlist[enumerate]{noitemsep, topsep=4pt}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Title page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries\color{titleblue} VMpire}\\[0.4cm]
+  {\Large Software Requirements Specification}\\[0.3cm]
+  {\large Lab 2: Problem Definition + SRS v1}\\[2cm]
+  \rule{0.6\linewidth}{0.5pt}\\[0.4cm]
+  \begin{tabular}{ll}
+    \textbf{Team:}           & Byte Me \\
+    \textbf{Project Name:}   & VMpire --- Centralized VM Provisioning Portal \\
+    \textbf{Repository URL:} & \href{https://github.com/Adha-KG/VM-pire}{https://github.com/Adha-KG/VM-pire} \\
+    \textbf{Version:}        & 0.1 \\
+    \textbf{Status:}         & \code{Draft} \\
+    \textbf{Date:}           & 2026-03-07 \\
+  \end{tabular}\\[1.5cm]
+  \rule{0.6\linewidth}{0.5pt}
+  \vfill
+  {\small Generated 2026-03-07}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Document Control}
+
+\subsection{Metadata}
+
+\begin{itemize}
+  \item \textbf{Team:} Byte Me
+  \item \textbf{Project Name:} VMpire --- Centralized VM Provisioning Portal
+  \item \textbf{Repository URL:} \href{https://github.com/Adha-KG/VM-pire}{https://github.com/Adha-KG/VM-pire}
+  \item \textbf{Version:} 0.1
+  \item \textbf{Status:} \code{Draft}
+  \item \textbf{Date:} 2026-03-07
+\end{itemize}
+
+\subsection{Authors and Reviewers}
+
+\begin{tabularx}{\linewidth}{L{2.8cm} L{4cm} L{5.5cm} L{2cm}}
+  \toprule
+  \textbf{Role} & \textbf{Name} & \textbf{ID / Email} & \textbf{Date} \\
+  \midrule
+  Author        & Anindya Kundu              & 2021-911-185 / sanindya50@gmail.com        & 2026-03-07 \\
+  Author        & Kabya Mithun Saha          & 2021-111-192 / kabyasaha1812@gmail.com     & 2026-03-07 \\
+  Author        & Md. Muhaiminul Islam Ninad & 2021-111-219 / ninadgns@gmail.com          & 2026-03-07 \\
+  Author        & Fayek Ahmed                & 2021-511-233 / fayekahmedrahat90@gmail.com & 2026-03-07 \\
+  Team Reviewer &                            &                                            &            \\
+  \bottomrule
+\end{tabularx}
+
+\subsection{Revision History}
+
+\begin{tabularx}{\linewidth}{L{1.8cm} L{2.8cm} L{3cm} L{5.5cm}}
+  \toprule
+  \textbf{Version} & \textbf{Date} & \textbf{Author} & \textbf{Changes} \\
+  \midrule
+  0.1 & 2026-03-07 & Byte Me & Initial draft \\
+  \bottomrule
+\end{tabularx}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Problem Definition}
+
+\subsection{Problem Statement}
+
+\begin{itemize}
+  \item \textbf{What problem are you solving?}\\
+    Managing student virtual machines in academic environments is largely manual, error-prone, and resource-inefficient. Administrators spend significant time provisioning, tracking, and decommissioning VMs on request, with no standardized lifecycle enforcement. Students have no self-service visibility into their instances, leading to repeated requests, forgotten resources, and infrastructure sprawl.
+
+  \item \textbf{Why does it matter?}\\
+    Without a centralized provisioning system, labs face resource exhaustion, stale VMs consuming compute and storage, and no accountability for quota overuse. VMpire solves this by automating the full VM lifecycle --- from student request through admin approval to expiration --- while enforcing quotas and providing real-time visibility into instance ``vitals.'' This reduces admin overhead, prevents infrastructure abuse, and gives students a reliable, self-service experience.
+\end{itemize}
+
+\subsection{Target Users}
+
+\begin{tabularx}{\linewidth}{L{3.5cm} L{5cm} L{5.5cm}}
+  \toprule
+  \textbf{User Group} & \textbf{Description} & \textbf{Main Needs} \\
+  \midrule
+  Students & Enrolled learners who need VMs for coursework and labs & Self-service VM requests, status visibility, lifecycle awareness \\
+  \addlinespace
+  Lab Administrators & Staff who approve requests and manage infrastructure capacity & Approval workflows, quota enforcement, resource monitoring dashboards \\
+  \addlinespace
+  Instructors & Faculty who oversee lab assignments and student VM usage & Course-level VM oversight, usage reporting \\
+  \addlinespace
+  System Administrators & IT staff responsible for underlying hypervisor infrastructure & Infrastructure health, integration management, audit logs \\
+  \bottomrule
+\end{tabularx}
+
+\subsection{Goals and Non-Goals}
+
+\textbf{Goals:}
+\begin{itemize}
+  \item Provide a self-service portal for students to request, view, and manage their VMs
+  \item Enforce per-user and per-course resource quotas automatically
+  \item Implement an approval workflow routing VM requests to the appropriate administrator
+  \item Monitor and display real-time VM vitals (CPU, memory, storage, uptime, expiration status)
+  \item Automate VM expiration and decommissioning based on configurable lifecycle policies
+  \item Maintain a full audit trail of all provisioning and lifecycle events
+\end{itemize}
+
+\textbf{Non-goals:}
+\begin{itemize}
+  \item Building or managing the underlying hypervisor infrastructure (e.g., VMware, Proxmox, OpenStack)
+  \item Providing a general-purpose cloud platform beyond student lab environments
+  \item Supporting non-VM compute resources (e.g., bare metal, containers, Kubernetes)
+  \item Replacing institutional identity management systems (SSO/LDAP are external)
+  \item Billing or cost-chargeback functionality in v1
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Scope and Context}
+
+\subsection{In Scope}
+
+\begin{itemize}
+  \item Student-facing self-service VM request form and dashboard
+  \item Administrator approval and rejection workflow with notification support
+  \item Quota definition, enforcement, and alerting (per user, per course)
+  \item VM lifecycle management: provisioning, running, paused, expiring, expired, decommissioned states
+  \item Real-time VM vitals monitoring dashboard (CPU, RAM, disk, network, expiration countdown)
+  \item Automated expiration scheduling and decommissioning triggers
+  \item Role-based access control (Student, Instructor, Lab Admin, System Admin)
+  \item Audit log of all user and system actions
+  \item Email/in-app notifications for request status changes, quota warnings, and expiration alerts
+\end{itemize}
+
+\subsection{Out of Scope}
+
+\begin{itemize}
+  \item Direct hypervisor management or configuration
+  \item VM snapshot/backup management in v1
+  \item Mobile native application (web-responsive only)
+  \item Third-party marketplace or template store
+  \item Billing, invoicing, or cost allocation
+  \item Multi-institution or multi-tenant deployments in v1
+\end{itemize}
+
+\subsection{Assumptions and Constraints}
+
+\textbf{Technical constraints:}
+\begin{itemize}
+  \item The platform must integrate with an existing hypervisor API (e.g., VMware vSphere, Proxmox, or OpenStack) via REST
+  \item Institutional SSO (SAML/LDAP) is used for authentication; VMpire does not manage user credentials
+  \item Initial deployment targets a single institution's network environment
+\end{itemize}
+
+\textbf{Organizational constraints:}
+\begin{itemize}
+  \item Lab administrators retain final approval authority over all VM provisioning requests
+  \item Quota policies are defined by system administrators and may vary by course or department
+\end{itemize}
+
+\textbf{Timeline constraints:}
+\begin{itemize}
+  \item SRS v1 to be completed by end of Lab 2
+  \item Prototype/MVP targeted for end of semester; full feature delivery phased
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Stakeholders and Roles}
+
+\subsection{Stakeholders}
+
+\begin{tabularx}{\linewidth}{L{4cm} L{6cm} L{2.5cm}}
+  \toprule
+  \textbf{Stakeholder} & \textbf{Interest} & \textbf{Priority} \\
+  \midrule
+  Students & Reliable, fast self-service VM access with clear status & High \\
+  \addlinespace
+  Lab Administrators & Reduced manual workload, quota control, approval oversight & High \\
+  \addlinespace
+  Instructors & Course-level VM visibility and reporting & Medium \\
+  \addlinespace
+  System Administrators & Infrastructure stability, audit trails, integration health & High \\
+  \addlinespace
+  Department/IT Leadership & Cost efficiency, resource utilization, policy compliance & Medium \\
+  \bottomrule
+\end{tabularx}
+
+\subsection{User Roles and Permissions}
+
+\begin{tabularx}{\linewidth}{L{3.5cm} L{4.5cm} L{6cm}}
+  \toprule
+  \textbf{Role} & \textbf{Description} & \textbf{Permissions} \\
+  \midrule
+  Student & Enrolled user requesting and using VMs & Submit requests, view own VMs, view vitals, request extensions \\
+  \addlinespace
+  Instructor & Faculty overseeing course VMs & View all VMs in assigned courses, generate reports, flag VMs \\
+  \addlinespace
+  Lab Administrator & Staff approving requests and managing quotas & Approve/reject requests, modify quotas, decommission VMs, view all vitals \\
+  \addlinespace
+  System Administrator & IT staff with full platform access & All permissions + configure integrations, manage roles, view audit logs \\
+  \bottomrule
+\end{tabularx}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Functional Requirements}
+
+Requirement ID format: \code{FR-<MODULE>-\#\#\#}
+
+\begin{longtable}{L{2.4cm} L{2.4cm} L{5cm} C{1.2cm} L{3.5cm}}
+  \toprule
+  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Pri.} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Pri.} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  FR-REQ-001 & VM Request & Students shall be able to submit a VM provisioning request specifying OS, CPU, RAM, and storage requirements & M & Request form submits successfully and appears in admin approval queue \\
+  \addlinespace
+  FR-REQ-002 & Approval Workflow & Lab Administrators shall be able to approve or reject pending VM requests with an optional comment & M & Approved requests trigger provisioning; rejected requests notify the student with reason \\
+  \addlinespace
+  FR-QUOTA-001 & Quota Enforcement & The system shall enforce per-user resource quotas and block requests that exceed defined limits & M & Requests exceeding quota are automatically rejected with a quota-exceeded message \\
+  \addlinespace
+  FR-MON-001 & VM Dashboard & Students shall have a dashboard displaying all their VMs with current status and vitals & M & Dashboard loads and displays accurate VM status within 5 seconds \\
+  \addlinespace
+  FR-MON-002 & Vitals Monitoring & The system shall collect and display real-time CPU, RAM, disk, and network metrics for each VM & M & Vitals update at least every 60 seconds; data shown per VM in the dashboard \\
+  \addlinespace
+  FR-LIFE-001 & Lifecycle Management & The system shall transition VMs through defined states: Pending $\to$ Provisioning $\to$ Running $\to$ Expiring $\to$ Expired $\to$ Decommissioned & M & State transitions occur automatically per lifecycle rules and are reflected in the UI \\
+  \addlinespace
+  FR-LIFE-002 & Expiration Scheduling & Administrators shall be able to configure VM expiration policies (fixed date or duration-based) & M & VMs expire at the configured time; student is notified 48 hours before expiration \\
+  \addlinespace
+  FR-REQ-003 & Extension Requests & Students shall be able to request a VM lifecycle extension before expiration & S & Extension requests enter admin queue; approval extends expiry; rejection notifies student \\
+  \addlinespace
+  FR-NOTIF-001 & Notifications & The system shall send email and in-app notifications for request status changes, quota warnings, and expiration alerts & M & Notifications delivered within 2 minutes of triggering event \\
+  \addlinespace
+  FR-AUDIT-001 & Audit Log & The system shall maintain an immutable log of all provisioning, lifecycle, and permission events & M & Audit log entries are created for every state transition and admin action; accessible to System Admins \\
+  \addlinespace
+  FR-QUOTA-002 & Quota Management & System Administrators shall be able to define and modify quota policies per user, course, or department & M & Quota changes take effect immediately and are reflected in enforcement logic \\
+  \addlinespace
+  FR-USER-001 & Role-Based Access & The system shall restrict access to features and data based on the authenticated user's role & M & Users cannot access resources or actions beyond their role's permissions \\
+  \addlinespace
+  FR-AUTH-001 & SSO Integration & The system shall authenticate users via institutional SSO (SAML/LDAP) & M & Users can log in via SSO; role is assigned automatically based on institutional directory \\
+  \addlinespace
+  FR-MON-003 & Admin VM Overview & Lab Administrators shall have a global view of all VMs across all users, including vitals and lifecycle state & M & Admin dashboard displays all VMs filterable by user, course, state, and expiration \\
+  \addlinespace
+  FR-LIFE-003 & Decommissioning & The system shall automatically decommission expired VMs and release their resources after a grace period & M & VMs are decommissioned within 24 hours of expiration; resources are released in the hypervisor \\
+\end{longtable}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{User Stories and Use Cases}
+
+\subsection{User Stories}
+
+\begin{longtable}{L{2.2cm} L{2.5cm} L{3.5cm} L{3cm} L{3.3cm}}
+  \toprule
+  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  US-REQ-001 & Student & to submit a VM request with my required specs & I can get the environment I need for my lab assignment & Form validates inputs, submits successfully, and shows ``Pending'' status \\
+  \addlinespace
+  US-REQ-002 & Student & to see the status of my VM request & I know whether it has been approved, rejected, or is still pending & Status updates within 1 minute of admin action; visible on dashboard \\
+  \addlinespace
+  US-MON-001 & Student & to view real-time vitals for my running VMs & I can monitor performance and catch issues early & Vitals (CPU, RAM, disk, network) displayed and refresh every 60 seconds \\
+  \addlinespace
+  US-LIFE-001 & Student & to receive a notification before my VM expires & I have time to save my work or request an extension & Email and in-app alert sent 48 hours before expiration \\
+  \addlinespace
+  US-REQ-003 & Student & to request a lifecycle extension for my VM & I can continue using it beyond the original expiration date & Extension request appears in admin queue; outcome notified to student \\
+  \addlinespace
+  US-REQ-004 & Student & to see a clear reason when my VM request is rejected & I can correct my request and resubmit if appropriate & Rejection reason displayed in dashboard and included in notification \\
+  \addlinespace
+  US-REQ-005 & Lab Administrator & to review all pending VM requests in a queue & I can approve or reject them efficiently & Pending queue shows all requests with specs, student info, and submission time \\
+  \addlinespace
+  US-REQ-006 & Lab Administrator & to approve a VM request with one click & provisioning begins immediately without manual hypervisor work & Approval triggers automated provisioning; VM transitions to ``Provisioning'' state \\
+  \addlinespace
+  US-MON-002 & Lab Administrator & to see all active VMs and their vitals across all users & I can monitor overall infrastructure health & Global admin dashboard loads all VMs with real-time vitals and state filters \\
+  \addlinespace
+  US-LIFE-002 & Lab Administrator & to manually decommission a VM & I can reclaim resources from abandoned or policy-violating instances & VM is decommissioned and resources released; student notified; audit log updated \\
+  \addlinespace
+  US-QUOTA-001 & System Administrator & to configure quota policies per user or course & resource limits are enforced consistently across the platform & Quota settings saved and immediately enforce on next request submission \\
+  \addlinespace
+  US-AUDIT-001 & System Administrator & to view the full audit log & I can investigate incidents, policy violations, and system behavior & Audit log accessible with filters by user, action type, date range, and VM ID \\
+  \addlinespace
+  US-USER-001 & Instructor & to view VMs associated with my course & I can track student progress and flag idle or abandoned instances & Course VM list shows all instances with student, state, and last-active time \\
+  \addlinespace
+  US-AUTH-001 & Student & to log in using my institutional SSO credentials & I don't need a separate VMpire account & SSO login redirects correctly; user role assigned from directory automatically \\
+  \addlinespace
+  US-REQ-007 & Lab Administrator & to set a custom expiration date when approving a VM & the lifecycle is appropriate for the specific assignment or course & Approval form includes optional expiration date override; system respects it \\
+\end{longtable}
+
+\subsection{Critical Use Cases}
+
+\subsubsection*{UC-01: Student Submits VM Request}
+
+\begin{itemize}
+  \item \textbf{Preconditions:} Student is authenticated via SSO; student has not exceeded their resource quota
+  \item \textbf{Main flow:}
+    \begin{enumerate}
+      \item Student navigates to ``Request VM'' page
+      \item Student fills in OS template, vCPU count, RAM, disk size, and optional notes
+      \item System validates inputs against quota limits
+      \item Student submits the form
+      \item System creates a request record in ``Pending'' state and routes it to the admin approval queue
+      \item Student receives in-app and email confirmation
+    \end{enumerate}
+  \item \textbf{Alternate/exception flow:}
+    \begin{itemize}
+      \item If quota would be exceeded: system blocks submission and displays a quota-exceeded error
+      \item If required fields are missing: form validation prevents submission with inline errors
+    \end{itemize}
+  \item \textbf{Postconditions:} A pending VM request exists in the admin queue; student dashboard shows ``Pending'' status
+\end{itemize}
+
+\subsubsection*{UC-02: Administrator Approves VM Request}
+
+\begin{itemize}
+  \item \textbf{Preconditions:} At least one pending request exists; administrator is authenticated
+  \item \textbf{Main flow:}
+    \begin{enumerate}
+      \item Admin navigates to the approval queue
+      \item Admin reviews request details (student, specs, course)
+      \item Admin optionally sets expiration date, then clicks ``Approve''
+      \item System calls the hypervisor API to provision the VM
+      \item VM transitions to ``Provisioning,'' then ``Running'' upon successful hypervisor response
+      \item Student is notified of approval and receives VM connection details
+    \end{enumerate}
+  \item \textbf{Alternate/exception flow:}
+    \begin{itemize}
+      \item If admin clicks ``Reject'': admin enters a reason; request is marked rejected; student notified
+      \item If hypervisor API fails: VM stays in ``Provisioning'' state; admin is alerted; retry mechanism triggered
+    \end{itemize}
+  \item \textbf{Postconditions:} VM is running and visible on the student's dashboard with live vitals
+\end{itemize}
+
+\subsubsection*{UC-03: VM Expiration and Decommissioning}
+
+\begin{itemize}
+  \item \textbf{Preconditions:} A running VM has a configured expiration date/time
+  \item \textbf{Main flow:}
+    \begin{enumerate}
+      \item System sends expiration warning notification to student 48 hours before expiry
+      \item At expiration time, VM transitions to ``Expiring'' state
+      \item If no extension request is approved within the grace period, VM transitions to ``Expired''
+      \item After the grace period (24 hours), system calls the hypervisor API to decommission the VM
+      \item VM transitions to ``Decommissioned''; resources are released; student is notified
+      \item Audit log records all state transitions
+    \end{enumerate}
+  \item \textbf{Alternate/exception flow:}
+    \begin{itemize}
+      \item If student submits extension request before expiry: VM remains ``Running'' pending admin decision
+      \item If decommissioning API call fails: system retries and alerts the system administrator
+    \end{itemize}
+  \item \textbf{Postconditions:} VM no longer exists in the hypervisor; resources freed; record retained in audit log
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Data Requirements}
+
+\subsection{Core Entities}
+
+\begin{longtable}{L{2.8cm} L{3.5cm} L{4cm} L{4cm}}
+  \toprule
+  \textbf{Entity} & \textbf{Description} & \textbf{Key Fields} & \textbf{Constraints} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Entity} & \textbf{Description} & \textbf{Key Fields} & \textbf{Constraints} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  User & Authenticated platform user & user\_id, name, email, role, sso\_id & SSO ID must be unique; role assigned from directory \\
+  \addlinespace
+  VM Request & A student's request for a new VM & request\_id, user\_id, status, specs, submitted\_at, reviewed\_by & One active request per VM slot per user \\
+  \addlinespace
+  Virtual Machine & A provisioned VM instance & vm\_id, request\_id, user\_id, state, hypervisor\_ref, created\_at, expires\_at & State must follow defined lifecycle transitions \\
+  \addlinespace
+  VM Vitals & Real-time performance snapshot for a VM & vitals\_id, vm\_id, cpu\_pct, ram\_mb, disk\_gb, network\_mbps, recorded\_at & Recorded at minimum every 60 seconds for running VMs \\
+  \addlinespace
+  Quota Policy & Resource limit rules per user/course & policy\_id, scope, max\_vms, max\_vcpu, max\_ram\_gb, max\_disk\_gb & Scope must be user, course, or department \\
+  \addlinespace
+  Audit Log Entry & Immutable record of system/user event & log\_id, actor\_id, action, target\_id, target\_type, timestamp, metadata & Append-only; no updates or deletes permitted \\
+  \addlinespace
+  Notification & Alert sent to a user & notification\_id, user\_id, type, message, sent\_at, read\_at & Delivery attempted via email and in-app \\
+\end{longtable}
+
+\subsection{Data Dictionary}
+
+\begin{longtable}{L{2.8cm} L{1.8cm} C{1.6cm} L{4cm} L{2.8cm}}
+  \toprule
+  \textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Validation/Constraint} & \textbf{Example} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Validation/Constraint} & \textbf{Example} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  user\_id       & UUID     & Yes              & System-generated, unique                                          & \code{a3f1c2d4-...} \\
+  sso\_id        & String   & Yes              & Unique; sourced from institutional SSO                            & \code{jdoe@university.edu} \\
+  role           & Enum     & Yes              & One of: Student, Instructor, LabAdmin, SysAdmin                   & \code{Student} \\
+  request\_id    & UUID     & Yes              & System-generated, unique                                          & \code{b7e2a1f3-...} \\
+  status         & Enum     & Yes              & Pending, Approved, Rejected, Cancelled                            & \code{Pending} \\
+  vm\_id         & UUID     & Yes              & System-generated, unique                                          & \code{c9d4b2e1-...} \\
+  state          & Enum     & Yes              & Pending, Provisioning, Running, Expiring, Expired, Decommissioned & \code{Running} \\
+  hypervisor\_ref & String  & Yes (provisioned)& External ID from hypervisor API                                   & \code{vm-1042} \\
+  expires\_at    & DateTime & Yes              & Must be in the future at time of setting; ISO 8601                & \code{2026-05-01T23:59:00Z} \\
+  cpu\_pct       & Float    & Yes              & 0.0--100.0                                                        & \code{43.7} \\
+  ram\_mb        & Integer  & Yes              & $\geq$ 0; $\leq$ host capacity                                    & \code{2048} \\
+  max\_vcpu      & Integer  & Yes              & $\geq$ 1                                                          & \code{4} \\
+  action         & String   & Yes              & Free text, max 100 chars; describes the event                     & \code{VM\_APPROVED} \\
+  recorded\_at   & DateTime & Yes              & ISO 8601; set by system on write                                   & \code{2026-03-07T14:30:00Z} \\
+\end{longtable}
+
+\subsection{Data Model}
+
+\begin{itemize}
+  \item \textbf{ER Diagram:} \textit{(Deferred --- to be attached in a subsequent revision)}
+  \item \textbf{Major relationships:}
+    \begin{itemize}
+      \item A \textbf{User} may have many \textbf{VM Requests} (one-to-many)
+      \item Each \textbf{VM Request} results in at most one \textbf{Virtual Machine} (one-to-one)
+      \item A \textbf{Virtual Machine} has many \textbf{VM Vitals} records over time (one-to-many)
+      \item A \textbf{Quota Policy} applies to one or many \textbf{Users} or courses (one-to-many via scope)
+      \item Every significant action generates one \textbf{Audit Log Entry} referencing the actor and target (one-to-many)
+      \item A \textbf{User} receives many \textbf{Notifications} (one-to-many)
+    \end{itemize}
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{UI and UX Requirements}
+
+\subsection{Wireframes}
+
+The following wireframes / flow screens are planned for a future version. As this is v0.1, wireframe artifacts are deferred and will be attached in a subsequent revision.
+
+\begin{enumerate}
+  \item \textbf{Login / SSO Landing Page} --- Entry point with institutional SSO redirect
+  \item \textbf{Student Dashboard} --- VM list with status badges, vitals summary, and action buttons (Request VM, Request Extension)
+  \item \textbf{VM Request Form} --- Spec selection (OS, vCPU, RAM, disk), quota indicator, and submit flow
+  \item \textbf{Admin Approval Queue} --- Paginated list of pending requests with approve/reject actions and comment field
+  \item \textbf{VM Detail / Vitals View} --- Real-time graphs for CPU, RAM, disk, network; lifecycle state timeline; expiration countdown
+  \item \textbf{Admin Global VM Overview} --- Table of all VMs across all users with filters (state, course, expiry) and bulk actions
+  \item \textbf{Quota Management Panel} \textit{(System Admin)} --- Form to create/edit quota policies by scope
+\end{enumerate}
+
+\subsection{UX and Accessibility Baseline}
+
+\begin{itemize}
+  \item Clear navigation hierarchy with role-appropriate menus (students see different nav than admins)
+  \item All interactive elements are keyboard accessible; core flows completable without a mouse
+  \item Colour contrast meets WCAG 2.1 AA minimum (4.5:1 for normal text)
+  \item Status indicators use both colour and text/icon (not colour alone) for accessibility
+  \item Responsive layout supports desktop and tablet viewports; mobile-readable at minimum
+  \item Empty states and error messages provide actionable guidance (not just ``Error 400'')
+  \item Expiration urgency communicated progressively (informational $\to$ warning $\to$ critical colour coding)
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Non-Functional Requirements}
+
+NFR ID format: \code{NFR-<MODULE>-\#\#\#}
+
+\begin{longtable}{L{2.8cm} L{2.5cm} L{5cm} L{3.5cm}}
+  \toprule
+  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target/Metric} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target/Metric} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  NFR-PERF-001 & Performance     & VM dashboard and vitals page shall load within acceptable time under normal load & Page load $\leq$ 3 seconds for up to 200 concurrent users \\
+  \addlinespace
+  NFR-PERF-002 & Performance     & Vitals data shall be refreshed frequently enough to reflect near-real-time state & Vitals polling interval $\leq$ 60 seconds \\
+  \addlinespace
+  NFR-AVAIL-001 & Availability    & The portal shall be available during core academic hours & 99.5\% uptime Mon--Fri 07:00--22:00 local time \\
+  \addlinespace
+  NFR-SEC-001 & Security        & All data in transit shall be encrypted & TLS 1.2+ enforced on all endpoints \\
+  \addlinespace
+  NFR-SEC-002 & Security        & Authentication shall rely exclusively on institutional SSO; no local password storage & Zero plaintext credentials stored in VMpire database \\
+  \addlinespace
+  NFR-SEC-003 & Security        & Role-based access control shall prevent privilege escalation & Penetration test confirms no horizontal/vertical privilege bypass \\
+  \addlinespace
+  NFR-AUDIT-001 & Auditability    & All provisioning and lifecycle events shall be logged immutably & 100\% of state transitions captured; log retention $\geq$ 1 year \\
+  \addlinespace
+  NFR-SCALE-001 & Scalability     & The system shall support the institution's full active student body & Supports $\geq$ 1,000 concurrent users and $\geq$ 5,000 active VMs \\
+  \addlinespace
+  NFR-USE-001 & Usability       & New students shall be able to submit a VM request without training & $\geq$ 80\% of test users complete first request in $\leq$ 5 minutes in usability test \\
+  \addlinespace
+  NFR-MAINT-001 & Maintainability & Hypervisor integration shall be abstracted behind an adapter interface & Swapping hypervisor provider requires changes only to the adapter layer \\
+\end{longtable}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Risks and Open Questions}
+
+\subsection{Risk Register}
+
+\begin{longtable}{L{2.4cm} L{4cm} L{2cm} L{1.8cm} L{4cm}}
+  \toprule
+  \textbf{Risk ID} & \textbf{Description} & \textbf{Probability} & \textbf{Impact} & \textbf{Mitigation} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Risk ID} & \textbf{Description} & \textbf{Probability} & \textbf{Impact} & \textbf{Mitigation} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  RISK-INFRA-001 & Hypervisor API instability causes provisioning failures & Medium & High & Implement retry logic and admin alerting; expose provisioning state clearly to users \\
+  \addlinespace
+  RISK-SEC-001 & Students circumvent quota limits via multiple accounts & Low & High & Enforce quota checks against SSO identity; audit log flags anomalies \\
+  \addlinespace
+  RISK-INFRA-002 & Resource exhaustion if decommissioning fails silently & Medium & High & Alert system admin on decommission failure; escalate after 2 failed retries \\
+  \addlinespace
+  RISK-INFRA-003 & SSO integration delays block platform login & Medium & High & Provide fallback admin login for emergency access; coordinate early with IT \\
+  \addlinespace
+  RISK-SCOPE-001 & Scope creep from instructor feature requests extends timeline & Medium & Medium & Enforce scope boundary in backlog grooming; defer non-v1 features formally \\
+  \addlinespace
+  RISK-PERF-001 & Vitals polling creates excessive load on hypervisor API & Low & Medium & Use hypervisor push/webhook model where supported; throttle polling per VM \\
+\end{longtable}
+
+\subsection{Open Questions}
+
+\begin{itemize}
+  \item Which hypervisor platform(s) must be supported for the initial deployment --- VMware vSphere, Proxmox, OpenStack, or other?
+  \item What is the institutional SSO provider --- Shibboleth, Azure AD, Okta? What attributes does it expose for role mapping?
+  \item Should quota policies be configurable by instructors for their course, or exclusively by system admins?
+  \item What is the defined grace period between VM expiration and automatic decommissioning?
+  \item Are there regulatory or institutional data-retention requirements for audit logs beyond 1 year?
+  \item Should the extension request flow require admin approval, or can it be auto-approved within certain bounds?
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Testability and Traceability}
+
+\subsection{Requirement Traceability}
+
+\begin{tabularx}{\linewidth}{L{3.5cm} L{5cm} L{5cm}}
+  \toprule
+  \textbf{Requirement ID} & \textbf{Story/Use Case} & \textbf{Planned Test ID} \\
+  \midrule
+  FR-REQ-001 & US-REQ-001, UC-01         & TC-REQ-001, TC-REQ-002 \\
+  FR-REQ-002 & US-REQ-005, US-REQ-006, UC-02 & TC-REQ-003, TC-REQ-004, TC-REQ-005 \\
+  FR-QUOTA-001 & US-REQ-001                & TC-QUOTA-001 \\
+  FR-MON-001 & US-REQ-002, US-MON-001    & TC-MON-001 \\
+  FR-MON-002 & US-MON-001                & TC-MON-002 \\
+  FR-LIFE-001 & UC-03                     & TC-LIFE-001, TC-LIFE-002 \\
+  FR-LIFE-002 & US-LIFE-001, UC-03         & TC-LIFE-003 \\
+  FR-REQ-003 & US-REQ-003                & TC-REQ-006 \\
+  FR-NOTIF-001 & US-LIFE-001, US-REQ-004    & TC-USER-001 \\
+  FR-AUDIT-001 & UC-01, UC-02, UC-03       & TC-AUDIT-001 \\
+  FR-USER-001 & US-AUTH-001                & TC-AUTH-001 \\
+  \bottomrule
+\end{tabularx}
+
+\subsection{Initial Manual Test Plan}
+
+\begin{longtable}{L{2cm} L{3cm} L{3cm} L{3.5cm} L{3cm}}
+  \toprule
+  \textbf{Test ID} & \textbf{Scenario} & \textbf{Preconditions} & \textbf{Steps} & \textbf{Expected Result} \\
+  \midrule
+  \endfirsthead
+  \toprule
+  \textbf{Test ID} & \textbf{Scenario} & \textbf{Preconditions} & \textbf{Steps} & \textbf{Expected Result} \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+
+  TC-REQ-001 & Student submits a valid VM request & Student authenticated; quota not exceeded & 1. Navigate to Request VM. 2. Fill in all required fields with valid values. 3. Click Submit. & Request created in ``Pending'' state; confirmation shown; appears in admin queue \\
+  \addlinespace
+  TC-REQ-002 & Student submits request with missing required fields & Student authenticated & 1. Navigate to Request VM. 2. Leave vCPU field blank. 3. Click Submit. & Inline validation error shown; form not submitted \\
+  \addlinespace
+  TC-REQ-003 & Admin approves a pending VM request & Pending request exists; admin authenticated & 1. Navigate to approval queue. 2. Select a request. 3. Click Approve. & VM transitions to ``Provisioning''; student notified; request leaves queue \\
+  \addlinespace
+  TC-REQ-004 & Admin rejects a pending VM request with reason & Pending request exists; admin authenticated & 1. Select a request. 2. Enter rejection reason. 3. Click Reject. & Request marked ``Rejected''; student notified with reason; VM not provisioned \\
+  \addlinespace
+  TC-REQ-005 & Admin approves request with custom expiration date & Pending request exists & 1. Open request. 2. Set custom expiration date. 3. Approve. & VM expires at the custom date, not the default policy date \\
+  \addlinespace
+  TC-QUOTA-001 & Quota enforcement blocks over-limit request & Student has reached their vCPU quota & 1. Attempt to submit a VM request that would exceed quota. & Submission blocked; quota-exceeded error message displayed \\
+  \addlinespace
+  TC-MON-001 & Student dashboard shows correct VM statuses & Student has VMs in multiple states & 1. Log in as student. 2. Navigate to dashboard. & All student VMs listed with accurate state badges \\
+  \addlinespace
+  TC-MON-002 & VM vitals update on detail page & VM in ``Running'' state & 1. Navigate to VM detail page. 2. Wait 60 seconds. & CPU, RAM, disk, network metrics refresh without manual page reload \\
+  \addlinespace
+  TC-LIFE-001 & VM transitions to ``Expiring'' state at expiration time & Running VM with expiration set 1 minute in the future & 1. Wait for expiration time to pass. & VM state changes to ``Expiring''; student receives expiration notification \\
+  \addlinespace
+  TC-LIFE-002 & VM decommissioned after grace period & VM in ``Expired'' state; grace period elapsed & 1. Observe system after grace period. & VM transitions to ``Decommissioned''; hypervisor resources released; student notified \\
+  \addlinespace
+  TC-LIFE-003 & Expiration warning notification sent 48 hours before expiry & Running VM expiring in exactly 48 hours & 1. Observe notification system at the 48-hour mark. & Student receives both email and in-app notification with expiration details \\
+  \addlinespace
+  TC-REQ-006 & Student submits extension request & Running VM approaching expiration & 1. Navigate to VM detail. 2. Click Request Extension. 3. Submit. & Extension request appears in admin approval queue; VM not yet decommissioned \\
+  \addlinespace
+  TC-USER-001 & Role-based access: student cannot access admin queue & Student authenticated & 1. Attempt to navigate directly to admin approval queue URL. & Access denied; user redirected to student dashboard \\
+  \addlinespace
+  TC-AUDIT-001 & Audit log records VM approval event & Admin approves a VM request & 1. Approve a request. 2. Navigate to audit log as System Admin. & Log entry exists showing actor, action (VM\_APPROVED), target VM ID, and timestamp \\
+  \addlinespace
+  TC-AUTH-001 & SSO login routes user to correct role dashboard & Institutional SSO configured; test accounts for each role available & 1. Log in as Student via SSO. 2. Log in as LabAdmin via SSO. & Student sees student dashboard; LabAdmin sees admin dashboard; roles assigned from directory \\
+\end{longtable}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Lab 2 Submission Checklist}
+
+\begin{itemize}[label={}]
+  \item[\checked] Problem statement and scope are clear.
+  \item[\checked] Minimum 12 user stories with acceptance criteria. \textit{(15 provided)}
+  \item[\checked] Functional requirements table is complete. \textit{(15 FRs provided)}
+  \item[\unchecked] Data model and data dictionary are attached. \textit{(ER diagram deferred to next revision)}
+  \item[\unchecked] Minimum 5 wireframes or flow screens included. \textit{(7 screens planned; deferred to next revision --- v0.1)}
+  \item[\checked] NFR section is completed. \textit{(10 NFRs provided)}
+  \item[\checked] Risks and open questions are documented.
+  \item[\checked] Initial manual test plan (15 cases) is included.
+\end{itemize}
+
+\end{document}
