@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down proto frontend api orchestrator test lint clean
+.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean
 
 # Development environment
 dev-up:
@@ -9,6 +9,10 @@ dev-down:
 
 dev: dev-up
 	@echo "Dev services started (Postgres, NATS, Keycloak)"
+
+# Full local deployment (infra + all app services)
+deploy-local:
+	./scripts/deploy-local.sh
 
 # Code generation
 proto:
@@ -32,7 +36,7 @@ api-dev:
 	cd services/api-gateway && poetry run uvicorn app.main:app --reload --port 8000
 
 api-migrate:
-	cd services/api-gateway && poetry run alembic upgrade head
+	cd services/api-gateway && PYTHONPATH=. poetry run alembic upgrade head
 
 # Orchestrator
 orchestrator-build:
