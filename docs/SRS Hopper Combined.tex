@@ -20,12 +20,6 @@
 \usepackage{multirow}
 \usepackage{enumitem}
 \usepackage{hyperref}
-\usepackage{graphicx}
-%% Figures (wireframes, ER) ship with the original Four-Eyed Raven bundle; placeholders if PNGs absent
-\newcommand{\hopperimg}[2][]{\IfFileExists{#2}{\includegraphics[#1]{#2}}{\par\medskip\fbox{\begin{minipage}{0.95\textwidth}\centering\small Placeholder: add \texttt{#2} beside this \texttt{.tex} to render the figure.\end{minipage}}\medskip\par}}
-\usepackage{float}
-\usepackage{caption}
-\usepackage{subcaption}
 \usepackage{amsmath}
 \usepackage{listings}
 \usepackage{tikz}
@@ -777,31 +771,18 @@ The main relationships are as follows:
     constraints that would block cascading deletes on other tables.
 \end{itemize}
 
-The logical ER diagram below (Figure~\ref{fig:er}) shows these entities and their relationships using standard crow's foot notation.
-
-\begin{figure}[H]
-\centering
-\hopperimg[width=0.98\textwidth]{er.png}
-\caption{Hopper Cloud - Logical Entity-Relationship Diagram}
-\label{fig:er}
-\end{figure}
+Entity relationships are described in the preceding narrative; this revision does not include a graphical ER diagram (earlier mockup figures omitted).
 
 \newpage
 \section{UI and UX Requirements}
 
 \subsection{Wireframes}
 
-The following six screens represent the primary user flows for the Hopper Cloud student portal. Screen layouts are described below:
+The following six screens represent the primary user flows for the Hopper Cloud student portal. Illustrative mockup images are omitted; layouts are specified in prose below.
 
 \subsubsection*{Screen 1 - Login Page}
 A minimal, clean login screen with the Hopper Cloud logo, a ``Sign in with University SSO'' button (Keycloak OIDC), and a small note about what the platform is. No password field is shown - clicking the button redirects to the Keycloak authentication flow which brokers to the university's Shibboleth IdP. Error states for failed login attempts are displayed inline beneath the button.
 
-\begin{figure}[H]
-\centering
-\hopperimg[width=\textwidth]{login.png}
-\caption{Wireframe - Screen 1 (Login Page)}
-\end{figure}
-\newpage
 \subsubsection*{Screen 2 - Student Dashboard (Home)}
 The main landing page after login. Shows:
 \begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
@@ -811,12 +792,6 @@ The main landing page after login. Shows:
   \item A recent session history table (last 5 sessions) with links to full history.
 \end{itemize}
 
-\begin{figure}[H]
-\centering
-\hopperimg[width=0.95\textwidth]{dashboard.png}
-\caption{Wireframe - Screen 2 (Student Dashboard)}
-\end{figure}
-\newpage
 \subsubsection*{Screen 3 - Launch Session Modal/Page}
 Triggered when a student clicks ``Launch'' on a GPU profile. Shows:
 \begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
@@ -826,12 +801,6 @@ Triggered when a student clicks ``Launch'' on a GPU profile. Shows:
   \item Once ready: a copyable SSH command string and a session timer.
 \end{itemize}
 
-\begin{figure}[H]
-\centering
-\hopperimg[width=\textwidth]{launch.png}
-\caption{Wireframe - Screen 3 (Launch Session)}
-\end{figure}
-\newpage
 \subsubsection*{Screen 4 - Active Session View}
 A dedicated view for an in-progress session showing:
 \begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
@@ -842,20 +811,9 @@ A dedicated view for an in-progress session showing:
   \item A credit warning banner that appears when projected time remaining drops below 10 minutes.
 \end{itemize}
 
-\begin{figure}[H]
-\centering
-\hopperimg[width=0.95\textwidth]{active_session.png}
-\caption{Wireframe - Screen 4 (Active Session View)}
-\end{figure}
-\newpage
 \subsubsection*{Screen 5 - Session History Page}
 A full paginated table of all past sessions for the authenticated student. Columns include: Session ID (truncated), GPU type, Start time, End time, Duration, Credits consumed, Termination reason (manual, expired, credit exhaustion). Filterable by date range and GPU type.
 
-\begin{figure}[H]
-\centering
-\hopperimg[width=0.95\textwidth]{history.png}
-\caption{Wireframe - Screen 5 (Session History)}
-\end{figure}
 \subsubsection*{Screen 6 (Admin) - Admin Dashboard}
 Accessible only to admin-role users. Shows:
 \begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
@@ -864,12 +822,6 @@ Accessible only to admin-role users. Shows:
   \item A user management panel with a credit allocation form.
   \item An audit log view with filtering.
 \end{itemize}
-
-\begin{figure}[H]
-\centering
-\hopperimg[width=0.95\textwidth]{admin.png}
-\caption{Wireframe - Screen 6 (Admin Dashboard)}
-\end{figure}
 
 \subsection{UX and Accessibility Baseline}
 
