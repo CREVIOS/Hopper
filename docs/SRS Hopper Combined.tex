@@ -49,7 +49,7 @@
   urlcolor     = hoppercyan,
   citecolor    = hopperaccent,
   pdftitle     = {Hopper -- Combined Software Requirements Specification},
-  pdfauthor    = {Four-Eyed Raven and VMpire (Byte Me)},
+  pdfauthor    = {Four-Eyed Raven and Byte Me},
   bookmarksnumbered = true,
   bookmarksopen     = true,
 }
@@ -113,7 +113,7 @@
   {\fontsize{15}{18}\selectfont\itshape A VM / Compute Provisioning Panel (Combined SRS)}\\[1.2cm]
   {\Large\textbf{Four-Eyed Raven}\par}
   \vspace{0.7cm}
-  {\Large\textbf{VMpire (Byte Me)}\par}
+  {\Large\textbf{Byte Me}\par}
   \vspace{1.2cm}
 
 
@@ -141,7 +141,7 @@
 \subsection{Metadata}
 
 \begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
-    Team Name:       & Four-Eyed Raven \& VMpire (Byte Me) --- combined project team \\
+    Team Name:       & Four-Eyed Raven \& Byte Me --- collaborating on \textbf{Hopper} \\
     Project Name:    & Hopper (Hopper Cloud) --- institutional compute provisioning \\
   Repository URL:  & \texttt{https://github.com/CREVIOS/Hopper} \\
     SRS Version:     & 0.2 (combined) \\
@@ -159,10 +159,10 @@
     Author (Four-Eyed Raven) & {Md.\ Sadek Hossain Asif} & Roll 15 / asifsadek509@gmail.com & April 2026 \\
     Author (Four-Eyed Raven) & {Tanzila Khan} & Roll 25 / tanzila011001@gmail.com & April 2026 \\
     Author (Four-Eyed Raven) & {Taif Ahmed Turjo} & Roll 45 / ahmedtaif437@gmail.com & April 2026 \\
-    Author (Team 2 --- VMpire) & {Anindya Kundu} & 2021-911-185 / sanindya50@gmail.com & April 2026 \\
-    Author (Team 2 --- VMpire) & {Kabya Mithun Saha} & 2021-111-192 / kabyasaha1812@gmail.com & April 2026 \\
-    Author (Team 2 --- VMpire) & {Md.\ Muhaiminul Islam Ninad} & 2021-111-219 / ninadgns@gmail.com & April 2026 \\
-    Author (Team 2 --- VMpire) & {Fayek Ahmed} & 2021-511-233 / fayekahmedrahat90@gmail.com & April 2026 \\
+    Author (Byte Me) & {Anindya Kundu} & 2021-911-185 / sanindya50@gmail.com & April 2026 \\
+    Author (Byte Me) & {Kabya Mithun Saha} & 2021-111-192 / kabyasaha1812@gmail.com & April 2026 \\
+    Author (Byte Me) & {Md.\ Muhaiminul Islam Ninad} & 2021-111-219 / ninadgns@gmail.com & April 2026 \\
+    Author (Byte Me) & {Fayek Ahmed} & 2021-511-233 / fayekahmedrahat90@gmail.com & April 2026 \\
   Team Reviewer   & {TBD}       & ---    & --- 
 \end{tabularx}
 
@@ -172,22 +172,22 @@
   \textbf{Version} & \textbf{Date} & \textbf{Author} & \textbf{Changes} \\
   \midrule
   0.1 & March 2025 & Four-Eyed Raven & Initial draft (Hopper Cloud SRS, Lab 2) \\
-  0.1 & 2026-03-07 & VMpire (Byte Me) & Initial draft (VMpire SRS, Lab 2) \\
-  0.2 & April 2026 & Combined team & Merged SRS aligned with \texttt{docs/SDD.md} v0.2; dual FR/NFR sets; Kubernetes as provisioning platform \\
+  0.1 & 2026-03-07 & Byte Me & Initial draft (Byte Me SRS, Lab 2) \\
+  0.2 & April 2026 & Combined team & Merged SRS aligned with \texttt{docs/SDD.md} v0.2; unified FR/NFR tables; Kubernetes as provisioning platform \\
 \end{tabularx}
 
 \newpage
 \section{Joint Team Charter and SDD Alignment}
 
 \begin{notebox}[Relationship to \texttt{docs/SDD.md}]
-This document is the \textbf{combined Software Requirements Specification} for \textbf{Hopper}. The \textbf{Software Design Document} (\texttt{docs/SDD.md}, v0.2) records architecture, interfaces, traceability to code paths, and operational design. Where this SRS and the SDD differ in level of detail, the SDD reflects the \textbf{as-built} implementation in \texttt{https://github.com/CREVIOS/Hopper}; this SRS preserves \textbf{normative requirements} from both predecessor teams.
+This document is the \textbf{combined Software Requirements Specification} for \textbf{Hopper}. The \textbf{Software Design Document} (\texttt{docs/SDD.md}, v0.2) records architecture, interfaces, traceability to code paths, and operational design. Where this SRS and the SDD differ in level of detail, the SDD reflects the \textbf{as-built} implementation in \texttt{https://github.com/CREVIOS/Hopper}; this SRS preserves \textbf{normative requirements} from \textbf{Four-Eyed Raven} and \textbf{Byte Me}.
 \end{notebox}
 
 \subsection{Governance}
-\textbf{Four-Eyed Raven} originated the Hopper Cloud vision and primary GPU-centric requirements (\textbf{FR-HC-*}). \textbf{VMpire (Byte Me)} contributed administrative and lifecycle requirements from the VMpire scope (\textbf{FR-REQ-*}, \textbf{FR-QUOTA-*}, etc.). The \textbf{combined product} is a single repository; provisioning is standardized on \textbf{Kubernetes} and the Hopper orchestrator (see SDD).
+\textbf{Hopper} (Hopper Cloud) is the product. \textbf{Four-Eyed Raven} established the original GPU-centric platform vision and requirements (\textbf{FR-HC-*}). \textbf{Byte Me} joined the project and brought administrative and lifecycle requirements (\textbf{FR-REQ-*}, \textbf{FR-QUOTA-*}, etc.). Both teams work from a \textbf{single repository}; provisioning is standardized on \textbf{Kubernetes} and the Hopper orchestrator (see SDD).
 
 \subsection{Design resolution (Kubernetes vs.\ external hypervisor)}
-Earlier VMpire SRS text assumed REST integration with a commercial hypervisor. The \textbf{combined project} implements workloads as \textbf{Kubernetes pods} and services. Requirements that refer to ``VM'' or ``hypervisor'' are interpreted as \textbf{session workloads} and the \textbf{Kubernetes API}, unless explicitly marked as a future adapter.
+Earlier Byte Me SRS text assumed REST integration with a commercial hypervisor. The \textbf{Hopper} implementation uses \textbf{Kubernetes pods} and services for workloads. Requirements that refer to ``VM'' or ``hypervisor'' are interpreted as \textbf{session workloads} and the \textbf{Kubernetes API}, unless explicitly marked as a future adapter.
 
 \newpage
 \section{Problem Definition}
@@ -241,9 +241,9 @@ Hopper Cloud solves all of these at once: it democratizes access to powerful com
   \item Automate session lifecycle management - provisioning, credit metering, expiration, and cleanup - through the Reaper service.
   \item Maintain a full audit log of all sessions, credit transactions, and authentication events in PostgreSQL.
   \item Give administrators visibility into cluster health, GPU utilization, and per-user usage through a management interface.
-  \item \textbf{(VMpire)} Provide optional \textbf{approval workflows} so lab administrators may approve or reject provisioning requests before resources are created, when institutional policy requires it.
-  \item \textbf{(VMpire)} Support \textbf{quota policies} scoped per user, course, or department (beyond credit-based metering alone).
-  \item \textbf{(VMpire)} Provide \textbf{real-time vitals} (CPU, memory, disk, network where available) and \textbf{expiration awareness} for all student workloads visible in the portal.
+  \item \textbf{(Byte Me)} Provide optional \textbf{approval workflows} so lab administrators may approve or reject provisioning requests before resources are created, when institutional policy requires it.
+  \item \textbf{(Byte Me)} Support \textbf{quota policies} scoped per user, course, or department (beyond credit-based metering alone).
+  \item \textbf{(Byte Me)} Provide \textbf{real-time vitals} (CPU, memory, disk, network where available) and \textbf{expiration awareness} for all student workloads visible in the portal.
 \end{itemize}
 
 \subsubsection*{Non-Goals}
@@ -257,8 +257,8 @@ Hopper Cloud solves all of these at once: it democratizes access to powerful com
   \item Custom container image building or Docker registry management is \textbf{not} included in scope for this version.
 \end{itemize}
 
-\begin{notebox}[Withdrawn non-goal from prior standalone VMpire SRS]
-The standalone VMpire SRS stated that supporting Kubernetes/container workloads was out of scope. For the \textbf{combined Hopper} project, \textbf{Kubernetes is the implementation platform}; that prior non-goal is \textbf{withdrawn}.
+\begin{notebox}[Withdrawn non-goal from prior Byte Me SRS]
+The earlier Byte Me SRS stated that supporting Kubernetes/container workloads was out of scope. For \textbf{Hopper}, \textbf{Kubernetes is the implementation platform}; that prior non-goal is \textbf{withdrawn}.
 \end{notebox}
 
 \newpage
@@ -279,8 +279,8 @@ The standalone VMpire SRS stated that supporting Kubernetes/container workloads 
   \item \textbf{Audit Logging:} Full audit trail in PostgreSQL of all authentication events, session lifecycle transitions, and credit transactions.
   \item \textbf{Admin Interface:} Basic administrator dashboard for credit management, user management, and cluster-level GPU utilization view.
   \item \textbf{Notification Service:} Email/webhook notifications for session expiration warnings and completion events.
-  \item \textbf{(VMpire)} Student and administrator views for \textbf{request queues}, \textbf{lifecycle extensions}, and \textbf{global workload overview} (phased delivery per SDD).
-  \item \textbf{(VMpire)} \textbf{Quota policy} definitions and enforcement hooks aligned with course/department structure (may reuse credit ledger and Kubernetes quotas).
+  \item \textbf{(Byte Me)} Student and administrator views for \textbf{request queues}, \textbf{lifecycle extensions}, and \textbf{global workload overview} (phased delivery per SDD).
+  \item \textbf{(Byte Me)} \textbf{Quota policy} definitions and enforcement hooks aligned with course/department structure (may reuse credit ledger and Kubernetes quotas).
 \end{itemize}
 
 \subsection{Out of Scope}
@@ -410,6 +410,8 @@ The standalone VMpire SRS stated that supporting Kubernetes/container workloads 
   \Wont\ = Won't Have (out of scope for v1)
 \end{notebox}
 
+\noindent All functional requirements are listed in \textbf{one table} below. Requirement IDs keep their original prefixes (\texttt{FR-HC-*} for the core platform and \texttt{FR-REQ-*}, \texttt{FR-QUOTA-*}, \texttt{FR-MON-*}, \texttt{FR-LIFE-*}, \texttt{FR-NOTIF-*}, \texttt{FR-AUDIT-*}, \texttt{FR-USER-*}, \texttt{FR-AUTH-*} for administrative and lifecycle behaviour). Where text refers to ``VM'' or ``hypervisor,'' \textbf{Hopper} maps these to Kubernetes-backed session workloads.
+
 \begin{longtable}{@{}L{2.1cm}L{1.8cm}L{5cm}C{1.4cm}L{5cm}@{}}
   
   \rowcolor{rowalt}  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Priority} & \textbf{Acceptance Criteria} \\
@@ -449,42 +451,21 @@ The standalone VMpire SRS stated that supporting Kubernetes/container workloads 
   FR-HC-25 & User Portal & The system shall provide a responsive SvelteKit web portal accessible from modern desktop browsers. & \Must & Portal is usable on Chrome, Firefox, and Safari; no critical layout breakage at 1280px or wider. \\
   \rowcolor{rowalt}  FR-HC-26 & User Auth & The system shall provide an explicit logout flow that invalidates the active web session and revokes access to protected routes. & \Must & Calling logout clears the session token/cookie; subsequent access to protected endpoints returns HTTP 401 and redirects to login. \\
   FR-HC-27 & Session Mgmt & The system shall allow a student with sufficient credits to extend an active session before TTL expiry, within configured extension limits. & \Should & Clicking ``Extend Session'' updates \texttt{expires\_at} without restarting the pod; extension is rejected with a clear error if credits are insufficient or max extension is reached. \\
-\end{longtable}
-
-\subsection{Administrative and lifecycle requirements (VMpire collaboration)}
-
-Requirement ID format as in the VMpire SRS: \texttt{FR-<MODULE>-\#\#\#}. Priority: \textbf{M} = Must, \textbf{S} = Should. Where requirements refer to ``VM'' or ``hypervisor,'' the \textbf{combined product} maps these to Kubernetes-backed sessions (see Joint Team Charter).
-
-\begin{longtable}{@{}L{2.2cm}L{2.1cm}L{4.8cm}C{1.1cm}L{5.2cm}@{}}
-  \rowcolor{rowalt}  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Pri.} & \textbf{Acceptance Criteria} \\
-  \midrule
-  \endfirsthead
-  \rowcolor{rowalt}  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Pri.} & \textbf{Acceptance Criteria} \\
-  \midrule
-  \endhead
-  \endfoot
-  FR-REQ-001 & VM Request & Students shall be able to submit a workload provisioning request specifying OS, CPU, RAM, and storage requirements (or plan). & \textbf{M} & Request is recorded and, where approval is enabled, appears in an admin queue. \\
-  \rowcolor{rowalt}
-  FR-REQ-002 & Approval Workflow & Lab Administrators shall be able to approve or reject pending requests with an optional comment. & \textbf{M} & Approved requests trigger provisioning; rejected requests notify the student with a reason. \\
-  FR-QUOTA-001 & Quota Enforcement & The system shall enforce per-user resource quotas and block requests that exceed defined limits. & \textbf{M} & Requests exceeding quota are rejected with a clear message. \\
-  \rowcolor{rowalt}
-  FR-MON-001 & VM Dashboard & Students shall have a dashboard displaying all their workloads with current status. & \textbf{M} & Dashboard loads within 5 seconds under normal conditions. \\
-  FR-MON-002 & Vitals Monitoring & The system shall collect and display real-time CPU, RAM, disk, and network metrics per workload. & \textbf{M} & Vitals update at least every 60 seconds (implementation may use finer intervals). \\
-  \rowcolor{rowalt}
-  FR-LIFE-001 & Lifecycle Management & Workloads shall transition through defined states (e.g., Pending $\to$ Provisioning $\to$ Running $\to$ Stopping $\to$ Terminated). & \textbf{M} & State transitions follow lifecycle rules and are visible in the UI. \\
-  FR-LIFE-002 & Expiration Scheduling & Administrators shall configure expiration policies (fixed time or duration-based). & \textbf{M} & Workloads expire per policy; students notified per NFR targets. \\
-  \rowcolor{rowalt}
-  FR-REQ-003 & Extension Requests & Students may request a lifecycle extension before expiration. & \textbf{S} & Extension requests enter a queue; approval extends expiry. \\
-  FR-NOTIF-001 & Notifications & Email and in-app notifications for status, quota warnings, and expiration. & \textbf{M} & Notifications delivered within 2 minutes of the triggering event. \\
-  \rowcolor{rowalt}
-  FR-AUDIT-001 & Audit Log & Immutable log of provisioning, lifecycle, and permission events. & \textbf{M} & Admins can filter and review audit entries. \\
-  FR-QUOTA-002 & Quota Management & System Administrators define and modify quota policies per user, course, or department. & \textbf{M} & Policy changes apply to subsequent requests. \\
-  \rowcolor{rowalt}
-  FR-USER-001 & Role-Based Access & Features and data are restricted by authenticated role. & \textbf{M} & No privilege escalation beyond assigned role. \\
-  FR-AUTH-001 & SSO Integration & Authentication via institutional SSO (SAML/LDAP/OIDC via Keycloak). & \textbf{M} & Users log in via SSO; roles mapped from directory where applicable. \\
-  \rowcolor{rowalt}
-  FR-MON-003 & Admin VM Overview & Lab Administrators see all workloads across users with vitals and lifecycle state. & \textbf{M} & Global view supports filtering. \\
-  FR-LIFE-003 & Decommissioning & Expired workloads are decommissioned and resources released (Kubernetes delete semantics). & \textbf{M} & Resources freed within 24 hours of expiration (or policy grace period). \\
+  \rowcolor{rowalt}  FR-REQ-001 & VM Request & Students shall be able to submit a workload provisioning request specifying OS, CPU, RAM, and storage requirements (or plan). & \Must & Request is recorded and, where approval is enabled, appears in an admin queue. \\
+  FR-REQ-002 & Approval Workflow & Lab Administrators shall be able to approve or reject pending requests with an optional comment. & \Must & Approved requests trigger provisioning; rejected requests notify the student with a reason. \\
+  \rowcolor{rowalt}  FR-QUOTA-001 & Quota Enforcement & The system shall enforce per-user resource quotas and block requests that exceed defined limits. & \Must & Requests exceeding quota are rejected with a clear message. \\
+  FR-MON-001 & VM Dashboard & Students shall have a dashboard displaying all their workloads with current status. & \Must & Dashboard loads within 5 seconds under normal conditions. \\
+  \rowcolor{rowalt}  FR-MON-002 & Vitals Monitoring & The system shall collect and display real-time CPU, RAM, disk, and network metrics per workload. & \Must & Vitals update at least every 60 seconds (implementation may use finer intervals). \\
+  FR-LIFE-001 & Lifecycle Management & Workloads shall transition through defined states (e.g., Pending $\to$ Provisioning $\to$ Running $\to$ Stopping $\to$ Terminated). & \Must & State transitions follow lifecycle rules and are visible in the UI. \\
+  \rowcolor{rowalt}  FR-LIFE-002 & Expiration Scheduling & Administrators shall configure expiration policies (fixed time or duration-based). & \Must & Workloads expire per policy; students notified per NFR targets. \\
+  FR-REQ-003 & Extension Requests & Students may request a lifecycle extension before expiration. & \Should & Extension requests enter a queue; approval extends expiry. \\
+  \rowcolor{rowalt}  FR-NOTIF-001 & Notifications & Email and in-app notifications for status, quota warnings, and expiration. & \Must & Notifications delivered within 2 minutes of the triggering event. \\
+  FR-AUDIT-001 & Audit Log & Immutable log of provisioning, lifecycle, and permission events. & \Must & Admins can filter and review audit entries. \\
+  \rowcolor{rowalt}  FR-QUOTA-002 & Quota Management & System Administrators define and modify quota policies per user, course, or department. & \Must & Policy changes apply to subsequent requests. \\
+  FR-USER-001 & Role-Based Access & Features and data are restricted by authenticated role. & \Must & No privilege escalation beyond assigned role. \\
+  \rowcolor{rowalt}  FR-AUTH-001 & SSO Integration & Authentication via institutional SSO (SAML/LDAP/OIDC via Keycloak). & \Must & Users log in via SSO; roles mapped from directory where applicable. \\
+  FR-MON-003 & Admin VM Overview & Lab Administrators see all workloads across users with vitals and lifecycle state. & \Must & Global view supports filtering. \\
+  \rowcolor{rowalt}  FR-LIFE-003 & Decommissioning & Expired workloads are decommissioned and resources released (Kubernetes delete semantics). & \Must & Resources freed within 24 hours of expiration (or policy grace period). \\
 \end{longtable}
 
 \newpage
@@ -526,7 +507,7 @@ Requirement ID format as in the VMpire SRS: \texttt{FR-<MODULE>-\#\#\#}. Priorit
   \rowcolor{rowalt}  US-HC-20 & student & get guided onboarding when I first use the platform & I can complete setup and launch my first session without external help & On first login, a guided flow explains credit balance, GPU tier selection, SSH connection steps, and successfully ends after launching one session. \\
 \end{longtable}
 
-\subsubsection{User stories (VMpire collaboration)}
+\subsubsection{User stories (Byte Me collaboration)}
 
 \begin{longtable}{@{}L{2.1cm}L{2.2cm}L{3.6cm}L{3cm}L{3.5cm}@{}}
   \rowcolor{rowalt}  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
@@ -664,7 +645,7 @@ Requirement ID format as in the VMpire SRS: \texttt{FR-<MODULE>-\#\#\#}. Priorit
 \end{tabularx}
 
 \vspace{1em}
-\subsubhead{UC-BM-01: Student Submits Provisioning Request (VMpire collaboration)}
+\subsubhead{UC-BM-01: Student Submits Provisioning Request (Byte Me collaboration)}
 
 \begin{itemize}[leftmargin=1.5em]
   \item \textbf{Preconditions:} Student is authenticated; quotas are not exceeded.
@@ -673,16 +654,16 @@ Requirement ID format as in the VMpire SRS: \texttt{FR-<MODULE>-\#\#\#}. Priorit
   \item \textbf{Postconditions:} Pending request exists or provisioning starts if auto-approved.
 \end{itemize}
 
-\subsubhead{UC-BM-02: Administrator Approves Request (VMpire collaboration)}
+\subsubhead{UC-BM-02: Administrator Approves Request (Byte Me collaboration)}
 
 \begin{itemize}[leftmargin=1.5em]
   \item \textbf{Preconditions:} Pending request exists; administrator is authenticated.
-  \item \textbf{Main flow:} Admin opens queue; reviews; optionally sets expiry; Approve triggers Hopper orchestration (\textbf{Kubernetes API}, not a third-party hypervisor API in the combined design).
+  \item \textbf{Main flow:} Admin opens queue; reviews; optionally sets expiry; Approve triggers Hopper orchestration (\textbf{Kubernetes API}, not a third-party hypervisor API in the Hopper design).
   \item \textbf{Exceptions:} Reject with reason; provisioning failure $\rightarrow$ alert and retry policy per SDD.
   \item \textbf{Postconditions:} Workload Running; student notified with connection details.
 \end{itemize}
 
-\subsubhead{UC-BM-03: Expiration and Decommissioning (VMpire collaboration)}
+\subsubhead{UC-BM-03: Expiration and Decommissioning (Byte Me collaboration)}
 
 \begin{itemize}[leftmargin=1.5em]
   \item \textbf{Preconditions:} Running workload has configured expiration.
@@ -838,6 +819,8 @@ Accessible only to admin-role users. Shows:
 \newpage
 \section{Non-Functional Requirements}
 
+\noindent All non-functional requirements are listed in \textbf{one table} below. IDs use the \texttt{NFR-HC-*} prefix for platform-wide targets and \texttt{NFR-PERF-*}, \texttt{NFR-SEC-*}, \texttt{NFR-AVAIL-*}, \ldots\ for additional themes. Where two rows address the same concern, apply the \textbf{stricter} measurable target unless waived by stakeholders.
+
 \begin{longtable}{@{}L{2.4cm}L{2.5cm}L{5.3cm}L{4.5cm}@{}}
   
   \rowcolor{rowalt}  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target / Metric} \\
@@ -868,35 +851,16 @@ Accessible only to admin-role users. Shows:
   \rowcolor{rowalt}  NFR-HC-16 & Compliance & All user data and workload data shall remain within the institutional network boundary. & No egress routes exist for student PVCs or PostgreSQL data outside the institutional LAN. \\
   NFR-HC-17 & Reliability & The Reaper Service shall be resilient to transient K8s API failures. & Reaper retries failed deletions with exponential backoff (max 3 attempts) before alerting admins. \\
   \rowcolor{rowalt}  NFR-HC-18 & Reliability & The platform shall recover automatically from a single control-plane service crash within a bounded recovery time objective (RTO). & API/Orchestrator service restart and readiness recovery within $\leq 5$ minutes, with no loss of committed credit ledger entries. \\
-\end{longtable}
-
-\subsection{Non-functional requirements (VMpire collaboration)}
-
-NFR ID format: \texttt{NFR-<MODULE>-\#\#\#}. These complement NFR-HC-*; where both apply, the \textbf{stricter} measurable target should be used unless waived by stakeholders.
-
-\begin{longtable}{@{}L{2.5cm}L{2.4cm}L{5cm}L{4.5cm}@{}}
-  \rowcolor{rowalt}  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target/Metric} \\
-  \midrule
-  \endfirsthead
-  \rowcolor{rowalt}  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target/Metric} \\
-  \midrule
-  \endhead
-  \endfoot
   NFR-PERF-001 & Performance & Dashboard and vitals pages load within acceptable time. & Page load $\leq 3$ seconds for up to 200 concurrent users. \\
-  \rowcolor{rowalt}
-  NFR-PERF-002 & Performance & Vitals refresh frequently enough for near-real-time state. & Vitals interval $\leq 60$ seconds (finer intervals allowed). \\
+  \rowcolor{rowalt}  NFR-PERF-002 & Performance & Vitals refresh frequently enough for near-real-time state. & Vitals interval $\leq 60$ seconds (finer intervals allowed). \\
   NFR-AVAIL-001 & Availability & Portal available during core academic hours. & 99.5\% uptime Mon--Fri 07:00--22:00 local time. \\
-  \rowcolor{rowalt}
-  NFR-SEC-001 & Security & All data in transit encrypted. & TLS 1.2+ on all external endpoints. \\
+  \rowcolor{rowalt}  NFR-SEC-001 & Security & All data in transit encrypted. & TLS 1.2+ on all external endpoints. \\
   NFR-SEC-002 & Security & Authentication relies on institutional SSO; no local password storage for students. & No plaintext passwords in application DB. \\
-  \rowcolor{rowalt}
-  NFR-SEC-003 & Security & RBAC prevents privilege escalation. & Verified by security review / pen-test. \\
+  \rowcolor{rowalt}  NFR-SEC-003 & Security & RBAC prevents privilege escalation. & Verified by security review / pen-test. \\
   NFR-AUDIT-001 & Auditability & Provisioning and lifecycle events logged immutably. & 100\% of state transitions captured; retention $\geq 1$ year (policy TBD). \\
-  \rowcolor{rowalt}
-  NFR-SCALE-001 & Scalability & Support institution-scale concurrent usage. & Targets per deployment; see SDD for sizing. \\
+  \rowcolor{rowalt}  NFR-SCALE-001 & Scalability & Support institution-scale concurrent usage. & Targets per deployment; see SDD for sizing. \\
   NFR-USE-001 & Usability & New students complete first request without training. & $\geq 80\%$ complete first request in $\leq 5$ minutes in usability testing. \\
-  \rowcolor{rowalt}
-  NFR-MAINT-001 & Maintainability & Infrastructure integration is layered (Kubernetes adapter, APIs). & Changes localized per SDD modular boundaries. \\
+  \rowcolor{rowalt}  NFR-MAINT-001 & Maintainability & Infrastructure integration is layered (Kubernetes adapter, APIs). & Changes localized per SDD modular boundaries. \\
 \end{longtable}
 
 \newpage
@@ -977,8 +941,8 @@ NFR ID format: \texttt{NFR-<MODULE>-\#\#\#}. These complement NFR-HC-*; where bo
   \rowcolor{rowalt}  FR-HC-27 & US-HC-05 & TC-HC-27 \\
 \end{longtable}
 
-\subsubsection{VMpire traceability (summary)}
-Full FR-to-test mapping from the VMpire lineage SRS is preserved in the repository file \texttt{docs/SRS  Byte Me} (original filename uses a bat emoji) and summarized in \texttt{docs/SDD.md} (Appendix~A). Planned test IDs include \texttt{TC-REQ-*}, \texttt{TC-QUOTA-*}, \texttt{TC-MON-*}, \texttt{TC-LIFE-*}, and \texttt{TC-AUDIT-*}.
+\subsubsection{Additional FR traceability (summary)}
+Full FR-to-test mapping for administrative and lifecycle requirement IDs is preserved in the repository file \texttt{docs/SRS  Byte Me} (original filename uses a bat emoji) and summarized in \texttt{docs/SDD.md} (Appendix~A). Planned test IDs include \texttt{TC-REQ-*}, \texttt{TC-QUOTA-*}, \texttt{TC-MON-*}, \texttt{TC-LIFE-*}, and \texttt{TC-AUDIT-*}.
 
 \newpage
 \subsection{Initial Manual Test Plan}
@@ -1029,11 +993,11 @@ Full FR-to-test mapping from the VMpire lineage SRS is preserved in the reposito
 
 \begin{tabularx}{\textwidth}{@{}C{0.5cm}X@{}}
   \cboxd & Problem statement and scope are clear (see \textbf{Problem Definition} and \textbf{Scope and Context}). \\
-  \cboxd & User stories: Four-Eyed Raven set (US-HC-*) plus VMpire set (US-REQ-*, etc.) with acceptance criteria. \\
-  \cboxd & Functional requirements: \textbf{FR-HC-*} (27) and \textbf{VMpire FR-*} block (15 requirements) in \textbf{Functional Requirements}. \\
+  \cboxd & User stories: Four-Eyed Raven set (US-HC-*) plus Byte Me set (US-REQ-*, etc.) with acceptance criteria. \\
+  \cboxd & Functional requirements: single \textbf{Functional Requirements} table (27 \texttt{FR-HC-*} rows and 15 administrative/lifecycle rows: \texttt{FR-REQ-*}, \texttt{FR-QUOTA-*}, \texttt{FR-MON-*}, \texttt{FR-LIFE-*}, \texttt{FR-NOTIF-*}, \texttt{FR-AUDIT-*}, \texttt{FR-USER-*}, \texttt{FR-AUTH-*}). \\
   \cboxd & Data model and data dictionary (\textbf{Data Requirements}); ER diagram may be attached in a later revision. \\
   \cboxd & Wireframes / screens described (\textbf{UI and UX Requirements}). \\
-  \cboxd & NFR: \textbf{NFR-HC-*} (18) and \textbf{VMpire NFR-*} block (11) in \textbf{Non-Functional Requirements}. \\
+  \cboxd & NFR: single \textbf{Non-Functional Requirements} table (18 \texttt{NFR-HC-*} rows and 11 additional rows: \texttt{NFR-PERF-*}, \texttt{NFR-AVAIL-*}, \texttt{NFR-SEC-*}, \texttt{NFR-AUDIT-*}, \texttt{NFR-SCALE-*}, \texttt{NFR-USE-*}, \texttt{NFR-MAINT-*}). \\
   \cboxd & Risks and open questions documented (\textbf{Risks and Open Questions}). \\
   \cboxd & Traceability and manual test plan (\textbf{Testability and Traceability}); extended traceability in \texttt{docs/SDD.md}. \\
 \end{tabularx}
