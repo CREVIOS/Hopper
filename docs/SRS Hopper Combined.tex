@@ -1,0 +1,1004 @@
+\documentclass[12pt,a4paper]{article}
+
+%% ── Packages ──────────────────────────────────────────────────────────────
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage{microtype}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{titletoc}
+\usepackage{tocloft}
+\usepackage{fancyhdr}
+\usepackage[dvipsnames,table]{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usepackage{mdframed}
+\usepackage{tcolorbox}
+\usepackage{fontawesome5}
+\usepackage{pifont}
+\usepackage{soul}
+\usepackage{parskip}
+
+%% ── Colours ────────────────────────────────────────────────────────────────
+\definecolor{hopperblue}{HTML}{1A3A5C}
+\definecolor{hoppercyan}{HTML}{00B4D8}
+\definecolor{hopperaccent}{HTML}{0077B6}
+\definecolor{hopperlight}{HTML}{E8F4FD}
+\definecolor{hoppergray}{HTML}{6C757D}
+\definecolor{successgreen}{HTML}{198754}
+\definecolor{warningyellow}{HTML}{FFC107}
+\definecolor{dangered}{HTML}{DC3545}
+\definecolor{rowalt}{HTML}{F8FAFB}
+
+%% ── Hyperref Setup ─────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks   = true,
+  linkcolor    = hopperaccent,
+  urlcolor     = hoppercyan,
+  citecolor    = hopperaccent,
+  pdftitle     = {Hopper -- Combined Software Requirements Specification},
+  pdfauthor    = {Four-Eyed Raven and Byte Me},
+  bookmarksnumbered = true,
+  bookmarksopen     = true,
+}
+
+%% ── Title Formatting ───────────────────────────────────────────────────────
+\titleformat{\section}[block]
+  {\color{hopperblue}\large\bfseries\rule[-.3ex]{0pt}{0pt}}
+  {\thesection}{0.8em}{} 
+
+\titleformat{\subsection}[block]
+  {\color{hopperaccent}\normalsize\bfseries}
+  {\thesubsection}{0.7em}{}
+
+\newcommand{\subsubhead}[1]{\vspace{0.4em}{\color{hoppergray}\normalsize\bfseries\itshape #1}\par\vspace{0.2em}}
+
+%% ── Header / Footer ────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{hoppergray}\textit{Hopper -- Combined SRS v0.2}}
+\fancyfoot[C]{\small\color{hoppergray}Page \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+%% ── Table helpers ──────────────────────────────────────────────────────────
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+
+\renewcommand{\arraystretch}{1.35}
+
+%% ── Priority colour macros ─────────────────────────────────────────────────
+\newcommand{\Must}{\textcolor{dangered}{\textbf{M}}}
+\newcommand{\Should}{\textcolor{warningyellow}{\textbf{S}}}
+\newcommand{\Could}{\textcolor{successgreen}{\textbf{C}}}
+\newcommand{\Wont}{\textcolor{hoppergray}{\textbf{W}}}
+
+%% ── Checkbox macro ─────────────────────────────────────────────────────────
+\newcommand{\cbox}{\(\square\)\ }
+\newcommand{\cboxd}{\(\boxtimes\)\ }
+
+%% ── tcolorbox environments ─────────────────────────────────────────────────
+\tcbuselibrary{skins,breakable}
+
+\newtcolorbox{notebox}[1][]{
+  enhanced, breakable,
+  colback=hopperlight, colframe=hoppercyan,
+  fonttitle=\bfseries\small, title=#1,
+  left=4pt, right=4pt, top=4pt, bottom=4pt,
+}
+
+%%  TITLE PAGE (background image optional; omitted if logo not present)
+\begin{document}
+
+\begin{titlepage}
+  \centering
+ \vspace*{0cm}
+  {\Large\textbf{CSE 4113: Internet Programming Lab}\par}
+  \vspace{0.5cm}
+  {\huge\textbf{\textcolor{RoyalBlue}{Hopper Cloud}}\par}
+  \vspace{0.3cm}
+  {\fontsize{15}{18}\selectfont\itshape A VM / Compute Provisioning Panel (Combined SRS)}\\[1.2cm]
+  {\Large\textbf{Four-Eyed Raven}\par}
+  \vspace{0.7cm}
+  {\Large\textbf{Byte Me}\par}
+  \vspace{1.2cm}
+
+
+
+{\Large\textbf{Submitted to:}\par}\
+\vspace{0.5cm}
+\textit{ \large Prof. Dr. Md. Mamun Or Rashid}\\ 
+\textit{ \large Mr. Md. Fahim Arefin}\\ \vspace{0.5cm}
+\textit{ \large Mr. Md. Ahasanul Alam}\\ \vspace{0.5cm}
+
+  \vfill
+  {\footnotesize \large \today \par}
+\end{titlepage}
+
+\pagecolor{white}
+\color{black}
+
+\newpage
+\setcounter{tocdepth}{3}
+\tableofcontents
+
+\newpage
+
+\section{Document Control}
+\subsection{Metadata}
+
+\begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
+    Team Name:       & Four-Eyed Raven \& Byte Me --- collaborating on \textbf{Hopper} \\
+    Project Name:    & Hopper (Hopper Cloud) --- institutional compute provisioning \\
+  Repository URL:  & \texttt{https://github.com/CREVIOS/Hopper} \\
+    SRS Version:     & 0.2 (combined) \\
+    SDD reference:   & \texttt{docs/SDD.md} version 0.2 \\
+  Status:          & \texttt{Draft} \\
+    Date:            & April 2026 \\
+\end{tabularx}
+
+\subsection{Authors and Reviewers}
+
+\begin{tabularx}{\textwidth}{@{}L{2.2cm}L{3.8cm}L{5.5cm}L{2.5cm}@{}}
+  \textbf{Role} & \textbf{Name} & \textbf{ID / Email} & \textbf{Date} \\
+  \midrule
+    Author (Four-Eyed Raven) & {Tazkia Malik} & Roll 7 / maliktazkia@gmail.com & April 2026 \\
+    Author (Four-Eyed Raven) & {Md.\ Sadek Hossain Asif} & Roll 15 / asifsadek509@gmail.com & April 2026 \\
+    Author (Four-Eyed Raven) & {Tanzila Khan} & Roll 25 / tanzila011001@gmail.com & April 2026 \\
+    Author (Four-Eyed Raven) & {Taif Ahmed Turjo} & Roll 45 / ahmedtaif437@gmail.com & April 2026 \\
+    Author (Byte Me) & {Anindya Kundu} & 2021-911-185 / sanindya50@gmail.com & April 2026 \\
+    Author (Byte Me) & {Kabya Mithun Saha} & 2021-111-192 / kabyasaha1812@gmail.com & April 2026 \\
+    Author (Byte Me) & {Md.\ Muhaiminul Islam Ninad} & 2021-111-219 / ninadgns@gmail.com & April 2026 \\
+    Author (Byte Me) & {Fayek Ahmed} & 2021-511-233 / fayekahmedrahat90@gmail.com & April 2026 \\
+  Team Reviewer   & {TBD}       & ---    & --- 
+\end{tabularx}
+
+\subsection{Revision History}
+
+\begin{tabularx}{\textwidth}{@{}L{2cm}L{3cm}L{4cm}X@{}}
+  \textbf{Version} & \textbf{Date} & \textbf{Author} & \textbf{Changes} \\
+  \midrule
+  0.1 & March 2025 & Four-Eyed Raven & Initial draft (Hopper Cloud SRS, Lab 2) \\
+  0.1 & 2026-03-07 & Byte Me & Initial draft (Byte Me SRS, Lab 2) \\
+  0.2 & April 2026 & Combined team & Merged SRS aligned with \texttt{docs/SDD.md} v0.2; unified FR/NFR tables; Kubernetes as provisioning platform \\
+\end{tabularx}
+
+\newpage
+\section{Joint Team Charter and SDD Alignment}
+
+\begin{notebox}[Relationship to \texttt{docs/SDD.md}]
+This document is the \textbf{combined Software Requirements Specification} for \textbf{Hopper}. The \textbf{Software Design Document} (\texttt{docs/SDD.md}, v0.2) records architecture, interfaces, traceability to code paths, and operational design. Where this SRS and the SDD differ in level of detail, the SDD reflects the \textbf{as-built} implementation in \texttt{https://github.com/CREVIOS/Hopper}; this SRS preserves \textbf{normative requirements} from \textbf{Four-Eyed Raven} and \textbf{Byte Me}.
+\end{notebox}
+
+\subsection{Governance}
+\textbf{Hopper} (Hopper Cloud) is the product. \textbf{Four-Eyed Raven} established the original GPU-centric platform vision and requirements (\textbf{FR-HC-*}). \textbf{Byte Me} joined the project and brought administrative and lifecycle requirements (\textbf{FR-REQ-*}, \textbf{FR-QUOTA-*}, etc.). Both teams work from a \textbf{single repository}; provisioning is standardized on \textbf{Kubernetes} and the Hopper orchestrator (see SDD).
+
+\subsection{Design resolution (Kubernetes vs.\ external hypervisor)}
+Earlier Byte Me SRS text assumed REST integration with a commercial hypervisor. The \textbf{Hopper} implementation uses \textbf{Kubernetes pods} and services for workloads. Requirements that refer to ``VM'' or ``hypervisor'' are interpreted as \textbf{session workloads} and the \textbf{Kubernetes API}, unless explicitly marked as a future adapter.
+
+\newpage
+\section{Problem Definition}
+
+\subsection{Problem Statement}
+
+\subsubhead{What Problem Are We Solving?}
+
+Students doing machine learning or deep learning projects often run into the same frustrating situation - they need a serious GPU to train models or run experiments, but the only options available are either expensive cloud services (AWS, Google Cloud, Modal) or waiting in long queues for shared university HPC clusters. A lot of the time, students end up having to pay out of pocket for cloud GPU hours, or they just give up and run things on their laptops, which is obviously terrible for anything non-trivial.
+
+At the same time, many universities and research labs actually have powerful hardware sitting around - high-end NVIDIA GPUs like the RTX PRO 6000 Blackwell, RTX 5090, 3090, and 4070. The problem is that these GPUs are not easily accessible to students in a self-service way. There is usually some admin overhead involved, no real billing or quota system, no isolation between users, and no clean way to provision and deprovision environments on-demand.
+
+Hopper Cloud is trying to fix exactly this. The idea is to take bare-metal GPU hardware that a university or lab already owns, wrap it in a proper Kubernetes-based orchestration layer with container-level isolation (using gVisor syscall interception), and expose it to students through a clean web portal - similar to how Modal or Lambda Labs works, but running locally and managed by the institution. Students get their own isolated GPU environment, a credit-based billing system so usage is fair and trackable, and SSH access through a secure Teleport gateway.
+
+\subsubhead{Why Does It Matter?}
+
+The gap between what students need and what is available to them right now is pretty significant. Running even a modest fine-tuning job on a small transformer model needs at minimum 8--16 GB of VRAM, which rules out most consumer hardware. Cloud costs are also genuinely prohibitive - an A100 on AWS can run \$3--4/hour, which adds up fast for a student working on a semester project.
+
+Beyond the cost issue, there is also a security and fairness angle. When shared GPU machines are accessed without proper isolation, one student's badly-written training loop can crash the system for everyone. Without a billing/quota system, there is no accountability - a few power users can hog all the resources. And without proper audit logging, there is no visibility into how resources are being used.
+
+Hopper Cloud solves all of these at once: it democratizes access to powerful compute, enforces fair usage through credits, isolates workloads at the container level using gVisor so one user cannot affect others, and gives administrators full visibility into usage through audit logs.
+
+\subsection{Target Users}
+
+\begin{tabularx}{\textwidth}{@{}L{3.5cm}L{5cm}X@{}}
+  \textbf{User Group} & \textbf{Description} & \textbf{Main Needs} \\
+  \midrule
+  \rowcolor{rowalt}Students / Researchers
+    & Undergrad, Masters and postgrad students, research assistants who need GPU compute for ML/DL experiments, thesis work, or coursework.
+    & Self-service GPU provisioning; simple SSH access; real-time credit tracking; reproducible isolated environments. \\
+  Lab Administrators
+    & Technical staff or instructors responsible for managing hardware, allocating credits, and ensuring system health.
+    & Full visibility into resource usage;    ability to allocate/revoke credits; monitoring dashboards; GPU utilization stats. \\
+  
+  \rowcolor{rowalt}Instructors / PIs
+    & Professors or principal investigators running courses or research groups that need compute for their students or team.
+    & Credit budget allocation per course or project; access control; audit trail of who ran what and when. \\
+\end{tabularx}
+
+\subsection{Goals and Non-Goals}
+
+\subsubsection*{Goals}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Provide students with self-service, on-demand access to heterogeneous GPU resources through a simple web portal.
+  \item Implement a credit-based billing system where usage is tracked transparently and sessions auto-terminate when credits are exhausted.
+  \item Ensure strong workload isolation using gVisor container runtime (syscall interception in userspace) - one student's session cannot interfere with another's.
+  \item Enforce zero-trust network security using Calico GlobalNetworkPolicy, with all inter-pod traffic default-denied.
+  \item Provide secure SSH access to provisioned pods through the Teleport bastion host with ephemeral keys.
+  % \item Enable GPU partitioning using NVIDIA MIG for the RTX PRO 6000 Blackwell (up to 4x24GB slices) and time-slicing for consumer GPUs (5090/3090/4070).
+  \item Automate session lifecycle management - provisioning, credit metering, expiration, and cleanup - through the Reaper service.
+  \item Maintain a full audit log of all sessions, credit transactions, and authentication events in PostgreSQL.
+  \item Give administrators visibility into cluster health, GPU utilization, and per-user usage through a management interface.
+  \item \textbf{(Byte Me)} Provide optional \textbf{approval workflows} so lab administrators may approve or reject provisioning requests before resources are created, when institutional policy requires it.
+  \item \textbf{(Byte Me)} Support \textbf{quota policies} scoped per user, course, or department (beyond credit-based metering alone).
+  \item \textbf{(Byte Me)} Provide \textbf{real-time vitals} (CPU, memory, disk, network where available) and \textbf{expiration awareness} for all student workloads visible in the portal.
+\end{itemize}
+
+\subsubsection*{Non-Goals}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Hopper Cloud is \textbf{not} a general-purpose cloud platform - it is scoped to GPU compute and does not offer managed databases, object storage, or serverless functions.
+  \item The system will \textbf{not} provide a custom IDE or JupyterHub in v1; students are expected to SSH in and manage their own development environments.
+  \item Hopper Cloud is \textbf{not} multi-tenant in the commercial SaaS sense - it is designed to run within a single institutional network, not as a public-facing service.
+  \item We are \textbf{not} building a payment/money gateway - credits are institutional allocations, not purchased with real money in v1.
+  \item Automated hardware provisioning (adding new physical GPU nodes to the cluster) is \textbf{out of scope} - the physical cluster is assumed to be pre-configured by platform engineers.
+  \item Custom container image building or Docker registry management is \textbf{not} included in scope for this version.
+\end{itemize}
+
+\begin{notebox}[Withdrawn non-goal from prior Byte Me SRS]
+The earlier Byte Me SRS stated that supporting Kubernetes/container workloads was out of scope. For \textbf{Hopper}, \textbf{Kubernetes is the implementation platform}; that prior non-goal is \textbf{withdrawn}.
+\end{notebox}
+
+\newpage
+\section{Scope and Context}
+
+\subsection{In Scope}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{User Portal (SvelteKit 2 / Svelte 5):} Web-based dashboard for students to view credit balance, browse available GPU configurations, request sessions, monitor active sessions, and view session history.
+  \item \textbf{Authentication System:} OIDC/SAML-based login via Keycloak, supporting institutional SSO through university Shibboleth identity providers with attribute mapping.
+  \item \textbf{Session Orchestrator:} Go service using client-go (the native Kubernetes SDK) and gRPC to provision student pods, manage pod lifecycle state machine, and coordinate with the billing system.
+  \item \textbf{Credit and Billing Engine:} Double-entry bookkeeping credit ledger with append-only immutable entries, advisory locks for race condition prevention, and per-minute metering with full transaction history.
+  \item \textbf{GPU Provisioning:} Dynamic pod scheduling to appropriate GPU nodes using NVIDIA GPU Operator resource profiles; MIG slicing for RTX PRO 6000 Blackwell; time-slicing for RTX 5090, 3090, 4070.
+  \item \textbf{Container Runtime Isolation:} gVisor (runsc) runtime class for all student pods, intercepting syscalls in userspace for security isolation without VM boot overhead. MIG hardware isolation on RTX PRO 6000 Blackwell for memory-level GPU isolation.
+  \item \textbf{Network Security:} Calico CNI with GlobalNetworkPolicy enforcing default-deny for all student namespaces; allow DNS resolution, outbound internet on ports 80/443, SSH gateway ingress; deny cross-namespace and control-plane access from student pods.
+  \item \textbf{SSH Gateway:} Teleport bastion host for SSH access, with dynamic port-mapping per student pod and short-lived certificates.
+  \item \textbf{Reaper Service:} Background task that checks for expired sessions every 10 seconds, triggers namespace deletion via K8s API, emits audit events via NATS JetStream, and sends notifications.
+  \item \textbf{Audit Logging:} Full audit trail in PostgreSQL of all authentication events, session lifecycle transitions, and credit transactions.
+  \item \textbf{Admin Interface:} Basic administrator dashboard for credit management, user management, and cluster-level GPU utilization view.
+  \item \textbf{Notification Service:} Email/webhook notifications for session expiration warnings and completion events.
+  \item \textbf{(Byte Me)} Student and administrator views for \textbf{request queues}, \textbf{lifecycle extensions}, and \textbf{global workload overview} (phased delivery per SDD).
+  \item \textbf{(Byte Me)} \textbf{Quota policy} definitions and enforcement hooks aligned with course/department structure (may reuse credit ledger and Kubernetes quotas).
+\end{itemize}
+
+\subsection{Out of Scope}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Physical hardware provisioning or configuration of bare-metal GPU nodes.
+  \item JupyterHub or any browser-based IDE.
+  \item Custom container image registry or CI/CD pipelines for student images.
+  \item Real-money payment processing or integration with external billing systems.
+  \item Mobile native application (iOS/Android) - the portal is web-only.
+  \item Multi-cluster federation or multi-region deployment.
+  \item Object storage (S3-compatible buckets) or persistent dataset hosting.
+\end{itemize}
+
+\subsection{Assumptions and Constraints}
+
+\subsubsection*{Technical Constraints}
+\begin{itemize}[leftmargin=1.5em]
+  \item The Kubernetes cluster runs on kubeadm or RKE2 (full Kubernetes, not K3s) on bare-metal nodes with pre-configured NVIDIA drivers and the NVIDIA GPU Operator (v25.3.1+) installed.
+  \item gVisor (runsc) is deployed on all GPU nodes as the container runtime for student pods.
+  \item The cluster is air-gapped from the public internet except for explicitly allowed outbound traffic (dataset downloads via Calico GlobalNetworkPolicy on ports 80/443).
+  \item PostgreSQL 16 with TimescaleDB extension serves as the single source of truth for all application state, credit ledger, session data, and GPU metrics (time-series).
+  \item Teleport is deployed in cluster and configured with a valid wildcard certificate for the institution's domain.
+  \item NATS JetStream is deployed as the event bus for decoupled event processing between services.
+\end{itemize}
+
+\subsubsection*{Organizational Constraints}
+\begin{itemize}[leftmargin=1.5em]
+  \item Credits are allocated by administrators or instructors - students cannot self-purchase credits in v1.
+  \item All users must authenticate via institutional SSO through Keycloak with SAML/OIDC identity brokering (Shibboleth IdP integration).
+  \item The system must comply with the institution's data privacy policy - no student workload data leaves the cluster.
+\end{itemize}
+
+\subsubsection*{Timeline Constraints}
+\begin{itemize}[leftmargin=1.5em]
+  \item MVP targeting core provisioning, SSH access, and credit deduction must be ready within the four phases we have planned. 
+  \item Admin dashboard and advanced analytics are v2 features.
+\end{itemize}
+
+\begin{tabularx}{\textwidth}{@{}L{2.4cm}C{1.2cm}L{4.8cm}X@{}}
+  \rowcolor{rowalt} \textbf{Phase} & \textbf{Weeks} & \textbf{Primary Focus} & \textbf{Expected Outcome} \\
+  \midrule
+  Phase 0 (Done)
+    & 1--2
+    & Project scaffolding across frontend, backend, orchestration, infrastructure, and tests.
+    & Baseline repository and development environment ready so implementation can start immediately. \\
+  Phase 1 (Foundation)
+    & 2--4
+    & Cluster bootstrap, GPU stack setup, network/runtime security, initial orchestration and SSH gateway setup.
+    & Foundational platform in place with early pod lifecycle capability on real GPU nodes. \\
+  Phase 2 (Core Platform)
+    & 5--8
+    & Credit ledger + billing flow, API/orchestrator integration, authentication, real-time pod and credit dashboards.
+    & \textbf{MVP milestone}: core provisioning, secure SSH access, and credit deduction available to pilot users. \\
+  Phase 3 (Hardening \& Polish)
+    & 9--12
+    & RBAC and rate-limiting, auditability, admin/professor tools, reliability and performance testing.
+    & Staging-ready release with stronger security posture and operational confidence. \\
+  Phase 4 (Production \& Scale)
+    & 13--16
+    & Production rollout, onboarding/documentation, chaos/performance tuning, beta and scale testing.
+    & Semester-end production readiness and institutional onboarding plan. \\
+\end{tabularx}
+
+\newpage
+\section{Stakeholders and Roles}
+
+\subsection{Stakeholders}
+
+\begin{tabularx}{\textwidth}{@{}L{3.5cm}X L{2.5cm}@{}}
+  \textbf{Stakeholder} & \textbf{Interest} & \textbf{Priority} \\
+  \midrule
+  \rowcolor{rowalt}Students / Researchers
+    & Reliable, affordable, easy-to-use GPU compute with transparent billing and fast provisioning.
+    & High \\
+  Lab Administrators
+    & Maintaining cluster health, enforcing fair-use policies, full audit visibility, and credit control.
+    & High \\
+  \rowcolor{rowalt}Instructors / PIs
+    & Budget control for their group, ensuring their students have access without overrun, reproducibility.
+    & High \\
+  Platform Engineers
+    & Clean APIs, robust automation, minimal operational toil, good observability, and stable GitOps workflows.
+    & High \\
+  \rowcolor{rowalt}University IT / Security
+    & Ensuring compliance with institutional security policies, no data exfiltration, proper access controls.
+    & Medium \\
+  Hardware Vendors (NVIDIA)
+    & Correct and licensed use of NVIDIA GPU Operator and MIG partitioning software.
+    & Low \\
+\end{tabularx}
+
+\subsection{User Roles and Permissions}
+
+\begin{tabularx}{\textwidth}{@{}L{3.5cm}L{5cm}X@{}}
+  
+  \textbf{Role} & \textbf{Description} & \textbf{Permissions} \\
+  \midrule
+  \rowcolor{rowalt} \texttt{student}
+    & Authenticated user who can request and use GPU sessions.
+    & View own credit balance; request/stop sessions; view own session history; SSH access to own pods only. \\
+  \texttt{ta}
+    & Teaching assistant managing a specific course section.
+    & All student permissions; view course students' sessions; manage course-specific pod templates. \\
+  \rowcolor{rowalt} \texttt{professor}
+    & Course instructor or PI managing a group of students.
+    & All TA permissions; allocate credits to students within their course budget; view course usage reports; create course-specific templates. \\
+  \texttt{department\_admin}
+    & Department-level administrator overseeing multiple courses.
+    & All professor permissions; manage department GPU quotas; view department-wide usage analytics. \\
+  \rowcolor{rowalt} \texttt{university\_admin}
+    & University-level administrator managing the Keycloak realm and platform access.
+    & All department admin permissions; manage university-wide policies; configure SSO integration; manage user accounts. \\
+  \texttt{platform\_admin}
+    & Top-level platform administrator with full system access.
+    & All permissions; full K8s cluster access; Teleport admin; GPU Operator configuration; Calico policy management; manage all users and credits; view audit logs. \\
+  
+\end{tabularx}
+
+\newpage
+\section{Functional Requirements}
+
+\begin{notebox}
+  \Must\ = Must Have (critical for MVP) \quad
+  \Should\ = Should Have \quad \\
+  \Could\ = Could Have (nice to have) \quad
+  \Wont\ = Won't Have (out of scope for v1)
+\end{notebox}
+
+\noindent All functional requirements are listed in \textbf{one table} below. Requirement IDs keep their original prefixes (\texttt{FR-HC-*} for the core platform and \texttt{FR-REQ-*}, \texttt{FR-QUOTA-*}, \texttt{FR-MON-*}, \texttt{FR-LIFE-*}, \texttt{FR-NOTIF-*}, \texttt{FR-AUDIT-*}, \texttt{FR-USER-*}, \texttt{FR-AUTH-*} for administrative and lifecycle behaviour). Where text refers to ``VM'' or ``hypervisor,'' \textbf{Hopper} maps these to Kubernetes-backed session workloads.
+
+\begin{longtable}{@{}L{2.1cm}L{1.8cm}L{5cm}C{1.4cm}L{5cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Priority} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Req ID} & \textbf{Feature} & \textbf{Requirement Statement} & \textbf{Priority} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  FR-HC-01 & User Auth & The system shall allow students to log in using OIDC/SAML via Keycloak with university Shibboleth IdP integration. & \Must & Login with valid institutional credentials via Keycloak SSO returns a JWT and redirects to the dashboard within 3 seconds. \\
+  \rowcolor{rowalt}  FR-HC-02 & User Auth & The system shall support session token expiry and force re-authentication after the token TTL expires. & \Must & Expired JWT results in HTTP 401 and redirect to login page. \\
+  FR-HC-03 & Credit System & The system shall display the authenticated user's current credit balance on the dashboard in real-time. & \Must & Balance updates are reflected within 5 seconds of a deduction event. \\
+  \rowcolor{rowalt}  FR-HC-04 & Credit System & The system shall deduct credits from the user's account at a defined per-minute rate for the duration of an active session. & \Must & Credit balance decreases correctly per the rate for the selected GPU tier; no negative balance is allowed. \\
+  FR-HC-05 & Credit System & The system shall record every credit transaction using append-only double-entry bookkeeping in the \texttt{ledger\_entries} table, with immutability enforced by PostgreSQL RULEs. & \Must & All transfers produce exactly two ledger entries (debit + credit) that sum to zero; UPDATE and DELETE on ledger tables are rejected. \\
+  \rowcolor{rowalt}  FR-HC-06 & Session Mgmt & The system shall allow a student to request a new GPU session by selecting a GPU configuration from a list of available profiles. & \Must & A valid request with sufficient credits creates a new pod and returns an SSH connection string within 90 seconds. \\
+  FR-HC-07 & Session Mgmt & The system shall display the status of active and past sessions on the student dashboard. & \Must & Dashboard shows session state, GPU type, start time, elapsed time, and credits consumed for each session. \\
+  \rowcolor{rowalt}  FR-HC-08 & Session Mgmt & The system shall allow a student to manually terminate their active session before credit exhaustion. & \Must & Clicking ``Terminate Session'' triggers graceful deletion of the pod within 60 seconds and stops credit deduction. \\
+  FR-HC-09 & GPU Provisioning & The system shall provision student pods using the gVisor (runsc) runtime class for syscall-level isolation. & \Must & Created pods have \texttt{runtimeClassName: gvisor} in their spec; verified via \texttt{kubectl describe pod}. \\
+  \rowcolor{rowalt}  FR-HC-10 & GPU Provisioning & The system shall support NVIDIA MIG partitioning for the RTX PRO 6000 Blackwell, providing up to 4 isolated 24GB slices. & \Must & MIG slices are allocatable as K8s resources; two pods can each request a 24GB MIG slice and run concurrently. \\
+  FR-HC-11 & GPU Provisioning & The system shall support time-sliced GPU sharing for RTX 5090, 3090, and 4070 consumer GPUs. & \Should & Multiple pods can be scheduled on the same consumer GPU without hard resource conflicts. \\
+  \rowcolor{rowalt}  FR-HC-12 & SSH Access & The system shall provide SSH access to the student pod through the Teleport SSH gateway using ephemeral certificates. & \Must & Student can SSH into their pod using the Teleport-issued command; certificate expires when the session ends. \\
+  FR-HC-13 & SSH Access & The system shall inject a fresh SSH key pair per session via the Session Orchestrator and revoke it on session termination. & \Must & Attempting to SSH with a revoked certificate after session termination returns an authentication failure. \\
+  \rowcolor{rowalt}  FR-HC-14 & Network Security & The system shall enforce a Calico GlobalNetworkPolicy that default-denies all intra-cluster traffic to and from student pods. & \Must & Pinging another student pod from within a session returns no response. \\
+  FR-HC-15 & Network Security & The system shall allow outbound internet access from student pods only for dataset/package downloads (port 443/80). & \Should & \texttt{curl https://huggingface.co} works from a student pod; direct access to the K8s API server IP is blocked. \\
+  \rowcolor{rowalt}  FR-HC-16 & Reaper Service & The system shall automatically terminate sessions when the student's credit balance reaches zero. & \Must & When credits hit 0, the reaper triggers \texttt{kubectl delete namespace} within 30 seconds; metering stops. \\
+  FR-HC-17 & Reaper Service & The system shall automatically terminate sessions that exceed the maximum allowed session duration. & \Must & Sessions exceeding the configured TTL are terminated by the reaper regardless of remaining credits. \\
+  \rowcolor{rowalt}  FR-HC-18 & Reaper Service & The system shall send a notification to the user at least 10 minutes before credit exhaustion. & \Should & User receives an email or in-app notification when projected credit exhaustion is within 10 minutes. \\
+  FR-HC-19 & Admin Functions & The system shall allow administrators to allocate or adjust credit balances for any user account. & \Must & Admin credit allocation is reflected immediately in the user's balance and logged in the transactions table. \\
+  \rowcolor{rowalt}  FR-HC-20 & Admin Functions & The system shall allow administrators to view all active sessions and forcibly terminate any session. & \Must & Admin can see all active sessions in the management dashboard and terminate them with a button click. \\
+  FR-HC-21 & Audit Logging & The system shall write an audit log entry for every significant event: login, session start, session stop, credit change, and forced termination. & \Must & Audit log table contains entries with timestamp, actor, action, and target resource for each event type. \\
+  \rowcolor{rowalt}  FR-HC-22 & Storage & Each student pod shall be provisioned with a Persistent Volume Claim (PVC) attached to the pod, deleted along with the namespace on session termination (cascading). & \Must & PVC is created within the session namespace and deleted when the namespace is deleted on session termination. \\
+  FR-HC-23 & Storage & The system shall enforce storage quotas per pod to prevent runaway disk usage. & \Should & Attempting to write beyond the configured quota limit returns an ``out of disk space'' error in the pod. \\
+  \rowcolor{rowalt}  FR-HC-24 & Resource Limits & Each student pod shall have CPU and memory resource requests and limits defined by the selected GPU profile. & \Must & Pod spec contains \texttt{resources.limits} and \texttt{resources.requests} matching the selected tier. \\
+  FR-HC-25 & User Portal & The system shall provide a responsive SvelteKit web portal accessible from modern desktop browsers. & \Must & Portal is usable on Chrome, Firefox, and Safari; no critical layout breakage at 1280px or wider. \\
+  \rowcolor{rowalt}  FR-HC-26 & User Auth & The system shall provide an explicit logout flow that invalidates the active web session and revokes access to protected routes. & \Must & Calling logout clears the session token/cookie; subsequent access to protected endpoints returns HTTP 401 and redirects to login. \\
+  FR-HC-27 & Session Mgmt & The system shall allow a student with sufficient credits to extend an active session before TTL expiry, within configured extension limits. & \Should & Clicking ``Extend Session'' updates \texttt{expires\_at} without restarting the pod; extension is rejected with a clear error if credits are insufficient or max extension is reached. \\
+  \rowcolor{rowalt}  FR-REQ-001 & VM Request & Students shall be able to submit a workload provisioning request specifying OS, CPU, RAM, and storage requirements (or plan). & \Must & Request is recorded and, where approval is enabled, appears in an admin queue. \\
+  FR-REQ-002 & Approval Workflow & Lab Administrators shall be able to approve or reject pending requests with an optional comment. & \Must & Approved requests trigger provisioning; rejected requests notify the student with a reason. \\
+  \rowcolor{rowalt}  FR-QUOTA-001 & Quota Enforcement & The system shall enforce per-user resource quotas and block requests that exceed defined limits. & \Must & Requests exceeding quota are rejected with a clear message. \\
+  FR-MON-001 & VM Dashboard & Students shall have a dashboard displaying all their workloads with current status. & \Must & Dashboard loads within 5 seconds under normal conditions. \\
+  \rowcolor{rowalt}  FR-MON-002 & Vitals Monitoring & The system shall collect and display real-time CPU, RAM, disk, and network metrics per workload. & \Must & Vitals update at least every 60 seconds (implementation may use finer intervals). \\
+  FR-LIFE-001 & Lifecycle Management & Workloads shall transition through defined states (e.g., Pending $\to$ Provisioning $\to$ Running $\to$ Stopping $\to$ Terminated). & \Must & State transitions follow lifecycle rules and are visible in the UI. \\
+  \rowcolor{rowalt}  FR-LIFE-002 & Expiration Scheduling & Administrators shall configure expiration policies (fixed time or duration-based). & \Must & Workloads expire per policy; students notified per NFR targets. \\
+  FR-REQ-003 & Extension Requests & Students may request a lifecycle extension before expiration. & \Should & Extension requests enter a queue; approval extends expiry. \\
+  \rowcolor{rowalt}  FR-NOTIF-001 & Notifications & Email and in-app notifications for status, quota warnings, and expiration. & \Must & Notifications delivered within 2 minutes of the triggering event. \\
+  FR-AUDIT-001 & Audit Log & Immutable log of provisioning, lifecycle, and permission events. & \Must & Admins can filter and review audit entries. \\
+  \rowcolor{rowalt}  FR-QUOTA-002 & Quota Management & System Administrators define and modify quota policies per user, course, or department. & \Must & Policy changes apply to subsequent requests. \\
+  FR-USER-001 & Role-Based Access & Features and data are restricted by authenticated role. & \Must & No privilege escalation beyond assigned role. \\
+  \rowcolor{rowalt}  FR-AUTH-001 & SSO Integration & Authentication via institutional SSO (SAML/LDAP/OIDC via Keycloak). & \Must & Users log in via SSO; roles mapped from directory where applicable. \\
+  FR-MON-003 & Admin VM Overview & Lab Administrators see all workloads across users with vitals and lifecycle state. & \Must & Global view supports filtering. \\
+  \rowcolor{rowalt}  FR-LIFE-003 & Decommissioning & Expired workloads are decommissioned and resources released (Kubernetes delete semantics). & \Must & Resources freed within 24 hours of expiration (or policy grace period). \\
+\end{longtable}
+
+\newpage
+\section{User Stories and Use Cases}
+
+\subsection{User Stories}
+
+\begin{longtable}{@{}L{2.3cm}L{2.3cm}L{4cm}L{3.5cm}L{3.5cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want to\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want to\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  US-HC-01 & student & log into the portal using my university account & I don't have to manage a separate password for the platform & OAuth2 login with valid institutional credentials succeeds and brings me to my dashboard. \\
+  \rowcolor{rowalt}  US-HC-02 & student & see my current credit balance on the dashboard & I always know how much compute I have left before starting a job & Credit balance is displayed prominently on the dashboard and updates in real-time during an active session. \\
+  US-HC-03 & student & browse the available GPU configurations and their credit costs & I can choose the right GPU for my workload without overspending & A list of GPU tiers (e.g., Standard: RTX 5090/4090 -- 10 credits/hr) is shown with current availability status. \\
+  \rowcolor{rowalt}  US-HC-04 & student & request a GPU session with one click and get an SSH command to connect & I can start my training job quickly without dealing with K8s directly & Within 90 seconds of clicking ``Launch,'' I see an SSH connection string I can copy and run in my terminal. \\
+  US-HC-05 & student & see a live countdown of my remaining credits during an active session & I can decide whether to extend or wrap up my job before I get cut off & The dashboard shows a live credit counter decreasing at the configured rate while my session is active. \\
+  \rowcolor{rowalt}  US-HC-06 & student & stop my session manually when I'm done working & I don't waste credits after finishing my experiment & Clicking ``Stop Session'' terminates the pod within 60 seconds and the credit counter stops. \\
+  US-HC-07 & student & receive a warning notification before my credits run out & I have time to save my work before the session is terminated & I receive an in-app notification and/or email at least 10 minutes before projected credit exhaustion. \\
+  \rowcolor{rowalt}  US-HC-08 & student & view the history of all my past sessions and their credit cost & I can track my usage patterns and plan future experiments better & A session history table shows session ID, GPU type, start/end time, duration, and credits consumed. \\
+  US-HC-09 & student & trust that my session is isolated from other students' sessions & A bug in someone else's code can't crash or spy on my environment & My pod runs under gVisor runtime with no network access to other pods; MIG provides hardware memory isolation on supported GPUs. \\
+  \rowcolor{rowalt}  US-HC-10 & instructor & allocate a credit budget to each student in my course & They can use the platform for coursework without exceeding the course compute budget & I can enter a credit amount in the instructor panel, and the student's balance is updated immediately. \\
+  US-HC-11 & administrator & view all active sessions across the cluster in real time & I can identify resource hogs, debug issues, and enforce fair-use policies & Admin dashboard shows a table of all active sessions with user, GPU, start time, and credits remaining. \\
+  \rowcolor{rowalt}  US-HC-12 & administrator & forcibly terminate any active session & I can handle policy violations, stuck sessions, or emergencies quickly & Clicking ``Force Terminate'' on any session in the admin panel deletes the pod within 60 seconds and logs the action. \\
+  US-HC-13 & administrator & view audit logs of all authentication and billing events & I have a full paper trail for security investigations and billing disputes & Audit log view shows paginated entries with timestamp, actor, action type, and affected resource. \\
+  \rowcolor{rowalt}  US-HC-14 & platform engineer & configure GPU resource profiles (MIG slices, time-slice counts) through a config file & I can easily adjust how GPUs are partitioned when hardware changes & Changes to \texttt{gpu-profiles.yaml} are applied after a config reload without restarting the control plane. \\
+  US-HC-15 & student & be confident that my data inside the pod is not accessible to other students & I can work with sensitive datasets without worrying about data leakage & PVCs are bound to my session namespace and deleted when my session ends; gVisor provides syscall-level isolation. \\
+  \rowcolor{rowalt}  US-HC-16 & administrator & receive an alert when a GPU node goes offline or becomes unhealthy & I can respond quickly before it affects student sessions & An alert is triggered (email/webhook) within 5 minutes of a GPU node becoming NotReady in K8s. \\
+  US-HC-17 & student & resume work from a previous session with my files still available & I can continue long-running coursework or experiments without re-uploading data each time & When I launch a new session, I can mount my previous workspace and verify files/checkpoints from the last session are present. \\
+  \rowcolor{rowalt}  US-HC-18 & student & see current GPU availability, queue length, and estimated wait time before launching & I can decide whether to launch now or choose a different GPU tier & The launch page shows per-tier available GPUs, queued requests, and an estimated wait time updated at least every 30 seconds. \\
+  US-HC-19 & TA & monitor active sessions and credit usage of students in my course in real time & I can provide support quickly and identify blocked students during labs & TA dashboard lists course students with live session status, GPU tier, and credit burn rate, refreshed without manual page reload. \\
+  \rowcolor{rowalt}  US-HC-20 & student & get guided onboarding when I first use the platform & I can complete setup and launch my first session without external help & On first login, a guided flow explains credit balance, GPU tier selection, SSH connection steps, and successfully ends after launching one session. \\
+\end{longtable}
+
+\subsubsection{User stories (Byte Me collaboration)}
+
+\begin{longtable}{@{}L{2.1cm}L{2.2cm}L{3.6cm}L{3cm}L{3.5cm}@{}}
+  \rowcolor{rowalt}  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endfirsthead
+  \rowcolor{rowalt}  \textbf{Story ID} & \textbf{As a\ldots} & \textbf{I want\ldots} & \textbf{So that\ldots} & \textbf{Acceptance Criteria} \\
+  \midrule
+  \endhead
+  \endfoot
+  US-REQ-001 & Student & to submit a workload request with required specs & I can get the environment I need for my lab assignment & Form validates; submission succeeds; status visible. \\
+  \rowcolor{rowalt}
+  US-REQ-002 & Student & to see the status of my request & I know if it is approved, rejected, or pending & Status updates after admin action. \\
+  US-MON-001 & Student & to view real-time vitals for running workloads & I can monitor performance & Vitals refresh per FR-MON-002. \\
+  \rowcolor{rowalt}
+  US-LIFE-001 & Student & to receive notification before expiration & I can save work or request extension & Alert before expiry per policy. \\
+  US-REQ-003 & Student & to request a lifecycle extension & I can continue beyond the original date & Request enters queue; outcome notified. \\
+  \rowcolor{rowalt}
+  US-REQ-004 & Student & to see a clear reason when a request is rejected & I can correct and resubmit & Reason in UI and notification. \\
+  US-REQ-005 & Lab Administrator & to review pending requests in a queue & I can approve or reject efficiently & Queue lists requests with metadata. \\
+  \rowcolor{rowalt}
+  US-REQ-006 & Lab Administrator & to approve with minimal steps & Provisioning starts automatically & Approval triggers orchestration. \\
+  US-MON-002 & Lab Administrator & to see all active workloads and vitals & I can monitor health & Global dashboard with filters. \\
+  \rowcolor{rowalt}
+  US-LIFE-002 & Lab Administrator & to manually decommission a workload & I can reclaim resources & Decommission logged and user notified. \\
+  US-QUOTA-001 & System Administrator & to configure quota policies & Limits are enforced consistently & Policies saved and enforced on next action. \\
+  \rowcolor{rowalt}
+  US-AUDIT-001 & System Administrator & to view the full audit log & I can investigate incidents & Filterable audit view. \\
+  US-USER-001 & Instructor & to view workloads for my course & I can track students & Course-scoped list. \\
+  \rowcolor{rowalt}
+  US-AUTH-001 & Student & to log in with institutional SSO & I do not need a separate password & SSO flow succeeds. \\
+  US-REQ-007 & Lab Administrator & to set a custom expiration when approving & lifecycle matches the assignment & Optional expiry on approval form. \\
+\end{longtable}
+
+\newpage
+\subsection{Critical Use Cases}
+
+\subsubhead{UC-01: Student Requests a New GPU Session}
+
+\begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Description} \\
+  \midrule
+  \textbf{Actor}        & Student \\
+  \rowcolor{rowalt}  \textbf{Preconditions} & Student is authenticated; student has a positive credit balance; at least one GPU of the requested type is available. \\
+  \textbf{Trigger}      & Student clicks ``Launch Session'' on a selected GPU profile in the portal. \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{\textbf{Main Flow}} \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{
+    \begin{enumerate}[leftmargin=2em, topsep=0pt]
+      \item Student selects desired GPU profile (e.g., RTX 3090 24GB) and clicks ``Launch Session.''
+      \item Frontend sends a \texttt{POST /pods} request to the FastAPI control plane with the selected profile ID.
+      \item Session Orchestrator validates that the student has sufficient credits for at least the minimum session duration.
+      \item Orchestrator calls the K8s API via client-go to create a new namespace (\texttt{hopper-pod-<id>}) and provisions the student pod with the gVisor runtime class, GPU resource request, PVC, and resource limits.
+      \item NVIDIA GPU Operator schedules the pod to an appropriate worker node with the requested GPU.
+      \item Orchestrator generates an ephemeral SSH key pair, injects the public key into the pod via a K8s secret, and registers the pod with the Teleport gateway.
+      \item Teleport returns an SSH connection string (e.g., \texttt{tsh ssh student@session-uuid.hopper.local}).
+      \item Orchestrator writes the session record to the \texttt{pod\_sessions} table and begins the credit deduction timer.
+      \item Frontend polls the session status endpoint and displays the SSH connection string along with a live credit counter.
+    \end{enumerate}
+  } \\
+  \textbf{Alternate Flow} & \textit{Insufficient credits:} At step 3, if the student's balance is below the minimum session cost, the request returns an HTTP 402 and the frontend shows an ``Insufficient credits'' message. \\
+  \rowcolor{rowalt}  \textbf{Exception Flow} & \textit{No GPU available:} If no node has free capacity for the requested profile at step 5, the Orchestrator returns HTTP 503 ``No capacity available'' and no session record is created. \\
+  \textbf{Postconditions} & Pod is running, credits are being deducted, student has a valid SSH connection, audit log entry is written. \\
+  
+\end{tabularx}
+
+\vspace{1em}
+\newpage
+\subsubhead{UC-02: Reaper Service Terminates an Expired Session}
+
+\begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Description} \\
+  \midrule
+  \textbf{Actor}        & Reaper Service (Async Worker) \\
+  \rowcolor{rowalt}  \textbf{Preconditions} & One or more active sessions exist in the \texttt{pod\_sessions} table where either the credit balance is $\leq 0$ or the session has exceeded its TTL. \\
+  \textbf{Trigger}      & Reaper's polling loop fires (every 10 seconds). \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{\textbf{Main Flow}} \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{
+    \begin{enumerate}[leftmargin=2em, topsep=0pt]
+      \item Reaper queries \texttt{pod\_sessions} for sessions where balance = 0 or \texttt{expires\_at < NOW()}.
+      \item For each expired session, Reaper issues \texttt{kubectl delete namespace hopper-pod-<id> --cascade=foreground}.
+      \item K8s deletes the pod, PVC, SSH secret, and all other resources in the namespace.
+      \item Teleport revokes the SSH certificate associated with the session.
+      \item Reaper updates the session status to \texttt{TERMINATED} in the \texttt{pod\_sessions} table.
+      \item Reaper writes an audit log entry with the termination reason (credit exhaustion or TTL expiry).
+      \item Notification Service sends the student a ``Session Ended'' email with session summary.
+    \end{enumerate}
+  } \\
+  \textbf{Exception Flow} & If the K8s namespace deletion hangs, Reaper retries with exponential backoff (max 3 retries). After 3 failures, it escalates an alert to the admin notification channel. \\
+  \rowcolor{rowalt}  \textbf{Postconditions} & Namespace is deleted, GPU is released back to the pool, student's session shows as ``Terminated'' in history, audit log is updated. \\
+  
+\end{tabularx}
+
+\vspace{1em}
+
+\subsubhead{UC-03: Administrator Allocates Credits to a Student}
+
+\begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Description} \\
+  \midrule
+  \textbf{Actor}        & Administrator \\
+  \rowcolor{rowalt}  \textbf{Preconditions} & Admin is authenticated with the \texttt{admin} role. Target student account exists. \\
+  \textbf{Main Flow}    & Admin navigates to the user management page, finds the student, enters a credit amount (positive or negative adjustment), and confirms. The Billing Engine processes the transaction idempotently and updates the student's balance. A transaction record is written and the audit log is updated. \\
+  \rowcolor{rowalt}  \textbf{Exception Flow} & If the adjustment would make the balance go below 0, the system prompts for confirmation before proceeding with a zero-floor balance. \\
+  \textbf{Postconditions} & Student's credit balance is updated; transaction is persisted; audit log entry recorded. \\
+  
+\end{tabularx}
+
+\newpage
+\subsubhead{UC-04: Student Manually Terminates an Active Session}
+
+\begin{tabularx}{\textwidth}{@{}L{4cm}X@{}}
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Description} \\
+  \midrule
+  \textbf{Actor}        & Student \\
+  \rowcolor{rowalt}  \textbf{Preconditions} & Student is authenticated and has at least one active session in \texttt{RUNNING} state. \\
+  \textbf{Trigger}      & Student clicks ``Terminate Session'' from the dashboard/session detail and confirms the action. \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{\textbf{Main Flow}} \\
+  \rowcolor{rowalt}  \multicolumn{2}{@{}p{\textwidth}@{}}{
+    \begin{enumerate}[leftmargin=2em, topsep=0pt]
+      \item Frontend sends \texttt{DELETE /pods/\{pod\_id\}} to the control plane.
+      \item Control plane validates ownership and transitions session state to \texttt{STOPPING}.
+      \item Orchestrator requests namespace deletion for the session and stops billing for that session.
+      \item K8s removes the pod and associated resources (PVC/secret) through cascading deletion.
+      \item Teleport certificate for that session is revoked.
+      \item Session is marked \texttt{TERMINATED} with termination reason \texttt{manual\_stop}, and audit log entry is written.
+      \item Frontend refreshes session status and shows that credit deduction has stopped.
+    \end{enumerate}
+  } \\
+  \textbf{Exception Flow} & If the client retries due to network timeout, termination remains idempotent and returns the current session state without creating duplicate operations. \\
+  \rowcolor{rowalt}  \textbf{Postconditions} & Session is terminated, billing has stopped, SSH access is revoked, and resources are released to the cluster pool. \\
+  
+\end{tabularx}
+
+\vspace{1em}
+\subsubhead{UC-BM-01: Student Submits Provisioning Request (Byte Me collaboration)}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Preconditions:} Student is authenticated; quotas are not exceeded.
+  \item \textbf{Main flow:} Student opens Request form; enters plan/specs; system validates; request is stored as Pending; if approval is required, request appears in admin queue; confirmations sent.
+  \item \textbf{Exceptions:} Quota exceeded $\rightarrow$ blocked with message; validation errors $\rightarrow$ inline form errors.
+  \item \textbf{Postconditions:} Pending request exists or provisioning starts if auto-approved.
+\end{itemize}
+
+\subsubhead{UC-BM-02: Administrator Approves Request (Byte Me collaboration)}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Preconditions:} Pending request exists; administrator is authenticated.
+  \item \textbf{Main flow:} Admin opens queue; reviews; optionally sets expiry; Approve triggers Hopper orchestration (\textbf{Kubernetes API}, not a third-party hypervisor API in the Hopper design).
+  \item \textbf{Exceptions:} Reject with reason; provisioning failure $\rightarrow$ alert and retry policy per SDD.
+  \item \textbf{Postconditions:} Workload Running; student notified with connection details.
+\end{itemize}
+
+\subsubhead{UC-BM-03: Expiration and Decommissioning (Byte Me collaboration)}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Preconditions:} Running workload has configured expiration.
+  \item \textbf{Main flow:} Warnings before expiry; at expiry, transition and decommission via Kubernetes delete / Reaper-equivalent; audit entries.
+  \item \textbf{Exceptions:} Extension request holds Running pending decision; API failures retried.
+  \item \textbf{Postconditions:} Resources freed; history retained per audit policy.
+\end{itemize}
+
+\newpage
+\section{Data Requirements}
+
+\subsection{Core Entities}
+
+\begin{longtable}{@{}L{2.8cm}L{3.5cm}L{4cm}L{5cm}@{}}
+  \rowcolor{rowalt}  \textbf{Entity} & \textbf{Description} & \textbf{Key Fields} & \textbf{Constraints} \\
+  \midrule
+  \endfirsthead
+
+  \rowcolor{rowalt}  \textbf{Entity} & \textbf{Description} & \textbf{Key Fields} & \textbf{Constraints} \\
+  \midrule
+  \endhead
+
+  \endfoot
+
+  \texttt{users} & Stores all registered users and their profile information. & id, email, name, role, university\_id, created\_at, updated\_at & Email must be unique; role must be one of the 6-level hierarchy (student, ta, professor, department\_admin, university\_admin, platform\_admin). \\
+  \rowcolor{rowalt}  \texttt{accounts} & Credit accounts using double-entry bookkeeping. Each user has one asset account. & id (prefixed string PK), name, type (asset/liability), owner\_id, owner\_type & Type must be asset or liability; one user account per user; system revenue account is type liability. \\
+  \texttt{transfers} & Immutable records of business events (credit allocations, deductions, refunds). & id (prefixed PK), type, metadata (JSON), event\_at, created\_at & Never updated or deleted after insert; PostgreSQL RULEs enforce immutability. \\
+  \rowcolor{rowalt}  \texttt{ledger\_entries} & Append-only double-entry ledger. Every transfer creates exactly two entries (debit + credit) that sum to zero. & id, transfer\_id (FK), account\_id (FK), direction (1=debit/-1=credit), amount (Numeric 12,4), previous\_balance, current\_balance, event\_at & Immutable (PostgreSQL RULEs prevent UPDATE/DELETE); previous\_balance chain integrity; advisory locks prevent race conditions. \\
+  \texttt{pod\_sessions} & Represents GPU sessions (active and historical). & id, user\_id (indexed), gpu\_tier, namespace, pod\_name, image, started\_at, expires\_at, state, credits\_charged, updated\_at & State must be one of: PENDING, CREATING, RUNNING, STOPPING, TERMINATED, FAILED. \\
+  \rowcolor{rowalt}  \texttt{gpu\_metrics} & Time-series GPU telemetry stored as a TimescaleDB hypertable. & time, node\_id, gpu\_index, gpu\_model, pod\_id, user\_id, gpu\_utilization, memory\_used, memory\_total, temperature, power\_usage & 1-hour chunks; compression after 1 day (95\%+ ratio); 30-day raw retention; continuous aggregates for hourly/daily rollups (1-year retention). \\
+  \texttt{audit\_logs} & Append-only log of all significant system events. & id, actor\_id, action, target\_type, target\_id, metadata (JSONB), created\_at & Never updated or deleted; partition by created\_at for performance. \\
+
+\end{longtable}
+
+\subsection{Data Dictionary}
+
+\begin{longtable}{@{}L{3.2cm}L{2.8cm}C{1.2cm}L{4cm}L{3.5cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Type} & \textbf{Req.} & \textbf{Validation / Constraint} & \textbf{Example} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Field} & \textbf{Type} & \textbf{Req.} & \textbf{Validation / Constraint} & \textbf{Example} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  \texttt{users.id} & UUID & Yes & PK, auto-generated (uuid\_v4) & \texttt{a3f8...b12c} \\
+  \rowcolor{rowalt}  \texttt{users.email} & VARCHAR(255) & Yes & Must be valid email format; UNIQUE & \texttt{john@uni.edu} \\
+  \texttt{users.role} & ENUM & Yes & One of: \texttt{student}, \texttt{ta}, \texttt{professor}, \texttt{department\_admin}, \texttt{university\_admin}, \texttt{platform\_admin} & \texttt{student} \\
+  \rowcolor{rowalt}  \texttt{accounts.id} & VARCHAR & Yes & Prefixed string PK (e.g., \texttt{acct\_}) & \texttt{acct\_alice} \\
+  \texttt{accounts.type} & ENUM & Yes & One of: \texttt{asset}, \texttt{liability} & \texttt{asset} \\
+  \rowcolor{rowalt}  \shortstack[l]{\texttt{ledger\_entries.}\\\texttt{amount}} & DECIMAL(12,4) & Yes & Positive value; direction determines debit/credit & \texttt{5.0000} \\
+  \shortstack[l]{\texttt{ledger\_entries.}\\\texttt{direction}} & INTEGER & Yes & 1 for debit, -1 for credit & \texttt{1} \\
+  \rowcolor{rowalt}  \shortstack[l]{\texttt{ledger\_entries.}\\\texttt{previous\_balance}} & DECIMAL(12,4) & Yes & Must equal prior entry's current\_balance & \texttt{95.0000} \\
+  \shortstack[l]{\texttt{pod\_sessions.}\\\texttt{namespace}} & VARCHAR(63) & Yes & Must match K8s DNS name rules; format: \texttt{hopper-pod-<id>} & \texttt{hopper-pod-abc12} \\
+  \rowcolor{rowalt}  \shortstack[l]{\texttt{pod\_sessions.}\\\texttt{state}} & ENUM & Yes & \texttt{PENDING | CREATING | RUNNING | STOPPING | TERMINATED | FAILED} & \texttt{RUNNING} \\
+  \shortstack[l]{\texttt{pod\_sessions.}\\\texttt{gpu\_tier}} & ENUM & Yes & One of: \texttt{premium}, \texttt{standard}, \texttt{budget}, \texttt{scavenger} & \texttt{standard} \\
+  \rowcolor{rowalt}  \shortstack[l]{\texttt{pod\_sessions.}\\\texttt{expires\_at}} & TIMESTAMPTZ & Yes & Must be $>$ started\_at; enforces max session TTL & \texttt{2025-03-10 14:00+00} \\
+  \shortstack[l]{\texttt{gpu\_metrics.}\\\texttt{time}} & TIMESTAMPTZ & Yes & TimescaleDB hypertable partition key; 1-hour chunks & \texttt{2025-03-10 12:05+00} \\
+  \rowcolor{rowalt}  \shortstack[l]{\texttt{audit\_logs.}\\\texttt{metadata}} & JSONB & No & Free-form JSON for event-specific context & \texttt{\{"reason": "credit\_exhausted"\}} \\
+  \shortstack[l]{\texttt{audit\_logs.}\\\texttt{actor\_id}} & UUID & Yes & FK to \texttt{users.id} or system service identity & \texttt{b2e1...9f3a} \\
+  
+\end{longtable}
+\subsection{Data Model}
+The core data model is a relational schema hosted in PostgreSQL 16 with TimescaleDB.
+The main relationships are as follows:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{users} (1) $\rightarrow$ (1) \texttt{accounts}: each user has
+    exactly one credit account (type: asset). A system revenue account (type: liability) handles the other side of all transfers.
+  \item \texttt{transfers} (1) $\rightarrow$ (2) \texttt{ledger\_entries}: every
+    transfer creates exactly two ledger entries (one debit, one credit) that sum to zero --- this is the core double-entry bookkeeping invariant.
+  \item \texttt{accounts} (1) $\rightarrow$ (N) \texttt{ledger\_entries}: an account
+    accumulates many ledger entries over time. The balance is derived from the most recent entry's \texttt{current\_balance} field.
+  \item \texttt{users} (1) $\rightarrow$ (N) \texttt{pod\_sessions}: a user
+    can have many sessions over time, with a configurable concurrent session limit (max 3 per source docs).
+  \item \texttt{pod\_sessions} generate billing events that create transfers and corresponding ledger entries as the billing ticker fires on its per-minute interval.
+  \item \texttt{gpu\_metrics} is a TimescaleDB hypertable storing time-series GPU telemetry with 1-hour chunks, compression, and continuous aggregates.
+  \item \texttt{audit\_logs} holds a direct foreign key \texttt{actor\_id}
+    $\rightarrow$ \texttt{users.id} to record \emph{who} performed an action.
+    The \emph{target} of the action (a session or a transfer) is captured
+    via the polymorphic pair \texttt{target\_type} / \texttt{target\_id} ---
+    soft references used to keep the log append-only without hard FK
+    constraints that would block cascading deletes on other tables.
+\end{itemize}
+
+Entity relationships are described in the preceding narrative; this revision does not include a graphical ER diagram (earlier mockup figures omitted).
+
+\newpage
+\section{UI and UX Requirements}
+
+\subsection{Wireframes}
+
+The following six screens represent the primary user flows for the Hopper Cloud student portal. Illustrative mockup images are omitted; layouts are specified in prose below.
+
+\subsubsection*{Screen 1 - Login Page}
+A minimal, clean login screen with the Hopper Cloud logo, a ``Sign in with University SSO'' button (Keycloak OIDC), and a small note about what the platform is. No password field is shown - clicking the button redirects to the Keycloak authentication flow which brokers to the university's Shibboleth IdP. Error states for failed login attempts are displayed inline beneath the button.
+
+\subsubsection*{Screen 2 - Student Dashboard (Home)}
+The main landing page after login. Shows:
+\begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
+  \item A prominent credit balance card with a real-time counter (live SSE streaming update).
+  \item A summary card of the currently active session (if any) - showing GPU type, elapsed time, credits consumed, and a ``Stop Session'' button.
+  \item A quick-launch panel showing available GPU profiles with their credit rate and availability badge (green/yellow/red).
+  \item A recent session history table (last 5 sessions) with links to full history.
+\end{itemize}
+
+\subsubsection*{Screen 3 - Launch Session Modal/Page}
+Triggered when a student clicks ``Launch'' on a GPU profile. Shows:
+\begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
+  \item GPU profile details (GPU name, VRAM, credit rate, max duration).
+  \item An estimated time calculator: input field for ``How many credits to use?'' with a calculated runtime.
+  \item A ``Confirm Launch'' button and a loading spinner during provisioning.
+  \item Once ready: a copyable SSH command string and a session timer.
+\end{itemize}
+
+\subsubsection*{Screen 4 - Active Session View}
+A dedicated view for an in-progress session showing:
+\begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
+  \item Large real-time credit counter (countdown style).
+  \item Session details: GPU type, namespace, elapsed time, expiry time.
+  \item SSH connection instructions and the connection string.
+  \item A ``Stop Session'' button with a confirmation dialog.
+  \item A credit warning banner that appears when projected time remaining drops below 10 minutes.
+\end{itemize}
+
+\subsubsection*{Screen 5 - Session History Page}
+A full paginated table of all past sessions for the authenticated student. Columns include: Session ID (truncated), GPU type, Start time, End time, Duration, Credits consumed, Termination reason (manual, expired, credit exhaustion). Filterable by date range and GPU type.
+
+\subsubsection*{Screen 6 (Admin) - Admin Dashboard}
+Accessible only to admin-role users. Shows:
+\begin{itemize}[leftmargin=1.5em, topsep=2pt, itemsep=2pt]
+  \item Cluster-level GPU utilization per node (heatmap or bar chart).
+  \item A live table of all active sessions across all users.
+  \item A user management panel with a credit allocation form.
+  \item An audit log view with filtering.
+\end{itemize}
+
+\subsection{UX and Accessibility Baseline}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Navigation:} All primary actions reachable within 2 clicks from the dashboard. Breadcrumb navigation for admin views.
+  \item \textbf{Labels:} All form fields and interactive elements have descriptive labels. No icon-only buttons without accessible tooltips.
+  \item \textbf{Keyboard Accessibility:} Login, session launch, and session stop flows must be fully keyboard-navigable. Focus indicators must be visible.
+  \item \textbf{Contrast:} All text/background combinations must meet WCAG 2.1 AA contrast ratio ($\geq 4.5:1$ for normal text).
+  \item \textbf{Responsive Design:} Portal is usable at 1280px and wider (desktop-first). Tablet support (768px+) is a should-have.
+  \item \textbf{Error States:} All API errors must surface a user-readable message - no raw error codes shown in the UI.
+  \item \textbf{Loading States:} All async operations (session provisioning, credit updates) show a loading indicator so users aren't left wondering if something is happening.
+\end{itemize}
+
+\newpage
+\section{Non-Functional Requirements}
+
+\noindent All non-functional requirements are listed in \textbf{one table} below. IDs use the \texttt{NFR-HC-*} prefix for platform-wide targets and \texttt{NFR-PERF-*}, \texttt{NFR-SEC-*}, \texttt{NFR-AVAIL-*}, \ldots\ for additional themes. Where two rows address the same concern, apply the \textbf{stricter} measurable target unless waived by stakeholders.
+
+\begin{longtable}{@{}L{2.4cm}L{2.5cm}L{5.3cm}L{4.5cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target / Metric} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{NFR ID} & \textbf{Category} & \textbf{Requirement} & \textbf{Target / Metric} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  NFR-HC-1 & Performance & Session provisioning (from request to SSH-ready) shall complete within a reasonable time. & $\leq 90$ seconds for the 95th percentile of requests. \\
+  \rowcolor{rowalt}  NFR-HC-2 & Performance & The student portal dashboard shall load within a reasonable time. & Initial page load $\leq 3$ seconds on a standard institutional network. \\
+  NFR-HC-3 & Performance & Credit balance updates shall be reflected in the UI in near-real-time during active sessions. & Balance update visible within $\leq 5$ seconds of the server-side deduction. \\
+  \rowcolor{rowalt}  NFR-HC-4 & Performance & The Reaper Service shall detect and begin termination of expired sessions promptly. & Termination triggered within $\leq 30$ seconds of credit exhaustion or TTL breach. \\
+  NFR-HC-5 & Availability & The control plane (FastAPI + PostgreSQL) shall be highly available. & $\geq 99.5\%$ uptime during scheduled term periods (excluding planned maintenance). \\
+  \rowcolor{rowalt}  NFR-HC-6 & Security & All communication between the portal, control plane, and users shall be encrypted. & HTTPS (TLS 1.2+) with mTLS between internal services. \\
+  NFR-HC-7 & Security & Student pods shall be isolated at the syscall level to prevent container escape. & All student workloads run under gVisor (runsc) runtime class; syscalls are intercepted in userspace. MIG provides hardware memory isolation on RTX PRO 6000 Blackwell. \\
+  \rowcolor{rowalt}  NFR-HC-8 & Security & Default network policy for all student pods shall be deny-all. & Calico GlobalNetworkPolicy with \texttt{default-deny} applied to all student namespaces; verified by pen-test. \\
+  NFR-HC-9 & Security & SSH access to student pods shall use ephemeral certificates only. & Certificates have a TTL equal to the session duration; no persistent credentials are stored. \\
+  \rowcolor{rowalt}  NFR-HC-10 & Security & All credit transactions shall be processed idempotently. & Duplicate transaction requests (same idempotency key) result in a single deduction; verified by replay test. \\
+  NFR-HC-11 & Scalability & The system shall support concurrent active sessions up to the cluster's GPU capacity. & At least 20 concurrent student sessions across mixed GPU types without performance degradation. \\
+  \rowcolor{rowalt}  NFR-HC-12 & Scalability & The PostgreSQL schema and query patterns shall support at least 1,000 users and 10,000 session records without index degradation. & All critical queries execute in $\leq 50$ms under load. \\
+  NFR-HC-13 & Usability & A new student should be able to log in, launch a session, and connect via SSH without requiring documentation. & $\geq 80\%$ of new users complete first session launch within 5 minutes unassisted. \\
+  \rowcolor{rowalt}  NFR-HC-14 & Maintainability & All infrastructure configuration shall be managed as code (GitOps). & K8s manifests, Helm charts, and Calico policies are version-controlled and deployed via ArgoCD with PR-reviewed pipeline. \\
+  NFR-HC-15 & Observability & The cluster shall provide full GPU and application observability. & Prometheus + DCGM Exporter + Grafana dashboards for GPU metrics; Grafana Loki + Promtail for log aggregation; AlertManager for critical alerts. \\
+  \rowcolor{rowalt}  NFR-HC-16 & Compliance & All user data and workload data shall remain within the institutional network boundary. & No egress routes exist for student PVCs or PostgreSQL data outside the institutional LAN. \\
+  NFR-HC-17 & Reliability & The Reaper Service shall be resilient to transient K8s API failures. & Reaper retries failed deletions with exponential backoff (max 3 attempts) before alerting admins. \\
+  \rowcolor{rowalt}  NFR-HC-18 & Reliability & The platform shall recover automatically from a single control-plane service crash within a bounded recovery time objective (RTO). & API/Orchestrator service restart and readiness recovery within $\leq 5$ minutes, with no loss of committed credit ledger entries. \\
+  NFR-PERF-001 & Performance & Dashboard and vitals pages load within acceptable time. & Page load $\leq 3$ seconds for up to 200 concurrent users. \\
+  \rowcolor{rowalt}  NFR-PERF-002 & Performance & Vitals refresh frequently enough for near-real-time state. & Vitals interval $\leq 60$ seconds (finer intervals allowed). \\
+  NFR-AVAIL-001 & Availability & Portal available during core academic hours. & 99.5\% uptime Mon--Fri 07:00--22:00 local time. \\
+  \rowcolor{rowalt}  NFR-SEC-001 & Security & All data in transit encrypted. & TLS 1.2+ on all external endpoints. \\
+  NFR-SEC-002 & Security & Authentication relies on institutional SSO; no local password storage for students. & No plaintext passwords in application DB. \\
+  \rowcolor{rowalt}  NFR-SEC-003 & Security & RBAC prevents privilege escalation. & Verified by security review / pen-test. \\
+  NFR-AUDIT-001 & Auditability & Provisioning and lifecycle events logged immutably. & 100\% of state transitions captured; retention $\geq 1$ year (policy TBD). \\
+  \rowcolor{rowalt}  NFR-SCALE-001 & Scalability & Support institution-scale concurrent usage. & Targets per deployment; see SDD for sizing. \\
+  NFR-USE-001 & Usability & New students complete first request without training. & $\geq 80\%$ complete first request in $\leq 5$ minutes in usability testing. \\
+  \rowcolor{rowalt}  NFR-MAINT-001 & Maintainability & Infrastructure integration is layered (Kubernetes adapter, APIs). & Changes localized per SDD modular boundaries. \\
+\end{longtable}
+
+\newpage
+\section{Risks and Open Questions}
+
+\subsection{Risk Register}
+
+\begin{longtable}{@{}L{2cm}L{4.5cm}L{1.5cm}L{1.5cm}L{5cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Risk ID} & \textbf{Description} & \textbf{Prob.} & \textbf{Impact} & \textbf{Mitigation} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Risk ID} & \textbf{Description} & \textbf{Prob.} & \textbf{Impact} & \textbf{Mitigation} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  RISK-HC-01 & gVisor has poor compatibility with certain NVIDIA CUDA operations or driver versions on the bare-metal host. & Medium & High & Test gVisor + NVIDIA driver matrix early; have fallback to standard runc-based pods on a separate node pool with tighter security constraints if gVisor is incompatible with specific workloads. \\
+  \rowcolor{rowalt}  RISK-HC-02 & MIG partitioning configuration on RTX PRO 6000 Blackwell requires driver support that may not be fully stable. & Low & High & Pin NVIDIA driver and GPU Operator versions; test MIG configuration in isolation before production rollout. \\
+  RISK-HC-03 & Credit deduction timer drift (if the metering worker crashes mid-session) could result in under-billing or over-billing. & Medium & Medium & Use idempotent, database-level deduction with session heartbeat; reconcile credits against session start time on recovery. \\
+  \rowcolor{rowalt}  RISK-HC-04 & Students may attempt to escalate privileges from within their pod to break out of the gVisor container sandbox. & Low & Critical & gVisor intercepts syscalls in userspace providing strong isolation; additionally enforce PodSecurityStandard restricted profile; Calico GlobalNetworkPolicy blocks K8s API access; patch NVIDIA Container Toolkit for CVE-2025-23266. \\
+  RISK-HC-05 & PostgreSQL 16 + TimescaleDB becomes a single point of failure if the database goes down. & Low & High & Configure PostgreSQL with Primary + Read Replica; implement connection pooling (PgBouncer in transaction mode); daily pg\_dump + WAL archiving for point-in-time recovery; application handles DB reconnect gracefully. \\
+  \rowcolor{rowalt}  RISK-HC-06 & Teleport certificate issuance may have latency that pushes session provisioning past the 90-second SLA. & Medium & Medium & Profile Teleport certificate issuance time; optimize by pre-staging certificate authorities; add provisioning time to SLA testing. \\
+  RISK-HC-07 & Uncontrolled storage usage by students could fill node disks, causing pod evictions. & Medium & High & Enforce PVC storage quotas at the K8s level; add disk usage monitoring alerts. \\
+  \rowcolor{rowalt}  RISK-HC-08 & Reaper Service may fail silently if K8s API access is revoked or RBAC is misconfigured. & Low & High & Add health-check endpoint to Reaper; alert on missed polling cycles; test RBAC rules in staging environment. \\
+  RISK-HC-09 & OAuth2/OIDC provider (Keycloak or institution Shibboleth IdP) downtime makes login impossible for all users. & Low & High & Deploy Keycloak in HA mode; configure local realm backup; provide emergency admin fallback for platform engineers. \\
+  \rowcolor{rowalt}  RISK-HC-10 & GPU nodes may experience hardware failures, losing in-progress student work. & Low & Medium & Document that in-pod data is not guaranteed persistent; encourage students to use \texttt{rsync} or \texttt{scp} to transfer results before session ends. \\
+\end{longtable}
+
+\subsection{Open Questions}
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Concurrent session limit per student:} Should students be allowed to run multiple concurrent sessions, or is there a hard cap of one active session per user? This needs a policy decision from admin stakeholders.
+  \item \textbf{Credit refund policy:} If a session is terminated due to a system error (e.g., GPU node crash), will credits be refunded? If so, how is ``system fault'' distinguished from ``student-caused failure''? This needs a billing policy decision.
+  \item \textbf{Container image selection:} In v1, will students be restricted to a set of approved base images (e.g., nvidia/cuda:12.x-devel), or will they be able to bring any Docker image? Allowing arbitrary images has significant security implications.
+  \item \textbf{Persistent home directory:} Should there be an optional persistent volume that survives across sessions (for code, datasets) distinct from the per-session ephemeral PVC? This would be a significant UX improvement but adds storage management complexity.
+  \item \textbf{Session sharing / collaboration:} Should two students ever be able to share a session for pair-programming or collaborative experiments? This is a v2 feature but the data model should not preclude it.
+  \item \textbf{Time-zone handling:} Session expiry times should be displayed in the student's local time zone - how should the portal determine the user's time zone? Browser auto-detect vs.\ user profile setting?
+  \item \textbf{Quota enforcement for instructors:} If an instructor allocates credits from a course budget, should the system enforce the total course budget as a hard cap, or just track it as a soft limit with admin alerts?
+  \\
+  \item \textbf{Support for Jupyter Notebooks in v2:} Should we design the API and the port-mapping layer to also support HTTP port forwarding (not just SSH) so that future versions can expose Jupyter or other web services? This may affect the Teleport configuration now.
+\end{enumerate}
+\section{Testability and Traceability}
+
+\subsection{Requirement Traceability}
+
+\begin{longtable}{@{}L{3cm}L{4cm}L{4cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Requirement ID} & \textbf{Story / Use Case} & \textbf{Planned Test ID} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Requirement ID} & \textbf{Story / Use Case} & \textbf{Planned Test ID} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  FR-HC-01 & US-HC-01 / UC-03 & TC-HC-01, TC-HC-02 \\
+  \rowcolor{rowalt}  FR-HC-02 & US-HC-01 & TC-HC-03 \\
+  FR-HC-03 & US-HC-02, US-HC-05 & TC-HC-04 \\
+  \rowcolor{rowalt}  FR-HC-04 & US-HC-05, UC-02 & TC-HC-05, TC-HC-06 \\
+  FR-HC-05 & US-HC-08, UC-03 & TC-HC-07 \\
+  \rowcolor{rowalt}  FR-HC-06 & US-HC-04, UC-01 & TC-HC-08, TC-HC-09 \\
+  FR-HC-07 & US-HC-07, US-HC-08 & TC-HC-10 \\
+  \rowcolor{rowalt}  FR-HC-08 & US-HC-06, UC-04 & TC-HC-11 \\
+  FR-HC-09 & US-HC-09 & TC-HC-12 \\
+  \rowcolor{rowalt}  FR-HC-10 & US-HC-04 (Blackwell profile) & TC-HC-13 \\
+  FR-HC-12 & US-HC-04, UC-01 & TC-HC-14 \\
+  \rowcolor{rowalt}  FR-HC-14 & US-HC-09, NFR-HC-8 & TC-HC-15 \\
+  FR-HC-16 & US-HC-05, UC-02 & TC-HC-16, TC-HC-17 \\
+  \rowcolor{rowalt}  FR-HC-19 & US-HC-10, US-HC-11 & TC-HC-18 \\
+  FR-HC-21 & US-HC-13 & TC-HC-019 \\
+  \rowcolor{rowalt}  FR-HC-22 & US-HC-15 & TC-HC-020 \\
+  FR-HC-26 & US-HC-01 & TC-HC-26 \\
+  \rowcolor{rowalt}  FR-HC-27 & US-HC-05 & TC-HC-27 \\
+\end{longtable}
+
+\subsubsection{Additional FR traceability (summary)}
+Full FR-to-test mapping for administrative and lifecycle requirement IDs is preserved in the repository file \texttt{docs/SRS  Byte Me} (original filename uses a bat emoji) and summarized in \texttt{docs/SDD.md} (Appendix~A). Planned test IDs include \texttt{TC-REQ-*}, \texttt{TC-QUOTA-*}, \texttt{TC-MON-*}, \texttt{TC-LIFE-*}, and \texttt{TC-AUDIT-*}.
+
+\newpage
+\subsection{Initial Manual Test Plan}
+
+\begin{longtable}{@{}L{2cm}L{3cm}L{3cm}L{3.5cm}L{3cm}@{}}
+  
+  \rowcolor{rowalt}  \textbf{Test ID} & \textbf{Scenario} & \textbf{Preconditions} & \textbf{Steps} & \textbf{Expected Result} \\
+  \midrule
+  \endfirsthead
+  
+  \rowcolor{rowalt}  \textbf{Test ID} & \textbf{Scenario} & \textbf{Preconditions} & \textbf{Steps} & \textbf{Expected Result} \\
+  \midrule
+  \endhead
+  
+  \endfoot
+
+  TC-HC-01 & Successful login via Keycloak SSO & User account exists; Keycloak realm available. & 1. Navigate to portal. 2. Click ``Sign in with University SSO.'' 3. Complete Keycloak/Shibboleth flow. & Redirected to dashboard; name and credit balance visible. \\
+  \rowcolor{rowalt}  TC-HC-02 & Login with invalid credentials & User account does not exist in Keycloak realm. & 1. Navigate to portal. 2. Attempt login with unknown credentials. & Error message displayed. No redirect to dashboard. \\
+  TC-HC-03 & Session token expiry forces re-login & User is logged in; JWT TTL has elapsed. & 1. Log in. 2. Wait for token to expire. 3. Attempt to access the dashboard. & HTTP 401 response; portal redirects to login page with ``Session expired'' message. \\
+  \rowcolor{rowalt}  TC-HC-04 & Credit balance updates in real-time & Student has active running session. & 1. Launch a session. 2. Observe credit balance on dashboard for 3 minutes. & Balance decreases at the configured rate; update visible within 5 seconds per deduction. \\
+  TC-HC-05 & Credit deduction stops on session end & Active session exists; student has positive balance. & 1. Note current balance. 2. Click ``Stop Session.'' 3. Wait 2 minutes. 4. Check balance. & Balance stops decreasing immediately after session termination. \\
+  \rowcolor{rowalt}  TC-HC-06 & Session auto-terminates at zero credits & Student has exactly 1 minute of credits remaining; session is active. & 1. Monitor active session. 2. Wait for credit balance to hit 0. & Reaper terminates the session within 30 seconds of balance reaching 0; session status changes to ``Terminated.'' \\
+  TC-HC-07 & Transaction record created on deduction & Active session running. & 1. Start a session. 2. Wait for at least one credit deduction cycle. 3. Check transaction history via admin. & At least one \texttt{DEBIT} transaction record exists for the session. \\
+  \rowcolor{rowalt}  TC-HC-08 & Successful session provisioning & Student logged in; positive credit balance; GPU capacity available. & 1. Select ``RTX 3090 24GB'' profile. 2. Click ``Launch Session.'' 3. Wait up to 90 seconds. & Pod is Running; SSH connection string appears; session shows as RUNNING in dashboard. \\
+  TC-HC-09 & Session launch fails with insufficient credits & Student has 0 credits. & 1. Attempt to launch a session. & HTTP 402 response; error message shown; no pod created. \\
+  \rowcolor{rowalt}  TC-HC-10 & Session history displays correctly & Student has at least 2 terminated sessions. & 1. Navigate to ``Session History'' page. & All past sessions shown with correct GPU type, start time, end time, duration, and credits consumed. \\
+  TC-HC-11 & Manual session termination & Active session exists. & 1. Click ``Stop Session.'' 2. Confirm in dialog. 3. Wait 60 seconds. & Session pod is deleted; SSH connection drops; session shows as ``Terminated'' in history. \\
+  \rowcolor{rowalt}  TC-HC-12 & gVisor runtime class applied & New session just provisioned. & 1. Launch a session. 2. Run \texttt{kubectl describe pod <student-pod>}. & \texttt{runtimeClassName: gvisor} is present in the pod spec. \\
+  TC-HC-13 & Pod network isolation (Calico default-deny) & Two student sessions are active simultaneously. & 1. From student A's pod, attempt \texttt{ping <student B pod IP>}. & Ping receives no response; packets dropped by Calico GlobalNetworkPolicy. \\
+  \rowcolor{rowalt}  TC-HC-14 & SSH access via Teleport ephemeral certificate & Active session with SSH command available. & 1. Copy the SSH command from the portal. 2. Run it in a local terminal. & SSH connection establishes successfully; user lands in the pod's shell. \\
+  TC-HC-15 & Revoked SSH cert rejected after session ends & Session has been terminated. & 1. Terminate the session. 2. Attempt to SSH using the same command from before. & SSH connection refused with authentication failure; certificate is revoked in Teleport. \\
+  \rowcolor{rowalt}  TC-HC-16 & Outbound internet access from pod & Active student session. & 1. SSH into the pod. 2. Run \texttt{curl -I https://pypi.org}. & HTTP 200 response received; outbound internet on port 443 works. \\
+  TC-HC-17 & K8s API server blocked from student pod & Active student session. & 1. SSH into pod. 2. Attempt \texttt{curl https://10.96.0.1} (K8s API server). & Connection times out or is actively refused; Calico GlobalNetworkPolicy blocks access. \\
+  \rowcolor{rowalt}  TC-HC-18 & Admin allocates credits to a student & Admin is logged in; target student account exists. & 1. Navigate to User Management. 2. Find student. 3. Enter 100 credits and click ``Allocate.'' & Student's balance increases by 100 immediately; a \texttt{CREDIT} transaction record is created; audit log entry written. \\
+  TC-HC-19 & Audit log captures session lifecycle events & A full session lifecycle (launch to stop) has just completed. & 1. Navigate to Admin Audit Logs. 2. Filter by session ID. & Entries exist for: session\_created, session\_running, session\_stopped with correct timestamps and actor IDs. \\
+  \rowcolor{rowalt}  TC-HC-20 & PVC deleted with session (cascading) & A session has been terminated. & 1. After session termination, run \texttt{kubectl get pvc -n student-<uuid>}. & The namespace no longer exists; PVC is deleted along with the namespace in cascading deletion. \\
+  TC-HC-21 & Concurrent pod creation by multiple students & At least 10 students are authenticated with sufficient credits and GPUs are available. & 1. Trigger ``Launch Session'' for all students within the same 10-second window. 2. Monitor provisioning states in dashboard/admin view. & Each request creates at most one pod per student; system remains stable with no duplicate sessions or failed billing events under concurrent load. \\
+  \rowcolor{rowalt}  TC-HC-22 & Browser refresh during pod provisioning & Student has just clicked ``Launch Session'' and pod state is pending/creating. & 1. Click ``Launch Session.'' 2. Immediately refresh the browser multiple times. 3. Reopen pod list/detail page. & No duplicate pod is created; the original provisioning request continues and resolves to a single session record. \\
+  TC-HC-23 & Session history pagination correctness & Student account has more than one page of historical sessions (e.g., 30+ records). & 1. Open Session History. 2. Navigate across pages (next, previous, specific page). 3. Verify ordering and counts. & Pagination controls work correctly; no missing/duplicated rows across pages; total count and page boundaries are consistent. \\
+  \rowcolor{rowalt}  TC-HC-24 & Admin negative credit adjustment (deduction) & Admin is authenticated; target student has positive balance. & 1. Open User Management. 2. Enter a negative credit adjustment (e.g., -20). 3. Submit and review ledger/history. & Student balance decreases by the specified amount; transaction is recorded as an auditable admin adjustment with actor and timestamp. \\
+  TC-HC-25 & API rate limiting enforcement & Rate limiter is enabled for student endpoints; test account is authenticated. & 1. Send rapid repeated requests to a protected endpoint (e.g., pod launch/status) exceeding configured threshold. 2. Continue until limit is crossed. & Service returns HTTP 429 for excess requests with clear retry guidance; normal responses resume after the cooldown window. \\
+  \rowcolor{rowalt}  TC-HC-26 & Logout invalidates active session & Student is currently logged in and on a protected page. & 1. Click ``Logout.'' 2. Try to open dashboard/pods URL again without re-login. & Session cookie/token is cleared; protected endpoints return HTTP 401 and UI redirects to login page. \\
+  TC-HC-27 & Extend session before TTL expiry & Student has an active session, positive credits, and extension limit not yet reached. & 1. Open active session view. 2. Click ``Extend Session'' (e.g., +30 min). 3. Verify expiry time and runtime continuity. & Session \texttt{expires\_at} increases by requested increment; pod remains running; billing continues without reset; action is logged. \\
+\end{longtable}
+
+\newpage
+\section{Lab 2 Submission Checklist}
+
+\begin{tabularx}{\textwidth}{@{}C{0.5cm}X@{}}
+  \cboxd & Problem statement and scope are clear (see \textbf{Problem Definition} and \textbf{Scope and Context}). \\
+  \cboxd & User stories: Four-Eyed Raven set (US-HC-*) plus Byte Me set (US-REQ-*, etc.) with acceptance criteria. \\
+  \cboxd & Functional requirements: single \textbf{Functional Requirements} table (27 \texttt{FR-HC-*} rows and 15 administrative/lifecycle rows: \texttt{FR-REQ-*}, \texttt{FR-QUOTA-*}, \texttt{FR-MON-*}, \texttt{FR-LIFE-*}, \texttt{FR-NOTIF-*}, \texttt{FR-AUDIT-*}, \texttt{FR-USER-*}, \texttt{FR-AUTH-*}). \\
+  \cboxd & Data model and data dictionary (\textbf{Data Requirements}); ER diagram may be attached in a later revision. \\
+  \cboxd & Wireframes / screens described (\textbf{UI and UX Requirements}). \\
+  \cboxd & NFR: single \textbf{Non-Functional Requirements} table (18 \texttt{NFR-HC-*} rows and 11 additional rows: \texttt{NFR-PERF-*}, \texttt{NFR-AVAIL-*}, \texttt{NFR-SEC-*}, \texttt{NFR-AUDIT-*}, \texttt{NFR-SCALE-*}, \texttt{NFR-USE-*}, \texttt{NFR-MAINT-*}). \\
+  \cboxd & Risks and open questions documented (\textbf{Risks and Open Questions}). \\
+  \cboxd & Traceability and manual test plan (\textbf{Testability and Traceability}); extended traceability in \texttt{docs/SDD.md}. \\
+\end{tabularx}
+\end{document}

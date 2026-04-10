@@ -55,3 +55,18 @@ infrastructure/pulumi/venv/
 *.pem
 *.key
 credentials.json
+
+# LaTeX outputs under docs/ (built from *.tex sources)
+docs/*.pdf
+docs/*.aux
+docs/*.out
+docs/*.toc
+docs/*.lof
+docs/*.lot
+docs/*.synctex.gz
+docs/*.fdb_latexmk
+docs/*.fls
+docs/*.bbl
+docs/*.blg
+docs/*.bcf
+docs/*.run.xml
