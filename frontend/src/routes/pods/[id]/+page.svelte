@@ -107,21 +107,23 @@
       {#if activeTab === 'terminal'}
         <div class="h-full flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
           <div class="flex bg-gray-200 overflow-x-auto border-b border-gray-300 items-center">
-            {#each terminalSessions as session, idx}
-              <button
-                class="flex items-center px-4 py-2 text-sm border-r border-gray-300 min-w-32 {activeTerminalId === session.id ? 'bg-white font-medium text-indigo-600' : 'hover:bg-gray-300 text-gray-600'}"
-                onclick={() => activeTerminalId = session.id}
-              >
-                <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                Terminal {idx + 1}
+            {#each terminalSessions as session, idx (session.id)}
+              <div class="flex items-center border-r border-gray-300 min-w-[12rem] transition-colors {activeTerminalId === session.id ? 'bg-white' : 'hover:bg-gray-300'}">
                 <button
-                  class="ml-auto w-5 h-5 flex items-center justify-center rounded hover:bg-gray-400 hover:text-gray-900"
-                  onclick={(e) => { e.stopPropagation(); removeTerminal(session.id); }}
+                  class="flex-grow flex items-center px-4 py-2 text-sm {activeTerminalId === session.id ? 'font-medium text-indigo-600' : 'text-gray-600'}"
+                  onclick={() => activeTerminalId = session.id}
+                >
+                  <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  Terminal {idx + 1}
+                </button>
+                <button
+                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-400 hover:text-gray-900 mx-1 {activeTerminalId === session.id ? 'text-gray-500' : 'text-gray-400'}"
+                  onclick={() => removeTerminal(session.id)}
                   title="Close Terminal"
                 >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
-              </button>
+              </div>
             {/each}
             <button
                class="px-3 py-2 text-gray-500 hover:bg-gray-300 hover:text-gray-800 focus:outline-none"
@@ -139,11 +141,13 @@
                  <p>VM is {data.pod.state}. SSH access is only available when running.</p>
               </div>
             {/if}
-            {#each terminalSessions as session}
-              <div class="absolute inset-0 {activeTerminalId === session.id ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}">
-                <Terminal podId={data.pod.id} sessionId={session.id} />
-              </div>
-            {/each}
+            {#if data.pod.state === 'running'}
+              {#each terminalSessions as session (session.id)}
+                <div class="absolute inset-0 {activeTerminalId === session.id ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}">
+                  <Terminal podId={data.pod.id} sessionId={session.id} />
+                </div>
+              {/each}
+            {/if}
           </div>
         </div>
       {:else if activeTab === 'details'}

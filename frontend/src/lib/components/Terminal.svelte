@@ -22,25 +22,59 @@
 
     ws.onopen = () => {
       if (isDisposed) return;
-      term.writeln('\r\nConnected!\r\n');
-      term.focus();
-      if (fitAddon) {
-        fitAddon.fit();
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      window.reconnectAttempts = 0;
+      if (term) {
+         term.writeln('\r\nConnected!\r\n');
+         try { term.focus(); } catch (e) {}
+      }
+      if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
+         try {
+           fitAddon.fit();
+           if (term.cols > 0 && term.rows > 0) {
+             ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+           }
+         } catch (e) {}
       }
     };
 
-    ws.onmessage = async (ev) => {
-        if (isDisposed) return;
-        term.write(ev.data);
+    ws.onmessage = (ev) => {
+        if (isDisposed || !term) return;
+        try {
+          term.write(ev.data);
+        } catch (e) {
+          console.error("Terminal write error:", e);
+        }
     };
 
-    ws.onclose = () => {
-      if (!isDisposed) {
-        term.writeln('\r\nConnection lost — Reconnecting...');
-        clearTimeout(reconnectTimer);
-        reconnectTimer = window.setTimeout(connect, 3000);
+    ws.onerror = (ev) => {
+      console.error("WebSocket error:", ev);
+    };
+
+    ws.onclose = (ev) => {
+      if (isDisposed) return;
+
+      const code = ev.code;
+      if (code === 1008 || code === 1003 || code >= 4000) {
+        term.writeln(`\r\nConnection closed (${code}).`);
+        return;
       }
+
+      if (typeof reconnectAttempts === 'undefined' || typeof maxReconnectAttempts === 'undefined') {
+         window.reconnectAttempts = (window.reconnectAttempts || 0);
+         window.maxReconnectAttempts = 5;
+      }
+
+      if (window.reconnectAttempts >= window.maxReconnectAttempts) {
+        term.writeln(`\r\nMax reconnect attempts reached. Please refresh.`);
+        return;
+      }
+
+      const backoff = Math.min(3000 * Math.pow(1.5, window.reconnectAttempts), 15000);
+      window.reconnectAttempts++;
+
+      term.writeln(`\r\nConnection lost — Reconnecting in ${Math.round(backoff / 1000)}s (Attempt ${window.reconnectAttempts}/${window.maxReconnectAttempts})...`);
+      clearTimeout(reconnectTimer);
+      reconnectTimer = window.setTimeout(connect, backoff);
     };
   }
 
@@ -69,12 +103,17 @@
     });
 
     resizeObserver = new ResizeObserver(() => {
-       if (fitAddon) {
-          fitAddon.fit();
+       if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
+          try {
+             fitAddon.fit();
+          } catch (e) {}
        }
     });
+
     // Wait for the terminal container to be fully rendered before observing
-    setTimeout(() => resizeObserver.observe(terminalEl), 100);
+    resizeTimer = window.setTimeout(() => {
+        if (!isDisposed && terminalEl) resizeObserver.observe(terminalEl);
+    }, 100);
 
     connect();
   });
@@ -82,7 +121,11 @@
   onDestroy(() => {
     isDisposed = true;
     clearTimeout(reconnectTimer);
-    if (ws) ws.close();
+    clearTimeout(resizeTimer);
+    if (ws) {
+        ws.onclose = null;
+        ws.close();
+    }
     if (resizeObserver) resizeObserver.disconnect();
     if (term) term.dispose();
   });

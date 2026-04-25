@@ -224,51 +224,69 @@ async def stream_metrics(
     return EventSourceResponse(event_generator())
 
 
+from app.config import settings
+from app.middleware.auth import verify_token
+
+async def _safe_send(websocket: WebSocket, text: str):
+    """Safely send text over a websocket that might be closed."""
+    from fastapi import WebSocketDisconnect
+    try:
+        await websocket.send_text(text)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+
+
 @router.websocket("/{pod_id}/terminal")
 async def websocket_terminal(
     websocket: WebSocket,
     pod_id: str,
     db: AsyncSession = Depends(get_db),
-    session_token: str | None = Query(None),
 ):
-    """Bridge a WebSocket connection from the browser to an SSH session in the VM."""
-    # The browser WS API doesn't send custom headers, but we can read cookies or query parameters.
-    token = session_token or websocket.cookies.get("session_token")
+    """
+    Bridge a WebSocket connection from the browser to an SSH session in the VM.
+    Enforces ownership, state (running), authentication (cookie), and origin controls.
+    """
+    token = websocket.cookies.get("session_token")
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
         
-    from app.middleware.auth import verify_token
     payload = await verify_token(token)
     if not payload:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
         
+    origin = websocket.headers.get("origin", "")
+    if origin not in settings.cors_origins:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket.accept()
 
     result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
     session = result.scalar_one_or_none()
 
     if not session or session.user_id != payload.sub or not session.ssh_port or session.state != "running":
-        await websocket.send_text("\\r\\nError: VM is not running, SSH is not available, or forbidden.\\r\\n")
-        await websocket.close(code=1008)
+        await _safe_send(websocket, "\r\nError: VM is not running, SSH is not available, or forbidden.\r\n")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # Connect to the pod via SSH
     host = "localhost"  # Or the actual K8s node IP if running remotely
     port = session.ssh_port
     username = "root"
-    password = "hopper"  # Default POC password
+    # TODO(HOP-XX): replace with per-pod ephemeral key/cert injected at provisioning.
+    password = "hopper"
 
+    conn = process = None
     try:
-        # Establish SSH connection
+        # known_hosts=None disables host-key verification — safe only because the SSH endpoint
+        # is reached via in-cluster localhost forwarding which is not externally reachable.
+        # MUST be replaced before exposing the gateway off-host.
         conn = await asyncssh.connect(
             host, port=port, username=username, password=password, known_hosts=None
         )
         
-        # Open an interactive SSH session (PTY)
-        chan, _ = await conn.create_session(
-            asyncssh.SSHClientSession,
+        process = await conn.create_process(
             term_type="xterm-256color",
             term_size=(80, 24),
         )
@@ -276,46 +294,75 @@ async def websocket_terminal(
         async def ws_to_ssh():
             try:
                 while True:
-                    data = await websocket.receive_text()
-                    # Handle resize events from xterm fit addon
-                    if data.startswith('{"type":"resize"'):
+                    msg_text = await websocket.receive_text()
+                    if msg_text.startswith('{"type":"resize"'):
                         try:
-                            msg = json.loads(data)
-                            chan.change_terminal_size(msg["cols"], msg["rows"])
-                        except Exception:
-                            pass
+                            msg = json.loads(msg_text)
+                            cols = max(1, min(1000, int(msg["cols"])))
+                            rows = max(1, min(1000, int(msg["rows"])))
+                            process.change_terminal_size(cols, rows)
+                        except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            logger.warning("Invalid resize control frame from pod %s: %s", pod_id, e)
+                        except OSError as e:
+                            logger.error("Failed to resize SSH PTY for pod %s: %s", pod_id, e)
+                            raise
                     else:
-                        chan.write(data)
+                        process.stdin.write(msg_text)
             except WebSocketDisconnect:
-                pass
+                logger.info("Client disconnected from terminal pod=%s", pod_id)
+                raise
+            except asyncssh.ChannelOpenError:
+                logger.error("SSH channel closed mid-stream pod=%s", pod_id, exc_info=True)
+                raise
             except Exception as e:
-                logger.error(f"WS to SSH error: {e}")
+                logger.error("WS to SSH error pod=%s: %s", pod_id, e, exc_info=True)
+                raise
 
         async def ssh_to_ws():
             try:
                 while True:
-                    data = await chan.read(8192)
+                    data = await process.stdout.read(8192)
                     if not data:
                         break
-                    await websocket.send_text(data)
+                    if isinstance(data, bytes):
+                        await websocket.send_bytes(data)
+                    else:
+                        await websocket.send_text(data)
+            except (asyncssh.ConnectionLost, asyncssh.DisconnectError):
+                logger.info("SSH connection lost or closed pod=%s", pod_id)
+                raise
             except Exception as e:
-                logger.error(f"SSH to WS error: {e}")
+                logger.error("SSH to WS error pod=%s: %s", pod_id, e, exc_info=True)
+                raise
 
-        # Run bridging tasks concurrently
-        await asyncio.gather(
-            ws_to_ssh(),
-            ssh_to_ws(),
-        )
+        t1 = asyncio.create_task(ws_to_ssh())
+        t2 = asyncio.create_task(ssh_to_ws())
+        done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
+        for p in pending:
+            p.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
+    except asyncssh.PermissionDenied:
+        logger.error("SSH auth failed pod=%s", pod_id, exc_info=True)
+        await _safe_send(websocket, "\r\nVM authentication failed. Please retry.\r\n")
+    except (asyncssh.ConnectionLost, OSError) as e:
+        logger.error("SSH connect failed pod=%s: %s", pod_id, e, exc_info=True)
+        await _safe_send(websocket, "\r\nVM is unreachable — please retry shortly.\r\n")
     except Exception as e:
-        logger.error(f"SSH bridge failed: {e}")
-        await websocket.send_text(f"\\r\\nConnection failed: {e}\\r\\n")
+        logger.exception("Unhandled SSH bridge failure pod=%s", pod_id)
+        await _safe_send(websocket, "\r\nUnexpected error occurred while connecting.\r\n")
     finally:
-        if 'chan' in locals():
-            chan.close()
-        if 'conn' in locals():
+        if process is not None:
+            process.close()
+        if conn is not None:
             conn.close()
+            try:
+                await conn.wait_closed()
+            except Exception:
+                logger.exception("conn.wait_closed failed pod=%s", pod_id)
         try:
             await websocket.close()
-        except:
+        except RuntimeError:
             pass
+        except Exception:
+            logger.exception("Failed closing terminal websocket pod=%s", pod_id)
