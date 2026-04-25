@@ -1,10 +1,13 @@
 import logging
 import uuid
+import asyncio
+import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
+import asyncssh
 
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
@@ -219,3 +222,100 @@ async def stream_metrics(
             await sub.unsubscribe()
 
     return EventSourceResponse(event_generator())
+
+
+@router.websocket("/{pod_id}/terminal")
+async def websocket_terminal(
+    websocket: WebSocket,
+    pod_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_token: str | None = Query(None),
+):
+    """Bridge a WebSocket connection from the browser to an SSH session in the VM."""
+    # The browser WS API doesn't send custom headers, but we can read cookies or query parameters.
+    token = session_token or websocket.cookies.get("session_token")
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+        
+    from app.middleware.auth import verify_token
+    payload = await verify_token(token)
+    if not payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+        
+    await websocket.accept()
+
+    result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    session = result.scalar_one_or_none()
+
+    if not session or session.user_id != payload.sub or not session.ssh_port or session.state != "running":
+        await websocket.send_text("\\r\\nError: VM is not running, SSH is not available, or forbidden.\\r\\n")
+        await websocket.close(code=1008)
+        return
+
+    # Connect to the pod via SSH
+    host = "localhost"  # Or the actual K8s node IP if running remotely
+    port = session.ssh_port
+    username = "root"
+    password = "hopper"  # Default POC password
+
+    try:
+        # Establish SSH connection
+        conn = await asyncssh.connect(
+            host, port=port, username=username, password=password, known_hosts=None
+        )
+        
+        # Open an interactive SSH session (PTY)
+        chan, _ = await conn.create_session(
+            asyncssh.SSHClientSession,
+            term_type="xterm-256color",
+            term_size=(80, 24),
+        )
+
+        async def ws_to_ssh():
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    # Handle resize events from xterm fit addon
+                    if data.startswith('{"type":"resize"'):
+                        try:
+                            msg = json.loads(data)
+                            chan.change_terminal_size(msg["cols"], msg["rows"])
+                        except Exception:
+                            pass
+                    else:
+                        chan.write(data)
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.error(f"WS to SSH error: {e}")
+
+        async def ssh_to_ws():
+            try:
+                while True:
+                    data = await chan.read(8192)
+                    if not data:
+                        break
+                    await websocket.send_text(data)
+            except Exception as e:
+                logger.error(f"SSH to WS error: {e}")
+
+        # Run bridging tasks concurrently
+        await asyncio.gather(
+            ws_to_ssh(),
+            ssh_to_ws(),
+        )
+
+    except Exception as e:
+        logger.error(f"SSH bridge failed: {e}")
+        await websocket.send_text(f"\\r\\nConnection failed: {e}\\r\\n")
+    finally:
+        if 'chan' in locals():
+            chan.close()
+        if 'conn' in locals():
+            conn.close()
+        try:
+            await websocket.close()
+        except:
+            pass
