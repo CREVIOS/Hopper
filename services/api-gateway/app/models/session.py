@@ -17,6 +17,7 @@ class PodSession(Base):
     memory: Mapped[str] = mapped_column(String, nullable=False, default="2Gi")
     namespace: Mapped[str] = mapped_column(String, nullable=False)
     pod_name: Mapped[str] = mapped_column(String, nullable=False)
+    vscode_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ssh_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -1,0 +1,6 @@
+# images/hopper-vm/config/code-server-config.yaml
+bind-addr: 0.0.0.0:8080
+auth: none          # No password — your K8s NetworkPolicy + platform auth is the gate
+cert: false
+user-data-dir: /root/.local/share/code-server
+extensions-dir: /root/.local/share/code-server/extensions

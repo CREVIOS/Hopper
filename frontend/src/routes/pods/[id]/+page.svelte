@@ -4,7 +4,7 @@
   import { api } from '$lib/api/client';
   import type { Pod, VmMetrics } from '$lib/types';
 
-  let { data }: { data: { pod: Pod | null } } = $props();
+  let { data }: { data: { pod: Pod | null; nodeIp: string } } = $props();
 
   let metrics: VmMetrics | null = $state(null);
   let eventSource: EventSource | null = $state(null);
@@ -33,6 +33,12 @@
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to terminate VM');
     }
+  }
+
+  // Constructs the proxy URL for a port forwarded inside the VM.
+  // code-server exposes forwarded ports at /proxy/<port>/ — no extra NodePort needed.
+  function getPreviewUrl(pod: Pod, port: number): string {
+    return `http://${data.nodeIp}:${pod.vscode_port}/proxy/${port}/`;
   }
 
   const stateColors: Record<string, string> = {
@@ -89,6 +95,31 @@
             <dd class="font-mono text-indigo-600">ssh root@20.193.138.159 -p {data.pod.ssh_port}</dd>
           </div>
         {/if}
+
+        {#if data.pod.vscode_port && data.pod.state === 'running'}
+          <div class="col-span-2">
+            <dt class="text-gray-500">VS Code</dt>
+            <dd class="flex items-center gap-3">
+              <a
+                href="/api/pods/{data.pod.id}/vscode/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                Open VS Code ↗
+              </a>
+              <a
+                href={getPreviewUrl(data.pod, 5000)}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Preview :5000 ↗
+              </a>
+            </dd>
+          </div>
+        {/if}
+
         <div>
           <dt class="text-gray-500">Created</dt>
           <dd class="font-medium">{new Date(data.pod.created_at).toLocaleString()}</dd>

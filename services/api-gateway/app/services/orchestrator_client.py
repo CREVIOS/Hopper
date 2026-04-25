@@ -21,6 +21,7 @@ class PodStatusResponse:
     id: str
     state: str
     ssh_port: int
+    vscode_port : int
     message: str
 
 
@@ -89,6 +90,7 @@ class OrchestratorClient:
             id=resp.id,
             state=_STATE_MAP.get(resp.state, "unknown"),
             ssh_port=resp.ssh_port,
+            vscode_port=resp.vscode_port,
             message=resp.message,
         )
 

@@ -21,8 +21,12 @@ else
   echo "Using protoc for code generation..."
   command -v protoc >/dev/null 2>&1 || { echo "protoc is required. Install from https://grpc.io/docs/protoc-installation/"; exit 1; }
 
+  # Use Poetry venv Python which has grpcio-tools installed
+  POETRY_PYTHON=$(cd services/api-gateway && poetry run which python)
+  echo "Using Python: $POETRY_PYTHON"
+
   # Generate Python stubs
-  python -m grpc_tools.protoc \
+  "$POETRY_PYTHON" -m grpc_tools.protoc \
     -I"$PROTO_DIR" \
     --python_out="$GEN_DIR/python" \
     --grpc_python_out="$GEN_DIR/python" \
