@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     jwt_algorithm: str = "RS256"
     debug: bool = False
+    node_ip: str = "127.0.0.1"
 
-    model_config = {"env_prefix": "HOPPER_"}
+    model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()

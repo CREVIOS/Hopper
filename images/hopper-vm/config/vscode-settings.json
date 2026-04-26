@@ -1,0 +1,11 @@
+
+{
+  "workbench.colorTheme": "Default Dark+",
+  "editor.fontSize": 15,
+  "editor.fontFamily": "'JetBrains Mono', 'Fira Code', monospace",
+  "terminal.integrated.fontSize": 14,
+  "files.autoSave": "afterDelay",
+  "editor.formatOnSave": true,
+  "code-runner.runInTerminal": true,
+  "jupyter.askForKernelRestart": false
+}

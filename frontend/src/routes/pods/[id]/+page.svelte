@@ -5,7 +5,7 @@
   import { api } from '$lib/api/client';
   import type { Pod, VmMetrics } from '$lib/types';
 
-  let { data }: { data: { pod: Pod | null } } = $props();
+  let { data }: { data: { pod: Pod | null; nodeIp: string } } = $props();
 
   let metrics: VmMetrics | null = $state(null);
   let eventSource: EventSource | null = $state(null);
@@ -57,6 +57,12 @@
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to terminate VM');
     }
+  }
+
+  // Constructs the proxy URL for a port forwarded inside the VM.
+  // code-server exposes forwarded ports at /proxy/<port>/ — no extra NodePort needed.
+  function getPreviewUrl(pod: Pod, port: number): string {
+    return `http://${data.nodeIp}:${pod.vscode_port}/proxy/${port}/`;
   }
 
   const stateColors: Record<string, string> = {
@@ -172,7 +178,30 @@
             {#if data.pod.ssh_port}
               <div class="col-span-2">
                 <dt class="text-gray-500">SSH Access</dt>
-                <dd class="font-mono text-indigo-600">ssh root@20.193.138.159 -p {data.pod.ssh_port}</dd>
+                <dd class="font-mono text-indigo-600">ssh root@{data.nodeIp} -p {data.pod.ssh_port}</dd>
+              </div>
+            {/if}
+            {#if data.pod.vscode_port && data.pod.state === 'running'}
+              <div class="col-span-2">
+                <dt class="text-gray-500">VS Code</dt>
+                <dd class="flex items-center gap-3">
+                  <a
+                    href="/api/pods/{data.pod.id}/vscode/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                  >
+                    Open VS Code ↗
+                  </a>
+                  <a
+                    href={getPreviewUrl(data.pod, 5000)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+                  >
+                    Preview :5000 ↗
+                  </a>
+                </dd>
               </div>
             {/if}
             <div>
@@ -180,6 +209,25 @@
               <dd class="font-medium">{new Date(data.pod.created_at).toLocaleString()}</dd>
             </div>
           </dl>
+        </div>
+      {:else if activeTab === 'vscode'}
+        <div class="h-full flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
+          {#if data.pod.state !== 'running'}
+            <div class="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
+              <p>VS Code is only available when the VM is running.</p>
+              <p class="text-sm">Current state: {data.pod.state}</p>
+            </div>
+          {:else if !data.pod.vscode_port}
+            <div class="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
+              <p>code-server is starting — please refresh in a moment.</p>
+            </div>
+          {:else}
+            <iframe
+              src="/api/pods/{data.pod.id}/vscode/"
+              class="w-full h-full border-0"
+              title="VS Code"
+            ></iframe>
+          {/if}
         </div>
       {:else if activeTab === 'metrics'}
         <div class="h-full overflow-y-auto">
@@ -190,10 +238,6 @@
               <p class="text-gray-500">Metrics are only available for running VMs</p>
             </div>
           {/if}
-        </div>
-      {:else}
-        <div class="flex items-center justify-center h-full bg-gray-50 border rounded-lg border-dashed border-gray-300">
-           <p class="text-gray-500">Coming soon</p>
         </div>
       {/if}
     </div>

@@ -39,6 +39,7 @@ message PodStatus {
   google.protobuf.Timestamp updated_at = 8;
   string message = 9;
   int32 ssh_port = 10;
+  int32 vscode_port = 13;
   string cpu = 11;
   string memory = 12;
 }

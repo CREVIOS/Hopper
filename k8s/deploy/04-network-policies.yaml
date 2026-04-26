@@ -227,3 +227,24 @@ spec:
           port: 80
         - protocol: TCP
           port: 443
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-to-user-vms
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080

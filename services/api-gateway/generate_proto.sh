@@ -16,5 +16,7 @@ python -m grpc_tools.protoc \
 # Fix relative imports in generated files
 find "$OUT_DIR" -name '*_pb2_grpc.py' -exec sed -i 's/^from hopper\./from app.proto.hopper./g' {} +
 find "$OUT_DIR" -name '*_pb2.py' -exec sed -i 's/^from hopper\./from app.proto.hopper./g' {} +
+# Fix aliased imports like: from hopper.x import y as z
+find "$OUT_DIR" -name '*_pb2_grpc.py' -exec sed -i 's/^from hopper\.\(.*\) import/from app.proto.hopper.\1 import/g' {} +
 
 echo "Proto stubs generated in $OUT_DIR"

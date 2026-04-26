@@ -52,7 +52,8 @@ func podToProto(p *pod.Pod) *podv1.PodStatus {
 		Plan:      p.Plan,
 		NodeName:  p.NodeName,
 		Namespace: p.Namespace,
-		SshPort:   p.SshPort,
+		SshPort:    p.SshPort,
+		VscodePort: p.VSCodePort,
 		Cpu:       p.CPU,
 		Memory:    p.Memory,
 		CreatedAt: timestamppb.New(p.CreatedAt),
@@ -91,8 +92,8 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		return nil, fmt.Errorf("transitioning to creating: %w", err)
 	}
 
-	// 3. Create the actual K8s pod + SSH service
-	sshPort, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
+	// 3. Create the actual K8s pod + SSH + VS Code services
+	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
 		PodName: podName,
 		PodID:   podName,
 		UserID:  req.UserId,
@@ -111,16 +112,17 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		return nil, fmt.Errorf("creating k8s pod: %w", err)
 	}
 
-	// 4. Record the SSH port and transition to running
-	s.server.podManager.SetSshPort(p.ID, sshPort)
+	// 4. Record ports and transition to running
+	s.server.podManager.SetPorts(p.ID, ports.SSHPort, ports.VSCodePort)
 	_ = s.server.podManager.Transition(p.ID, pod.StateRunning)
 
 	// 5. Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]interface{}{
-		"pod_id":   p.ID,
-		"user_id":  req.UserId,
-		"ssh_port": sshPort,
-		"plan":     req.Plan,
+		"pod_id":      p.ID,
+		"user_id":     req.UserId,
+		"ssh_port":    ports.SSHPort,
+		"vscode_port": ports.VSCodePort,
+		"plan":        req.Plan,
 	})
 
 	// 6. Start billing ticker

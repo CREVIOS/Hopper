@@ -34,6 +34,7 @@ export interface Pod {
   node_name?: string;
   namespace: string;
   ssh_port?: number;
+  vscode_port?: number;
   created_at: string;
   updated_at: string;
 }
