@@ -33,6 +33,7 @@ type Pod struct {
 	Namespace string
 	PodName   string
 	SshPort   int32
+	VSCodePort int32
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

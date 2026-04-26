@@ -106,3 +106,13 @@ func (m *Manager) ListRunning() []*Pod {
 	}
 	return result
 }
+
+
+func (m *Manager) SetPorts(id string, sshPort, vscodePort int32) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.pods[id]; ok {
+		p.SshPort = sshPort
+		p.VSCodePort = vscodePort
+	}
+}

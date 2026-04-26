@@ -21,10 +21,11 @@ class VmPlan(str, Enum):
 
 
 # Resource limits per plan (used by orchestrator to set cgroup limits)
+# Dev/minikube-friendly sizes — scale up for production
 VM_PLAN_RESOURCES = {
-    VmPlan.SMALL:  {"cpu": "1",    "memory": "2Gi",  "disk": "5Gi",  "credits_per_hour": 1.0},
-    VmPlan.MEDIUM: {"cpu": "2",    "memory": "4Gi",  "disk": "10Gi", "credits_per_hour": 2.0},
-    VmPlan.LARGE:  {"cpu": "4",    "memory": "8Gi",  "disk": "20Gi", "credits_per_hour": 4.0},
+    VmPlan.SMALL:  {"cpu": "500m",  "memory": "512Mi", "disk": "5Gi",  "credits_per_hour": 1.0},
+    VmPlan.MEDIUM: {"cpu": "1",     "memory": "1Gi",   "disk": "10Gi", "credits_per_hour": 2.0},
+    VmPlan.LARGE:  {"cpu": "2",     "memory": "2Gi",   "disk": "20Gi", "credits_per_hour": 4.0},
 }
 
 
@@ -44,6 +45,7 @@ class PodResponse(BaseModel):
     node_name: str | None = None
     namespace: str
     ssh_port: int | None = None
+    vscode_port: int | None = None
     created_at: datetime
     updated_at: datetime
 

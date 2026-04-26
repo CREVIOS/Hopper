@@ -30,9 +30,16 @@ type CreatePodOpts struct {
 	Memory  string
 }
 
+
+
+type PodPorts struct{
+	SSHPort int32
+	VSCodePort int32
+}
+
 // CreatePod creates a K8s Pod with resource limits and a NodePort Service for SSH.
 // Returns the assigned SSH NodePort.
-func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (int32, error) {
+func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
 	labels := map[string]string{
 		"app":                   "hopper-vm",
 		"role":                  "user-vm",
@@ -56,6 +63,11 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (int32,
 					// For other images, fall back to sleep infinity.
 					Ports: []corev1.ContainerPort{
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
+						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
+					},
+					Env: []corev1.EnvVar{
+						// code-server picks this up so asset URLs are relative to the proxy path
+						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/api/pods/%s/vscode", opts.PodID)},
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -75,7 +87,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (int32,
 
 	_, err := pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
-		return 0, fmt.Errorf("creating pod %s: %w", opts.PodName, err)
+		return PodPorts{}, fmt.Errorf("creating pod %s: %w", opts.PodName, err)
 	}
 
 	// Create a NodePort Service so the user can SSH into the pod from outside
@@ -96,6 +108,12 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (int32,
 					Protocol:   corev1.ProtocolTCP,
 					// NodePort is auto-assigned by K8s (30000-32767 range)
 				},
+				{
+					Name:       "vscode",
+					Port:       8080,
+					TargetPort: intstr.FromInt32(8080),
+					Protocol:   corev1.ProtocolTCP,
+				},
 			},
 		},
 	}
@@ -104,12 +122,21 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (int32,
 	if err != nil {
 		// Clean up the pod if service creation fails
 		_ = pm.client.CoreV1().Pods(pm.namespace).Delete(ctx, opts.PodName, metav1.DeleteOptions{})
-		return 0, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
+		return PodPorts{}, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
 	}
 
+	var ports PodPorts
+	for _, p := range createdSvc.Spec.Ports{
+		switch p.Name{
+		case "ssh":
+			ports.SSHPort = p.NodePort
+		case "vscode":
+			ports.VSCodePort = p.NodePort
+		}
+	}
 	// Return the auto-assigned NodePort
-	sshPort := createdSvc.Spec.Ports[0].NodePort
-	return sshPort, nil
+	// sshPort := createdSvc.Spec.Ports[0].NodePort
+	return ports, nil
 }
 
 // DeletePod removes the K8s Pod and its SSH Service.

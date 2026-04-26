@@ -1,5 +1,11 @@
 import asyncio
+import sys
+import os
 from logging.config import fileConfig
+
+# Make sure `app` is importable regardless of how alembic is invoked.
+# This adds services/api-gateway/ to sys.path so `from app.x import y` works.
+# sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from alembic import context
 from sqlalchemy import pool
