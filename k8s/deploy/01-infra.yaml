@@ -31,18 +31,33 @@ spec:
       labels:
         app: postgres
     spec:
+      securityContext:
+        # Postgres image creates files as uid 999 (postgres user). fsGroup
+        # ensures the mounted PVC is chown'd so the process can write.
+        fsGroup: 999
       containers:
         - name: postgres
           image: timescale/timescaledb:latest-pg16
           ports:
             - containerPort: 5432
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: POSTGRES_DB
               value: hopper
             - name: POSTGRES_USER
-              value: hopper
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: username }
             - name: POSTGRES_PASSWORD
-              value: hopper_dev
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: password }
           volumeMounts:
             - name: pgdata
               mountPath: /var/lib/postgresql/data
@@ -107,6 +122,19 @@ spec:
           ports:
             - containerPort: 4222
             - containerPort: 8222
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: nats-data
+              mountPath: /data
           resources:
             requests:
               cpu: "100m"
@@ -114,6 +142,9 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+      volumes:
+        - name: nats-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -158,30 +189,44 @@ spec:
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:25.0
-          args: ["start-dev"]
+          # `start` (not `start-dev`) is the production mode. It enforces
+          # hostname strictness, requires HTTPS to be terminated upstream,
+          # and uses an optimized server config. `--proxy-headers=xforwarded`
+          # tells Keycloak to honour the nginx ingress's X-Forwarded-* headers.
+          args:
+            - start
+            - --proxy-headers=xforwarded
+            - --hostname-strict=true
+            - --http-enabled=true
           ports:
             - containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: KEYCLOAK_ADMIN
-              value: admin
+              valueFrom:
+                secretKeyRef: { name: keycloak-admin, key: username }
             - name: KEYCLOAK_ADMIN_PASSWORD
-              value: admin
+              valueFrom:
+                secretKeyRef: { name: keycloak-admin, key: password }
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL
               value: jdbc:postgresql://postgres:5432/hopper
             - name: KC_DB_USERNAME
-              value: hopper
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: username }
             - name: KC_DB_PASSWORD
-              value: hopper_dev
-            - name: KC_PROXY_HEADERS
-              value: xforwarded
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: password }
             - name: KC_HOSTNAME
-              value: "https://20.193.138.159"
-            - name: KC_HOSTNAME_STRICT
-              value: "false"
-            - name: KC_HTTP_ENABLED
-              value: "true"
+              value: "https://hopper.farefin.com"
           resources:
             requests:
               cpu: "500m"

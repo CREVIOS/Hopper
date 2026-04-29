@@ -86,6 +86,15 @@ func (m *Manager) Get(id string) (*Pod, bool) {
 	return p, ok
 }
 
+// SetState force-sets the state without transition validation (for reconciliation only).
+func (m *Manager) SetState(id string, state State) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.pods[id]; ok {
+		p.State = state
+	}
+}
+
 func (m *Manager) SetSshPort(id string, port int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -114,5 +123,13 @@ func (m *Manager) SetPorts(id string, sshPort, vscodePort int32) {
 	if p, ok := m.pods[id]; ok {
 		p.SshPort = sshPort
 		p.VSCodePort = vscodePort
+	}
+}
+
+func (m *Manager) SetSshPassword(id string, password string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.pods[id]; ok {
+		p.SshPassword = password
 	}
 }

@@ -26,6 +26,11 @@ message CreatePodRequest {
   string cpu = 4;
   string memory = 5;
   map<string, string> labels = 6;
+  string disk = 7;
+  // API-side pod UUID — used as the canonical pod identity for labels and
+  // code-server's --base-path so that external URLs (path-based code access)
+  // match the same identifier the API and frontend use.
+  string pod_id = 8;
 }
 
 message PodStatus {
@@ -39,8 +44,10 @@ message PodStatus {
   google.protobuf.Timestamp updated_at = 8;
   string message = 9;
   int32 ssh_port = 10;
+  int32 vscode_port = 13;
   string cpu = 11;
   string memory = 12;
+  string ssh_password = 14;
 }
 
 enum PodState {

@@ -7,6 +7,7 @@ class TokenPayload(BaseModel):
     name: str
     role: str
     exp: int
+    email_verified: bool = False
 
 
 class UserResponse(BaseModel):
@@ -14,3 +15,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
+
+
+class ChangeRoleRequest(BaseModel):
+    role: str  # one of: admin, professor, student

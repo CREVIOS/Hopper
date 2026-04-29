@@ -40,6 +40,12 @@ func main() {
 		logger.Fatal("failed to create k8s client", zap.Error(err))
 	}
 	k8sPods := k8s.NewPodManager(clientset, cfg.KubeNamespace)
+	if metricsClient, err := k8s.NewMetricsClientset(cfg.KubeConfig); err == nil {
+		k8sPods.SetMetricsClient(metricsClient)
+		logger.Info("metrics-server client initialized")
+	} else {
+		logger.Warn("metrics-server unavailable; live CPU/RAM will report 0", zap.Error(err))
+	}
 	logger.Info("k8s client initialized", zap.String("namespace", cfg.KubeNamespace))
 
 	// Start gRPC server

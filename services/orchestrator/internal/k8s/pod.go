@@ -2,6 +2,8 @@ package k8s
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -9,15 +11,45 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
+
+// SshPasswordAnnotation stores the per-pod root SSH password on the K8s Pod
+// object so it can be recovered on orchestrator restart (reconciliation) without
+// a separate secret store.
+const SshPasswordAnnotation = "hopper.dev/ssh-password"
+
+// CodeServerPasswordAnnotation stores the per-pod code-server password.
+// code-server reads $PASSWORD at start-up, so the same value is also injected
+// as a container env var. The annotation lets the gateway recover it for
+// auto-fill on the proxy redirect without exec-ing into the pod.
+const CodeServerPasswordAnnotation = "hopper.dev/code-server-password"
+
+// generateRandomPassword returns a 24-char URL-safe random string (192 bits
+// of entropy). Used for both the SSH root password and code-server's auth.
+func generateRandomPassword() (string, error) {
+	buf := make([]byte, 18)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
 
 type PodManager struct {
 	client    *kubernetes.Clientset
+	metrics   *metricsv.Clientset
 	namespace string
 }
 
 func NewPodManager(client *kubernetes.Clientset, namespace string) *PodManager {
 	return &PodManager{client: client, namespace: namespace}
+}
+
+// SetMetricsClient wires in the metrics-server client used by GetPodMetrics.
+// Optional — without it, GetPodMetrics still returns the configured limit
+// (so memory_limit_bytes is correct) but used CPU/memory stay at zero.
+func (pm *PodManager) SetMetricsClient(m *metricsv.Clientset) {
+	pm.metrics = m
 }
 
 type CreatePodOpts struct {
@@ -28,17 +60,25 @@ type CreatePodOpts struct {
 	Image   string
 	CPU     string
 	Memory  string
+	// DiskGiB is the requested workspace size. When >0 a PVC is created and
+	// mounted at /workspace so the user's files survive pod restarts.
+	DiskGiB int
+	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
+	// uses the cluster default.
+	StorageClass string
 }
 
 
 
-type PodPorts struct{
-	SSHPort int32
-	VSCodePort int32
+type PodPorts struct {
+	SSHPort            int32
+	VSCodePort         int32
+	SSHPassword        string
+	CodeServerPassword string
 }
 
 // CreatePod creates a K8s Pod with resource limits and a NodePort Service for SSH.
-// Returns the assigned SSH NodePort.
+// Returns the assigned SSH NodePort and the per-pod root password.
 func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
 	labels := map[string]string{
 		"app":                   "hopper-vm",
@@ -48,26 +88,148 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		"hopper.dev/plan":       opts.Plan,
 	}
 
+	sshPassword, err := generateRandomPassword()
+	if err != nil {
+		return PodPorts{}, fmt.Errorf("generating ssh password: %w", err)
+	}
+	codePassword, err := generateRandomPassword()
+	if err != nil {
+		return PodPorts{}, fmt.Errorf("generating code-server password: %w", err)
+	}
+
+	// LXCFS bind-mounts: make /proc/{meminfo,cpuinfo,...} reflect the pod's
+	// cgroup limits instead of the host's totals. Without this, `free -h`
+	// inside the VM shows the node's RAM and `nproc` shows all host cores —
+	// a tenant-isolation leak. The lxcfs daemon must be running on every node
+	// (systemd unit `lxcfs.service`).
+	// Per-pod workspace PVC for persistence across pod restarts. We name it
+	// after the pod so deletion can be reconciled by the orchestrator. The
+	// PVC is created BEFORE the Pod so the kubelet doesn't loop on a missing
+	// claim. Failure to create the PVC fails the whole pod create (no silent
+	// "ephemeral fallback" — the user expects their disk to persist).
+	pvcName := fmt.Sprintf("ws-%s", opts.PodName)
+	if opts.DiskGiB > 0 {
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pvcName,
+				Namespace: pm.namespace,
+				Labels:    labels,
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", opts.DiskGiB)),
+					},
+				},
+			},
+		}
+		if opts.StorageClass != "" {
+			pvc.Spec.StorageClassName = &opts.StorageClass
+		}
+		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
+			return PodPorts{}, fmt.Errorf("creating workspace pvc: %w", err)
+		}
+	}
+
+	lxcfsFiles := []string{"meminfo", "cpuinfo", "stat", "uptime", "diskstats", "swaps", "loadavg"}
+	hostPathFile := corev1.HostPathFile
+	var lxcfsVolumes []corev1.Volume
+	var lxcfsMounts []corev1.VolumeMount
+	for _, f := range lxcfsFiles {
+		volName := "lxcfs-" + f
+		lxcfsVolumes = append(lxcfsVolumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/var/lib/lxcfs/proc/" + f,
+					Type: &hostPathFile,
+				},
+			},
+		})
+		lxcfsMounts = append(lxcfsMounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: "/proc/" + f,
+			ReadOnly:  true,
+		})
+	}
+
+	automount := false
+	dropAll := corev1.Capability("ALL")
+	allowedCaps := []corev1.Capability{
+		// Minimum set needed for sshd + PAM login inside the VM.
+		// AUDIT_WRITE is required by PAM's pam_loginuid — without it sshd
+		// prints "linux_audit_write_entry failed: Operation not permitted"
+		// on every connection (login still succeeds, but it's noise).
+		// SETGID/SETUID/SETPCAP/DAC_OVERRIDE were dropped: privilege-escalation
+		// surface (sudo/su, file permission overrides) outweighs the
+		// convenience for a tenant that never needs to add OS users.
+		"AUDIT_WRITE", "CHOWN", "FOWNER", "FSETID", "KILL",
+		"NET_BIND_SERVICE", "SYS_CHROOT",
+	}
+
+	// Short grace period: when the user clicks Terminate we want their open
+	// ssh sessions to see "Connection closed by remote host" (sshd SIGTERM
+	// emits SSH_DISCONNECT) instead of waiting for TCP to time out, so we cap
+	// total termination at 5s and run pkill on sshd as a preStop.
+	gracePeriod := int64(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      opts.PodName,
-			Namespace: pm.namespace,
-			Labels:    labels,
+			Name:        opts.PodName,
+			Namespace:   pm.namespace,
+			Labels:      labels,
+			// Stored on the Pod so reconciliation after orchestrator restart can
+			// recover the password without an extra Secret.
+			Annotations: map[string]string{
+				SshPasswordAnnotation:        sshPassword,
+				CodeServerPasswordAnnotation: codePassword,
+			},
 		},
 		Spec: corev1.PodSpec{
+			TerminationGracePeriodSeconds: &gracePeriod,
+			// Don't expose the orchestrator's K8s API token inside user VMs —
+			// otherwise a user with shell access can hit the cluster API.
+			AutomountServiceAccountToken: &automount,
+			// Use the runtime's default seccomp profile (blocks ~70 syscalls).
+			SecurityContext: &corev1.PodSecurityContext{
+				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+			},
+			Volumes: append(lxcfsVolumes, func() []corev1.Volume {
+				if opts.DiskGiB == 0 {
+					return nil
+				}
+				return []corev1.Volume{{
+					Name: "workspace",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+						},
+					},
+				}}
+			}()...),
 			Containers: []corev1.Container{
 				{
 					Name:  "vm",
 					Image: opts.Image,
-					// The hopper/vm-ubuntu image has sshd built in.
-					// For other images, fall back to sleep infinity.
+					// Override the image CMD so we can set a unique root password
+					// from $ROOT_PASSWORD before sshd comes up. exec replaces the
+					// shell so signals reach supervisord normally.
+					Command: []string{"/bin/sh", "-c"},
+					Args: []string{
+						`echo "root:$ROOT_PASSWORD" | chpasswd && exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf`,
+					},
 					Ports: []corev1.ContainerPort{
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
 						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 					},
 					Env: []corev1.EnvVar{
-						// code-server picks this up so asset URLs are relative to the proxy path
-						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/api/pods/%s/vscode", opts.PodID)},
+						// code-server picks this up so asset URLs are relative to the proxy path.
+						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
+						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
+						{Name: "ROOT_PASSWORD", Value: sshPassword},
+						// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
+						// to set $PASSWORD for code-server; never set in shell history.
+						{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -79,13 +241,45 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 							corev1.ResourceMemory: resource.MustParse(opts.Memory),
 						},
 					},
+					// Drop all caps then re-add only what sshd / apt need.
+					// NET_RAW is dropped — blocks raw-socket abuse (nmap -sS,
+					// scapy etc.) without breaking normal TCP/UDP usage.
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &automount, // false
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{dropAll},
+							Add:  allowedCaps,
+						},
+					},
+					// preStop runs before kubelet sends SIGTERM. SIGHUPing sshd
+					// makes it disconnect every open client cleanly so users
+					// see "Connection closed by remote host." rather than the
+					// 30-90s "Read from remote host … Operation timed out" the
+					// kernel produces when the network namespace is torn down
+					// from underneath an established TCP session.
+					Lifecycle: &corev1.Lifecycle{
+						PreStop: &corev1.LifecycleHandler{
+							Exec: &corev1.ExecAction{
+								Command: []string{"/bin/sh", "-c", "pkill -HUP sshd 2>/dev/null || true; sleep 1"},
+							},
+						},
+					},
+					VolumeMounts: append(lxcfsMounts, func() []corev1.VolumeMount {
+						if opts.DiskGiB == 0 {
+							return nil
+						}
+						return []corev1.VolumeMount{{
+							Name:      "workspace",
+							MountPath: "/workspace",
+						}}
+					}()...),
 				},
 			},
 			RestartPolicy: corev1.RestartPolicyAlways,
 		},
 	}
 
-	_, err := pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
+	_, err = pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return PodPorts{}, fmt.Errorf("creating pod %s: %w", opts.PodName, err)
 	}
@@ -125,7 +319,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		return PodPorts{}, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
 	}
 
-	var ports PodPorts
+	ports := PodPorts{SSHPassword: sshPassword, CodeServerPassword: codePassword}
 	for _, p := range createdSvc.Spec.Ports{
 		switch p.Name{
 		case "ssh":
@@ -134,22 +328,34 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 			ports.VSCodePort = p.NodePort
 		}
 	}
-	// Return the auto-assigned NodePort
-	// sshPort := createdSvc.Spec.Ports[0].NodePort
 	return ports, nil
 }
 
-// DeletePod removes the K8s Pod and its SSH Service.
+// DeletePod removes the K8s Pod, its SSH Service, and its workspace PVC.
+//
+// Order matters:
+//  1. Delete the Service so new SSH connections fail fast with "Connection
+//     refused" rather than landing on a sshd about to be SIGTERMed.
+//  2. Delete the Pod (preStop SIGHUPs sshd so existing sessions see a clean
+//     "Connection closed by remote host." instead of a TCP timeout).
+//  3. Delete the PVC. The user explicitly terminated the VM — keeping the
+//     disk around would silently rack up storage charges. (If we ever offer
+//     "stop without delete", split this into Delete vs StopOnly.)
 func (pm *PodManager) DeletePod(ctx context.Context, podName string) error {
-	// Delete the service first
 	svcName := fmt.Sprintf("ssh-%s", podName)
 	_ = pm.client.CoreV1().Services(pm.namespace).Delete(ctx, svcName, metav1.DeleteOptions{})
 
-	// Delete the pod
-	err := pm.client.CoreV1().Pods(pm.namespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	grace := int64(5)
+	err := pm.client.CoreV1().Pods(pm.namespace).Delete(
+		ctx, podName,
+		metav1.DeleteOptions{GracePeriodSeconds: &grace},
+	)
 	if err != nil {
 		return fmt.Errorf("deleting pod %s: %w", podName, err)
 	}
+
+	pvcName := fmt.Sprintf("ws-%s", podName)
+	_ = pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Delete(ctx, pvcName, metav1.DeleteOptions{})
 	return nil
 }
 
@@ -203,8 +409,10 @@ type NodeInfo struct {
 	Ready             bool
 }
 
-// GetPodMetrics fetches resource usage for a specific pod.
-// If metrics-server is unavailable, returns limits from the pod spec.
+// GetPodMetrics fetches resource usage for a specific pod from
+// metrics-server (live CPU/RAM) and the spec (limits). When the metrics
+// client isn't wired up or metrics-server hasn't sampled the pod yet,
+// usage falls back to zero so the gateway still sees a publishable event.
 func (pm *PodManager) GetPodMetrics(ctx context.Context, podName string) (*PodMetrics, error) {
 	pod, err := pm.client.CoreV1().Pods(pm.namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
@@ -218,12 +426,22 @@ func (pm *PodManager) GetPodMetrics(ctx context.Context, podName string) (*PodMe
 		}
 	}
 
-	return &PodMetrics{
-		PodName:          podName,
-		CPUNanoCores:     0, // Requires metrics-server for live data
-		MemoryBytes:      0,
-		MemoryLimitBytes: memLimit,
-	}, nil
+	out := &PodMetrics{PodName: podName, MemoryLimitBytes: memLimit}
+
+	if pm.metrics == nil {
+		return out, nil
+	}
+	pm_, err := pm.metrics.MetricsV1beta1().PodMetricses(pm.namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		// metrics-server may be missing or hasn't sampled the pod yet — return
+		// limits-only metrics rather than failing the whole stream.
+		return out, nil
+	}
+	for _, c := range pm_.Containers {
+		out.CPUNanoCores += c.Usage.Cpu().ScaledValue(resource.Nano)
+		out.MemoryBytes += c.Usage.Memory().Value()
+	}
+	return out, nil
 }
 
 type PodMetrics struct {

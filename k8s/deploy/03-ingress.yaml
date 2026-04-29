@@ -1,11 +1,16 @@
 ##############################################################################
 # Nginx Ingress — Routes external traffic to internal services
 #
-# Traffic flow:
-#   Browser → https://20.193.138.159/           → frontend:3000
-#   Browser → https://20.193.138.159/api/pods   → api-gateway:8000/pods
-#   Browser → https://20.193.138.159/realms/... → keycloak:8080/realms/...
-#   Browser → https://20.193.138.159/admin/...  → keycloak:8080/admin/...
+# Traffic flow (canonical hostname: hopper.farefin.com):
+#   Browser → https://hopper.farefin.com/                    → frontend:3000
+#   Browser → https://hopper.farefin.com/api/pods            → api-gateway:8000/pods
+#   Browser → https://hopper.farefin.com/realms/...          → keycloak:8080/realms/...
+#   Browser → https://hopper.farefin.com/admin/...           → keycloak:8080/admin/...
+#   Browser → https://hopper.farefin.com/<uid>/code/<pid>/.. → api-gateway:8000/pods/<pid>/vscode/...
+#
+# TLS: cert-manager + Let's Encrypt (HTTP-01 via this nginx ingress).
+# The api-ingress carries the cert-manager annotation; all other ingresses
+# reference the same `hopper-farefin-tls` Secret to share one cert.
 ##############################################################################
 
 # Keycloak Ingress — routes Keycloak paths directly (no rewrite needed).
@@ -19,12 +24,20 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
 spec:
   ingressClassName: nginx
   tls:
-    - secretName: hopper-tls
+    - hosts:
+        - hopper.farefin.com
+      secretName: hopper-farefin-tls
   rules:
-    - http:
+    - host: hopper.farefin.com
+      http:
         paths:
           - path: /realms
             pathType: Prefix
@@ -40,20 +53,13 @@ spec:
                 name: keycloak
                 port:
                   number: 8080
-          - path: /admin/master
-            pathType: Prefix
-            backend:
-              service:
-                name: keycloak
-                port:
-                  number: 8080
-          - path: /admin/realms
-            pathType: Prefix
-            backend:
-              service:
-                name: keycloak
-                port:
-                  number: 8080
+          # NOTE: /admin/master and /admin/realms are intentionally NOT
+          # exposed publicly. They host the Keycloak admin console which
+          # accepts the master-realm admin credential — keeping them off
+          # the public ingress means an attacker would need cluster
+          # access (kubectl port-forward) to reach the admin UI. Run
+          # `kubectl port-forward svc/keycloak 8080:8080 -n hopper` to
+          # administer the realm from your laptop.
           - path: /js
             pathType: Prefix
             backend:
@@ -64,24 +70,80 @@ spec:
 
 ---
 # API Ingress — strips /api prefix before forwarding to the gateway.
-#   /api/pods → api-gateway:8000/pods
+# Carries the cert-manager annotation; the issued cert is reused by every
+# other ingress that references `hopper-farefin-tls`.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hopper-api-ingress
   namespace: hopper
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Per-source request limits — defence against credential-stuffing on
+    # /auth and brute-force on /pods. Tune higher if a legitimate course
+    # demo creates a lot of VMs at once.
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "30"
+    # HSTS: tell browsers to always use HTTPS for the next year, including
+    # subdomains. Add `preload` once you've registered with hstspreload.org.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
 spec:
   ingressClassName: nginx
   tls:
-    - secretName: hopper-tls
+    - hosts:
+        - hopper.farefin.com
+      secretName: hopper-farefin-tls
   rules:
-    - http:
+    - host: hopper.farefin.com
+      http:
         paths:
           - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8000
+
+---
+# Code Ingress — path-based code-server access.
+#   /<userId>/code/<podId>/<rest>  →  api-gateway:8000/pods/<podId>/vscode/<rest>
+# JWT cookie validates the user; <userId> in the URL is decorative.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-code-ingress
+  namespace: hopper
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /pods/$2/vscode/$4
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hopper.farefin.com
+      secretName: hopper-farefin-tls
+  rules:
+    - host: hopper.farefin.com
+      http:
+        paths:
+          - path: /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/code/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:
@@ -104,9 +166,12 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - secretName: hopper-tls
+    - hosts:
+        - hopper.farefin.com
+      secretName: hopper-farefin-tls
   rules:
-    - http:
+    - host: hopper.farefin.com
+      http:
         paths:
           - path: /
             pathType: Prefix

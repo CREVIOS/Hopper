@@ -22,18 +22,19 @@ var ValidTransitions = map[State][]State{
 }
 
 type Pod struct {
-	ID        string
-	UserID    string
-	State     State
-	Plan      string
-	Image     string
-	CPU       string
-	Memory    string
-	NodeName  string
-	Namespace string
-	PodName   string
-	SshPort   int32
-	VSCodePort int32
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          string
+	UserID      string
+	State       State
+	Plan        string
+	Image       string
+	CPU         string
+	Memory      string
+	NodeName    string
+	Namespace   string
+	PodName     string
+	SshPort     int32
+	VSCodePort  int32
+	SshPassword string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

@@ -119,17 +119,31 @@ async def add_credits(
 
 
 async def deduct_credits(
-    db: AsyncSession, user_id: str, amount: float, description: str = "pod_usage"
+    db: AsyncSession, user_id: str, amount: float,
+    description: str = "pod_usage",
+    tx_id: str | None = None,
 ) -> Transfer:
     """Deduct credits from a user account (user -> system transfer).
 
-    Uses advisory lock to prevent race conditions.
-    Raises ValueError if insufficient balance.
+    Idempotency: if `tx_id` is provided we use it as the Transfer primary
+    key. A redelivery of the same NATS message (same pod_id+seq) attempts
+    to insert a duplicate Transfer.id and raises IntegrityError, which the
+    caller catches as the no-op signal. Without `tx_id` we fall back to a
+    fresh UUID — only safe for callers (e.g. manual admin allocations) that
+    don't replay.
+
+    Uses advisory lock to prevent concurrent deductions racing the balance
+    read. Raises ValueError if insufficient balance.
     """
     user_account = await get_or_create_account(db, user_id)
 
-    # Advisory lock on account to prevent concurrent deductions
     await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{user_account.id}'))"))
+
+    # Idempotency: bail out early if this tx already exists.
+    if tx_id:
+        existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
+        if existing.scalar_one_or_none() is not None:
+            return existing.scalar_one()
 
     balance = await get_balance(db, user_id)
     if balance < amount:
@@ -146,7 +160,7 @@ async def deduct_credits(
     )
     sys_balance = float(sys_result.scalar_one_or_none() or 0)
 
-    transfer_id = str(uuid.uuid4())
+    transfer_id = tx_id or str(uuid.uuid4())
     transfer = Transfer(
         id=transfer_id,
         type=description,

@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
 
   const [balanceRes, historyRes] = await Promise.all([
     fetch(apiUrl('/credits/balance'), { headers }).catch(() => null),
-    fetch(apiUrl('/credits/history'), { headers }).catch(() => null)
+    fetch(apiUrl('/credits/history?limit=200'), { headers }).catch(() => null)
   ]);
 
   const balance = balanceRes?.ok ? (await balanceRes.json()).balance : 0;
