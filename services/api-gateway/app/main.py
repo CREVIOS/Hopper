@@ -6,11 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.database import engine
+from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
+from app.middleware.audit import AuditMiddleware
 from app.routers import auth, pods, credits, admin
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +44,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Reject the unsafe combination of allow_credentials + wildcard origin.
+    # FastAPI's CORS middleware silently echoes the request Origin back when
+    # given "*" + credentials, defeating the same-origin policy entirely.
+    if "*" in settings.cors_origins:
+        raise RuntimeError(
+            "HOPPER_CORS_ORIGINS must list explicit origins; '*' is unsafe with cookies"
+        )
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    app.add_middleware(AuditMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-CSRF-Token"],
     )
 
     app.include_router(auth.router, prefix="/auth", tags=["auth"])

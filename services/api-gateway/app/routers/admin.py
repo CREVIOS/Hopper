@@ -1,22 +1,36 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
-from app.models.user import User
+from app.models.audit import AuditLog
 from app.models.session import PodSession
-from app.schemas.user import TokenPayload
+from app.models.user import User
+from app.schemas.user import ChangeRoleRequest, TokenPayload
+from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 from app.services.orchestrator_client import orchestrator_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+APP_ROLES = {"admin", "professor", "student"}
+
 
 def _require_admin(current_user: TokenPayload):
+    """Read-only admin endpoints accept admin OR professor.
+
+    Mutating endpoints (role changes) tighten this further to admin-only.
+    """
     if current_user.role not in ("admin", "professor"):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _require_admin_only(current_user: TokenPayload):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 @router.get("/users")
@@ -104,3 +118,136 @@ async def get_stats(
         "active_vms": active_pods or 0,
         "total_vms_created": total_pods or 0,
     }
+
+
+@router.get("/active-vms")
+async def list_active_vms(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List currently active VMs across all users with owner email/name."""
+    _require_admin(current_user)
+
+    result = await db.execute(
+        select(PodSession, User.email, User.name)
+        .join(User, User.id == PodSession.user_id, isouter=True)
+        .where(PodSession.state.in_(["pending", "creating", "running"]))
+        .order_by(PodSession.started_at.desc())
+    )
+    rows = result.all()
+    return [
+        {
+            "id": s.id,
+            "state": s.state,
+            "plan": s.plan,
+            "image": s.image,
+            "cpu": s.cpu,
+            "memory": s.memory,
+            "user_email": email,
+            "user_name": name,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+        }
+        for s, email, name in rows
+    ]
+
+
+@router.patch("/users/{user_id}/role")
+async def change_user_role(
+    user_id: str,
+    body: ChangeRoleRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change a user's app role.
+
+    Updates Keycloak (canonical source) first, then mirrors to the local
+    `users.role` column, then force-logs-out the user so their next request
+    receives a JWT with the new role. Refuses to:
+      - demote yourself
+      - drop the admin count to zero
+      - assign an unknown role
+    Writes an audit_logs row with old/new role for accountability.
+    """
+    _require_admin_only(current_user)
+    if body.role not in APP_ROLES:
+        raise HTTPException(status_code=400, detail=f"role must be one of {sorted(APP_ROLES)}")
+    if user_id == current_user.sub and body.role != "admin":
+        raise HTTPException(status_code=400, detail="cannot demote yourself")
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    old_role = user.role
+
+    if old_role == "admin" and body.role != "admin":
+        n_admins = await db.scalar(select(func.count()).where(User.role == "admin"))
+        if (n_admins or 0) <= 1:
+            raise HTTPException(status_code=400, detail="cannot demote the last admin")
+
+    if old_role == body.role:
+        return {"status": "noop", "user_id": user_id, "role": body.role}
+
+    try:
+        await keycloak_admin.set_user_role(user_id, body.role)
+    except KeycloakAdminError as e:
+        logger.error("keycloak role change failed for %s: %s", user_id, e)
+        raise HTTPException(status_code=502, detail="failed to update role in Keycloak")
+    except Exception:
+        logger.exception("unexpected keycloak admin failure")
+        raise HTTPException(status_code=500, detail="role change failed")
+
+    user.role = body.role
+    db.add(
+        AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.sub,
+            action="change_role",
+            resource_type="user",
+            resource_id=user_id,
+            ip_address="-",
+            status_code=200,
+        )
+    )
+    await db.commit()
+
+    # Force the target user's existing tokens to be re-issued so the new role
+    # propagates immediately. If this fails, the role still changes — they
+    # just need to wait for token refresh (≤5 min).
+    try:
+        await keycloak_admin.logout_user(user_id)
+    except Exception:
+        logger.warning("could not force-logout user %s after role change", user_id)
+
+    return {"status": "ok", "user_id": user_id, "old_role": old_role, "new_role": body.role}
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """View audit logs (admin only)."""
+    _require_admin(current_user)
+
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "id": log.id,
+            "user_id": log.user_id,
+            "action": log.action,
+            "resource_type": log.resource_type,
+            "resource_id": log.resource_id,
+            "ip_address": log.ip_address,
+            "status_code": log.status_code,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log in logs
+    ]

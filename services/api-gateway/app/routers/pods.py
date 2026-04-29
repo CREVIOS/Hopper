@@ -22,6 +22,7 @@ from sse_starlette.sse import EventSourceResponse
 import asyncssh
 
 from app.config import settings
+from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
 from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
@@ -47,6 +48,7 @@ def _session_to_response(s: PodSession) -> PodResponse:
         namespace=s.namespace,
         ssh_port=s.ssh_port,
         vscode_port=s.vscode_port,
+        ssh_password=s.ssh_password,
         created_at=s.started_at,
         updated_at=s.updated_at,
     )
@@ -82,8 +84,10 @@ async def list_pods(
 
 
 @router.post("/", response_model=PodResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
 async def create_pod(
-    request: CreatePodRequest,
+    request: Request,
+    body: CreatePodRequest,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -93,7 +97,7 @@ async def create_pod(
     isolated container with SSH access. Resources are capped by the chosen plan.
     """
     # Check credit balance — need at least 1 hour's worth
-    resources = VM_PLAN_RESOURCES[request.plan]
+    resources = VM_PLAN_RESOURCES[body.plan]
     balance = await get_balance(db, current_user.sub)
     if balance < resources["credits_per_hour"]:
         raise HTTPException(
@@ -117,12 +121,13 @@ async def create_pod(
 
     pod_id = str(uuid.uuid4())
     namespace = "hopper"
+    image = body.resolved_image()
 
     session = PodSession(
         id=pod_id,
         user_id=current_user.sub,
-        plan=request.plan.value,
-        image=request.image,
+        plan=body.plan.value,
+        image=image,
         cpu=resources["cpu"],
         memory=resources["memory"],
         namespace=namespace,
@@ -137,15 +142,17 @@ async def create_pod(
     try:
         resp = await orchestrator_client.create_pod(
             user_id=current_user.sub,
-            plan=request.plan.value,
-            image=request.image,
+            plan=body.plan.value,
+            image=image,
             cpu=resources["cpu"],
             memory=resources["memory"],
+            pod_id=pod_id,
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator
         session.ssh_port = resp.ssh_port if resp.ssh_port else None
         session.vscode_port = resp.vscode_port if resp.vscode_port else None
+        session.ssh_password = resp.ssh_password or None
         await db.commit()
         await db.refresh(session)
     except Exception as e:
@@ -210,15 +217,24 @@ async def terminate_pod(
 async def stream_metrics(
     pod_id: str,
     current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Stream CPU/RAM metrics via SSE.
 
-    Subscribes to NATS subject `metrics.<pod_id>` and forwards each message
-    as a Server-Sent Event. The orchestrator publishes metrics every 5 seconds.
+    The orchestrator publishes metrics on subject ``metrics.<pod_name>`` where
+    pod_name is the orchestrator-side identifier (``vm-<unix_nano>``), not the
+    API UUID we use in URLs. We resolve session.pod_name here so the
+    subscription actually matches what's being published.
     """
     import asyncio
     import json
     from app.core import nats as nats_client
+
+    result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    session = result.scalar_one_or_none()
+    if not session or session.user_id != current_user.sub:
+        raise HTTPException(status_code=404, detail="VM not found")
+    subject_id = session.pod_name or pod_id
 
     async def event_generator():
         nc = nats_client.get_nc()
@@ -227,7 +243,7 @@ async def stream_metrics(
         async def _on_msg(msg):
             await queue.put(msg.data)
 
-        sub = await nc.subscribe(f"metrics.{pod_id}", cb=_on_msg)
+        sub = await nc.subscribe(f"metrics.{subject_id}", cb=_on_msg)
 
         try:
             yield {"event": "connected", "data": json.dumps({"pod_id": pod_id})}
@@ -266,6 +282,16 @@ async def vscode_proxy(
     if not session or session.user_id != current_user.sub:
         raise HTTPException(status_code=403)
 
+    if session.state != "running":
+        # Pod still starting / stopped — the user-facing 503 was confusing
+        # because the gateway didn't disambiguate "no pod" from "pod still
+        # warming up". Tell the browser to retry shortly.
+        raise HTTPException(
+            status_code=503,
+            detail=f"VM is {session.state} — VS Code will be available once running.",
+            headers={"Retry-After": "5"},
+        )
+
     # Get or (re)start the kubectl port-forward — needed for minikube Docker driver
     # where NodePorts are not reachable from the host directly.
     local_port = port_forward.get_local_port(session.pod_name)
@@ -281,7 +307,11 @@ async def vscode_proxy(
         # Fallback: direct NodePort (works in bare-metal K8s, not minikube Docker driver)
         target_base = f"http://{settings.node_ip}:{session.vscode_port}"
     else:
-        raise HTTPException(status_code=503, detail="VS Code not available yet — pod may still be starting")
+        raise HTTPException(
+            status_code=503,
+            detail="VS Code not available yet — port-forward failed and no NodePort configured.",
+            headers={"Retry-After": "5"},
+        )
 
     target_url = f"{target_base}/{path}"
     if request.url.query:
@@ -289,18 +319,39 @@ async def vscode_proxy(
 
     logger.debug("vscode proxy %s -> %s", pod_id[:8], target_url)
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.request(
-                method=request.method,
-                url=target_url,
-                headers={k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection", "accept-encoding")},
-                content=await request.body(),
-                follow_redirects=True,
-            )
-    except httpx.ConnectError as e:
-        logger.warning("vscode proxy connect failed for pod %s: %s", pod_id[:8], e)
-        raise HTTPException(status_code=502, detail="Cannot reach VS Code — is code-server running inside the pod?")
+    # code-server may take a few seconds to bind to :8080 even after the pod
+    # is "running". Retry a connect-failed request once after a short pause so
+    # the browser doesn't show a 503 on the very first navigation.
+    body = await request.body()
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("host", "connection", "accept-encoding")
+    }
+    last_err: Exception | None = None
+    resp = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.request(
+                    method=request.method,
+                    url=target_url,
+                    headers=forwarded_headers,
+                    content=body,
+                    follow_redirects=True,
+                )
+            break
+        except httpx.ConnectError as e:
+            last_err = e
+            if attempt == 0:
+                await asyncio.sleep(1.0)
+                continue
+    if resp is None:
+        logger.warning("vscode proxy connect failed for pod %s: %s", pod_id[:8], last_err)
+        raise HTTPException(
+            status_code=503,
+            detail="code-server is not ready yet — please retry in a moment.",
+            headers={"Retry-After": "3"},
+        )
 
     # Strip headers that would break the browser when served from a different origin.
     # content-encoding must be removed because httpx decompresses the body transparently —
@@ -324,13 +375,27 @@ async def vscode_ws_proxy(
 ):
     """Proxy WebSocket connections from code-server to the pod.
 
-    code-server uses WebSockets for its main RPC channel. Auth is intentionally
-    skipped here — the HTTP page load already verified ownership, and the
-    connectionToken in the query string is code-server's own session token.
+    code-server uses WebSockets for its main RPC channel. We verify the user's
+    JWT cookie and pod ownership here too — the connectionToken in the query
+    string is code-server's own session value and not a substitute for auth.
+    Origin is checked against the configured allowlist.
     """
+    token = websocket.cookies.get("session_token")
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    payload = await verify_token(token)
+    if payload is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    origin = websocket.headers.get("origin", "")
+    if origin and origin not in settings.cors_origins:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
     session = result.scalar_one_or_none()
-    if not session or session.state != "running":
+    if not session or session.user_id != payload.sub or session.state != "running":
         await websocket.close(code=1008)
         return
 
@@ -408,7 +473,8 @@ async def websocket_terminal(
         return
         
     origin = websocket.headers.get("origin", "")
-    if origin not in settings.cors_origins:
+    allowed = settings.cors_origins
+    if "*" not in allowed and origin not in allowed:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -422,76 +488,117 @@ async def websocket_terminal(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    host = "localhost"  # Or the actual K8s node IP if running remotely
+    # SSH NodePort lives on the K8s node, not inside this pod, so localhost
+    # would only work if the gateway is colocated with the node. Use the
+    # configured node IP — populated from the downward API in production.
+    host = settings.node_ip
     port = session.ssh_port
     username = "root"
-    # TODO(HOP-XX): replace with per-pod ephemeral key/cert injected at provisioning.
-    password = "hopper"
+    # Per-pod password generated by the orchestrator at create time. Refuse
+    # to connect if the pod predates the 009 migration (no per-pod password)
+    # — the previous global "hopper" fallback let any caller into any pod.
+    if not session.ssh_password:
+        await _safe_send(
+            websocket,
+            "\r\nThis VM was created with an older orchestrator and has no SSH credential. "
+            "Recreate the VM to enable the in-browser terminal.\r\n",
+        )
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    password = session.ssh_password
+
+    # Limits — protect the gateway from DoS via giant frames or stalled PTYs.
+    MAX_INPUT_BYTES = 64 * 1024  # one keystroke or paste, capped
+    IDLE_TIMEOUT_S = 600         # close after 10 min of no output activity
 
     conn = process = None
+    last_output_at = asyncio.get_event_loop().time()
+
     try:
-        # known_hosts=None disables host-key verification — safe only because the SSH endpoint
-        # is reached via in-cluster localhost forwarding which is not externally reachable.
-        # MUST be replaced before exposing the gateway off-host.
+        # NOTE: known_hosts=None is acceptable only because the SSH endpoint is
+        # reached via the K8s node IP from inside the cluster. If the gateway
+        # ever runs off-cluster, switch to verifying a per-pod host key
+        # captured at VM boot and stored alongside the SSH password.
         conn = await asyncssh.connect(
             host, port=port, username=username, password=password, known_hosts=None
         )
-        
+
         process = await conn.create_process(
             term_type="xterm-256color",
             term_size=(80, 24),
         )
 
+        # Bounded queue between the SSH PTY and the WebSocket. If the browser
+        # is slow, the queue fills and `put` blocks the SSH-reader, providing
+        # natural backpressure rather than memory growth.
+        out_queue: asyncio.Queue[bytes | str] = asyncio.Queue(maxsize=64)
+
         async def ws_to_ssh():
-            try:
-                while True:
-                    msg_text = await websocket.receive_text()
-                    if msg_text.startswith('{"type":"resize"'):
-                        try:
-                            msg = json.loads(msg_text)
-                            cols = max(1, min(1000, int(msg["cols"])))
-                            rows = max(1, min(1000, int(msg["rows"])))
-                            process.change_terminal_size(cols, rows)
-                        except (json.JSONDecodeError, KeyError, ValueError) as e:
-                            logger.warning("Invalid resize control frame from pod %s: %s", pod_id, e)
-                        except OSError as e:
-                            logger.error("Failed to resize SSH PTY for pod %s: %s", pod_id, e)
-                            raise
-                    else:
-                        process.stdin.write(msg_text)
-            except WebSocketDisconnect:
-                logger.info("Client disconnected from terminal pod=%s", pod_id)
-                raise
-            except asyncssh.ChannelOpenError:
-                logger.error("SSH channel closed mid-stream pod=%s", pod_id, exc_info=True)
-                raise
-            except Exception as e:
-                logger.error("WS to SSH error pod=%s: %s", pod_id, e, exc_info=True)
-                raise
+            while True:
+                msg_text = await websocket.receive_text()
+                if len(msg_text) > MAX_INPUT_BYTES:
+                    logger.warning(
+                        "Oversized terminal input from pod %s (%d bytes) — closing",
+                        pod_id, len(msg_text),
+                    )
+                    await websocket.close(code=status.WS_1009_MESSAGE_TOO_BIG)
+                    return
+                if msg_text.startswith('{"type":"resize"'):
+                    try:
+                        msg = json.loads(msg_text)
+                        cols = max(1, min(1000, int(msg["cols"])))
+                        rows = max(1, min(1000, int(msg["rows"])))
+                        process.change_terminal_size(cols, rows)
+                    except (json.JSONDecodeError, KeyError, ValueError) as e:
+                        logger.warning("Invalid resize from pod %s: %s", pod_id, e)
+                    except OSError:
+                        logger.error("PTY resize failed pod=%s", pod_id, exc_info=True)
+                        raise
+                elif msg_text.startswith('{"type":"ping"'):
+                    # Browser heartbeat. Discard.
+                    pass
+                else:
+                    process.stdin.write(msg_text)
 
-        async def ssh_to_ws():
-            try:
-                while True:
-                    data = await process.stdout.read(8192)
-                    if not data:
-                        break
-                    if isinstance(data, bytes):
-                        await websocket.send_bytes(data)
-                    else:
-                        await websocket.send_text(data)
-            except (asyncssh.ConnectionLost, asyncssh.DisconnectError):
-                logger.info("SSH connection lost or closed pod=%s", pod_id)
-                raise
-            except Exception as e:
-                logger.error("SSH to WS error pod=%s: %s", pod_id, e, exc_info=True)
-                raise
+        async def ssh_reader():
+            while True:
+                data = await process.stdout.read(8192)
+                if not data:
+                    break
+                await out_queue.put(data)
 
-        t1 = asyncio.create_task(ws_to_ssh())
-        t2 = asyncio.create_task(ssh_to_ws())
-        done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
-        for p in pending:
-            p.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        async def ws_writer():
+            nonlocal last_output_at
+            while True:
+                try:
+                    data = await asyncio.wait_for(out_queue.get(), timeout=IDLE_TIMEOUT_S)
+                except asyncio.TimeoutError:
+                    logger.info("Terminal idle timeout pod=%s", pod_id)
+                    await _safe_send(
+                        websocket,
+                        "\r\nSession closed after 10 minutes of inactivity.\r\n",
+                    )
+                    return
+                last_output_at = asyncio.get_event_loop().time()
+                if isinstance(data, bytes):
+                    await websocket.send_bytes(data)
+                else:
+                    await websocket.send_text(data)
+
+        tasks = [
+            asyncio.create_task(ws_to_ssh()),
+            asyncio.create_task(ssh_reader()),
+            asyncio.create_task(ws_writer()),
+        ]
+        # Audit-log session open with timing — never the actual data stream.
+        logger.info("terminal_open pod=%s user=%s", pod_id, payload.sub)
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("terminal_close pod=%s user=%s", pod_id, payload.sub)
 
     except asyncssh.PermissionDenied:
         logger.error("SSH auth failed pod=%s", pod_id, exc_info=True)

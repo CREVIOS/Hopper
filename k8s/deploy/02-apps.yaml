@@ -21,37 +21,55 @@ spec:
       labels:
         app: api-gateway
     spec:
+      serviceAccountName: orchestrator
       containers:
         - name: api-gateway
           image: hopper/api-gateway:latest
           imagePullPolicy: Never
+          # Override Dockerfile CMD so uvicorn trusts the nginx ingress's
+          # X-Forwarded-Proto header (otherwise FastAPI's auto-redirects build
+          # http:// URLs and the browser never reaches the secure callback).
+          command: ["uvicorn"]
+          args:
+            - "app.main:app"
+            - "--host=0.0.0.0"
+            - "--port=8000"
+            - "--workers=4"
+            - "--proxy-headers"
+            - "--forwarded-allow-ips=*"
           ports:
             - containerPort: 8000
           env:
-            # Teaching: In K8s, service names become DNS hostnames automatically.
-            # "postgres" here resolves to the postgres Service IP inside the cluster.
+            # DB URL is sourced from the hopper-db Secret so credentials
+            # rotate without a manifest change. The secret is the canonical
+            # source — never duplicate the password into env-value.
             - name: HOPPER_DATABASE_URL
-              value: "postgresql+asyncpg://hopper:hopper_dev@postgres:5432/hopper"
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: database-url }
             - name: HOPPER_NATS_URL
               value: "nats://nats:4222"
             - name: HOPPER_KEYCLOAK_URL
               value: "http://keycloak:8080"
             - name: HOPPER_KEYCLOAK_EXTERNAL_URL
-              value: "https://20.193.138.159"
+              value: "https://hopper.farefin.com"
             - name: HOPPER_KEYCLOAK_REALM
               value: "hopper"
             - name: HOPPER_KEYCLOAK_CLIENT_ID
               value: "hopper-api"
             - name: HOPPER_CORS_ORIGINS
-              value: '["*"]'
+              value: '["https://hopper.farefin.com"]'
             - name: HOPPER_ORCHESTRATOR_URL
               value: "orchestrator:50051"
             - name: HOPPER_FRONTEND_URL
-              value: "https://20.193.138.159"
+              value: "https://hopper.farefin.com"
             - name: HOPPER_CALLBACK_URL
-              value: "https://20.193.138.159/api/auth/callback"
+              value: "https://hopper.farefin.com/api/auth/callback"
             - name: HOPPER_DEBUG
               value: "true"
+            - name: HOPPER_NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
           readinessProbe:
             httpGet:
               path: /healthz
@@ -111,8 +129,17 @@ rules:
     resources: ["pods", "pods/log", "services"]
     verbs: ["get", "list", "watch", "create", "update", "delete"]
   - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["create"]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create", "get"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
 ---
 # ClusterRole for reading node info (needed for admin /nodes endpoint)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -233,11 +260,13 @@ spec:
             - name: PUBLIC_API_URL
               value: "/api"
             - name: ORIGIN
-              value: "https://20.193.138.159"
+              value: "https://hopper.farefin.com"
             - name: API_INTERNAL_URL
               value: "http://api-gateway:8000"
-            - name: NODE_TLS_REJECT_UNAUTHORIZED
-              value: "0"
+            # Public host that NodePort SSH/VS Code services are reachable on.
+            # NodePorts (30000–32767) must be open on the firewall pointing here.
+            - name: NODE_IP
+              value: "hopper.farefin.com"
           resources:
             requests:
               cpu: "100m"

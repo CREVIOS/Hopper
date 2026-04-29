@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean
+.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load
 
 # Development environment
 dev-up:
@@ -66,6 +66,22 @@ lint:
 	cd frontend && pnpm lint
 	cd services/api-gateway && poetry run ruff check .
 	cd services/orchestrator && golangci-lint run
+
+# VM template images. The base must build first because the templates
+# `FROM hopper/vm-ubuntu:22.04`. After building, load them into the K8s
+# runtime if the cluster doesn't pull from a registry (`make vm-images-load`).
+vm-images:
+	docker build -t hopper/vm-ubuntu:22.04   images/hopper-vm
+	docker build -t hopper/vm-python-ml:22.04 images/hopper-vm-python
+	docker build -t hopper/vm-cpp:22.04      images/hopper-vm-cpp
+	docker build -t hopper/vm-java:22.04     images/hopper-vm-java
+
+# Load locally-built VM images into the K8s runtime (k3s/containerd here).
+# Use `minikube image load <tag>` for minikube; adapt to your cluster.
+vm-images-load: vm-images
+	for tag in hopper/vm-ubuntu:22.04 hopper/vm-python-ml:22.04 hopper/vm-cpp:22.04 hopper/vm-java:22.04; do \
+		docker save "$$tag" | sudo k3s ctr images import - ; \
+	done
 
 # Cleanup
 clean:

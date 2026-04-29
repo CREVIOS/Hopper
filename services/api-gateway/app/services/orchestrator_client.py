@@ -21,8 +21,9 @@ class PodStatusResponse:
     id: str
     state: str
     ssh_port: int
-    vscode_port : int
+    vscode_port: int
     message: str
+    ssh_password: str = ""
 
 
 @dataclass
@@ -71,7 +72,7 @@ class OrchestratorClient:
             await self._channel.close()
 
     async def create_pod(
-        self, user_id: str, plan: str, image: str, cpu: str, memory: str
+        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "", pod_id: str = ""
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -84,6 +85,8 @@ class OrchestratorClient:
             image=image,
             cpu=cpu,
             memory=memory,
+            disk=disk,
+            pod_id=pod_id,
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(
@@ -92,6 +95,7 @@ class OrchestratorClient:
             ssh_port=resp.ssh_port,
             vscode_port=resp.vscode_port,
             message=resp.message,
+            ssh_password=resp.ssh_password,
         )
 
     async def terminate_pod(self, pod_id: str) -> bool:
@@ -112,7 +116,9 @@ class OrchestratorClient:
             id=resp.id,
             state=_STATE_MAP.get(resp.state, "unknown"),
             ssh_port=resp.ssh_port,
+            vscode_port=resp.vscode_port,
             message=resp.message,
+            ssh_password=resp.ssh_password,
         )
 
     async def list_nodes(self) -> list[NodeInfoResponse]:
