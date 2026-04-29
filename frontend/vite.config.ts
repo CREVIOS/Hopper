@@ -16,6 +16,13 @@ const proxyErrorHandlers = (proxy: any) => {
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  // Several Svelte-only packages (mode-watcher, bits-ui, svelte-sonner,
+  // lucide-svelte) ship only the `svelte` export condition. SSR needs them
+  // bundled rather than externalised so vite resolves through the svelte
+  // plugin instead of the commonjs resolver.
+  ssr: {
+    noExternal: ['mode-watcher', 'bits-ui', 'svelte-sonner', 'lucide-svelte']
+  },
   server: {
     proxy: {
       // Auth routes — must NOT follow redirects so Keycloak redirects

@@ -10,6 +10,11 @@ RUN poetry install --no-root --only main
 
 FROM python:3.12-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client sshpass curl && \
+    curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && mv kubectl /usr/local/bin/ && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
 COPY services/api-gateway/ .

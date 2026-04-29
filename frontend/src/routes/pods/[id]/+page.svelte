@@ -1,18 +1,52 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
+  import {
+    Square,
+    ArrowLeft,
+    Terminal as TerminalIcon,
+    Activity,
+    LineChart,
+    FileUp,
+    Info,
+    Plus,
+    X,
+    Eye,
+    EyeOff,
+    Copy,
+    ExternalLink,
+    Loader2,
+    Code2
+  } from 'lucide-svelte';
+  import { invalidateAll, goto } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
   import GpuMetrics from '$lib/components/GpuMetrics.svelte';
   import Terminal from '$lib/components/Terminal.svelte';
-  import { api } from '$lib/api/client';
-  import type { Pod, VmMetrics } from '$lib/types';
+  import PodUsage from '$lib/components/PodUsage.svelte';
+  import PodFiles from '$lib/components/PodFiles.svelte';
+  import { api, ApiError } from '$lib/api/client';
+  import { confirm } from '$lib/confirm.svelte';
+  import { copyToClipboard, relTime, shortId } from '$lib/utils';
+  import {
+    Button,
+    Card,
+    CardContent,
+    Badge,
+    Tabs,
+    Separator,
+    Tooltip
+  } from '$lib/ui';
+  import type { Pod, User, VmMetrics } from '$lib/types';
 
-  let { data }: { data: { pod: Pod | null; nodeIp: string } } = $props();
+  let {
+    data
+  }: {
+    data: { pod: Pod | null; nodeIp: string; user: User | null };
+  } = $props();
 
-  let metrics: VmMetrics | null = $state(null);
-  let eventSource: EventSource | null = $state(null);
+  let metrics = $state<VmMetrics | null>(null);
 
-  // Tab management
-  let activeTab = $state('terminal'); // 'terminal', 'vscode', 'metrics', 'details'
-  
+  let activeTab = $state('terminal');
+  let showPassword = $state(false);
+
   // Terminal sessions management
   let terminalSessions = $state([{ id: 'term-1' }]);
   let activeTerminalId = $state('term-1');
@@ -24,227 +58,405 @@
   }
 
   function removeTerminal(id: string) {
-    terminalSessions = terminalSessions.filter(t => t.id !== id);
+    terminalSessions = terminalSessions.filter((t) => t.id !== id);
     if (activeTerminalId === id && terminalSessions.length > 0) {
       activeTerminalId = terminalSessions[terminalSessions.length - 1].id;
     }
-    if (terminalSessions.length === 0) {
-      addTerminal();
-    }
+    if (terminalSessions.length === 0) addTerminal();
   }
 
-  // Subscribe to live metrics via SSE — cleanup via $effect return
+  // Live metrics SSE — preserved from prior implementation.
   $effect(() => {
-    if (data.pod?.state === 'running') {
-      const es = new EventSource(`/api/pods/${data.pod.id}/metrics`);
-      es.addEventListener('metrics', (e) => {
-        metrics = JSON.parse(e.data);
-      });
-      eventSource = es;
+    if (data.pod?.state !== 'running') return;
+    const podId = data.pod.id;
+    let cancelled = false;
 
-      return () => {
-        es.close();
-        eventSource = null;
-      };
-    }
+    const es = new EventSource(`/api/pods/${podId}/metrics`);
+    es.addEventListener('metrics', (e) => {
+      if (cancelled) return;
+      try {
+        metrics = JSON.parse(e.data);
+      } catch {}
+    });
+
+    return () => {
+      cancelled = true;
+      es.close();
+    };
   });
 
   async function terminatePod() {
     if (!data.pod) return;
+    const ok = await confirm({
+      title: `Terminate VM ${shortId(data.pod.id)}?`,
+      description:
+        'This will permanently stop the container, drop unsaved changes, and stop billing. This cannot be undone.',
+      confirmLabel: 'Terminate',
+      variant: 'destructive'
+    });
+    if (!ok) return;
+
+    const id = toast.loading('Terminating VM…');
     try {
       await api.delete(`/pods/${data.pod.id}`);
+      toast.success('VM terminated', { id });
       await invalidateAll();
+      goto('/pods');
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to terminate VM');
+      const msg = e instanceof ApiError ? e.message : 'Failed to terminate VM';
+      toast.error('Termination failed', { id, description: msg });
     }
   }
 
-  // Constructs the proxy URL for a port forwarded inside the VM.
-  // code-server exposes forwarded ports at /proxy/<port>/ — no extra NodePort needed.
-  function getPreviewUrl(pod: Pod, port: number): string {
-    return `http://${data.nodeIp}:${pod.vscode_port}/proxy/${port}/`;
+  function vscodeUrl(p: Pod): string {
+    return `/${data.user?.id ?? ''}/code/${p.id}/`;
+  }
+  function getPreviewUrl(p: Pod, port: number): string {
+    return `/${data.user?.id ?? ''}/code/${p.id}/proxy/${port}/`;
   }
 
-  const stateColors: Record<string, string> = {
-    running: 'bg-green-100 text-green-800',
-    pending: 'bg-yellow-100 text-yellow-800',
-    creating: 'bg-blue-100 text-blue-800',
-    stopping: 'bg-orange-100 text-orange-800',
-    terminated: 'bg-gray-100 text-gray-800',
-    failed: 'bg-red-100 text-red-800'
+  async function copyText(text: string, label = 'Copied') {
+    try {
+      await copyToClipboard(text);
+      toast.success(label);
+    } catch {
+      toast.error('Could not access clipboard');
+    }
+  }
+
+  const stateBadge: Record<
+    string,
+    { variant: 'success' | 'warning' | 'info' | 'destructive' | 'muted'; label: string; pulse?: boolean }
+  > = {
+    running: { variant: 'success', label: 'Running' },
+    pending: { variant: 'warning', label: 'Pending', pulse: true },
+    creating: { variant: 'info', label: 'Creating', pulse: true },
+    stopping: { variant: 'warning', label: 'Stopping', pulse: true },
+    terminated: { variant: 'muted', label: 'Terminated' },
+    failed: { variant: 'destructive', label: 'Failed' }
   };
 </script>
 
 {#if data.pod}
-  <div class="flex flex-col h-[calc(100vh-6rem)]">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h1 class="text-2xl font-bold">VM: {data.pod.id.slice(0, 8)}</h1>
-        <span class="mt-1 inline-block rounded-full px-2 py-1 text-xs {stateColors[data.pod.state]}">
-          {data.pod.state}
-        </span>
-      </div>
-      {#if data.pod.state !== 'terminated' && data.pod.state !== 'failed'}
-        <button
-          onclick={terminatePod}
-          class="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700"
-        >
-          Terminate
-        </button>
-      {/if}
-    </div>
+  {@const podState = data.pod.state}
+  {@const cfg = stateBadge[podState] ?? stateBadge.terminated}
+  {@const isRunning = podState === 'running'}
+  {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
-    <!-- Tabs Header -->
-    <div class="border-b border-gray-200 mb-4">
-      <nav class="-mb-px flex space-x-8">
-        {#each ['terminal', 'vscode', 'metrics', 'details'] as tab}
-          <button
-            class="capitalize py-2 border-b-2 font-medium text-sm {activeTab === tab ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
-            onclick={() => activeTab = tab}
-          >
-            {tab === 'vscode' ? 'VS Code' : tab}
-          </button>
-        {/each}
-      </nav>
-    </div>
-
-    <!-- Tab Content -->
-    <div class="flex-grow min-h-0 relative">
-      {#if activeTab === 'terminal'}
-        <div class="h-full flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-          <div class="flex bg-gray-200 overflow-x-auto border-b border-gray-300 items-center">
-            {#each terminalSessions as session, idx (session.id)}
-              <div class="flex items-center border-r border-gray-300 min-w-[12rem] transition-colors {activeTerminalId === session.id ? 'bg-white' : 'hover:bg-gray-300'}">
-                <button
-                  class="flex-grow flex items-center px-4 py-2 text-sm {activeTerminalId === session.id ? 'font-medium text-indigo-600' : 'text-gray-600'}"
-                  onclick={() => activeTerminalId = session.id}
-                >
-                  <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                  Terminal {idx + 1}
-                </button>
-                <button
-                  class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-400 hover:text-gray-900 mx-1 {activeTerminalId === session.id ? 'text-gray-500' : 'text-gray-400'}"
-                  onclick={() => removeTerminal(session.id)}
-                  title="Close Terminal"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-              </div>
-            {/each}
-            <button
-               class="px-3 py-2 text-gray-500 hover:bg-gray-300 hover:text-gray-800 focus:outline-none"
-               onclick={addTerminal}
-               title="New Terminal"
-            >
-               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-            </button>
+  <div class="flex h-[calc(100vh-7rem)] flex-col">
+    <!-- Header -->
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <Button href="/pods" variant="ghost" size="icon" aria-label="Back">
+          <ArrowLeft class="size-4" />
+        </Button>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-mono text-xl font-bold tracking-tight">
+              {shortId(data.pod.id, 12)}
+            </h1>
+            <Badge variant={cfg.variant}>
+              {#if cfg.pulse}
+                <Loader2 class="size-3 animate-spin" />
+              {/if}
+              {cfg.label}
+            </Badge>
           </div>
-          
-          <div class="flex-grow min-h-0 bg-black relative">
-            {#if data.pod.state !== 'running'}
-              <div class="absolute inset-0 flex items-center justify-center bg-black/80 z-20 text-white flex-col space-y-4">
-                 <svg class="w-12 h-12 text-gray-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path></svg>
-                 <p>VM is {data.pod.state}. SSH access is only available when running.</p>
+          <p class="mt-0.5 text-xs text-muted-foreground">
+            {data.pod.plan} · {data.pod.image} · created {relTime(data.pod.created_at)}
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        {#if isRunning && data.pod.vscode_port}
+          <Button
+            variant="outline"
+            href={vscodeUrl(data.pod)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Code2 class="size-4" /> Open VS Code
+            <ExternalLink class="size-3 opacity-60" />
+          </Button>
+        {/if}
+        {#if canTerminate}
+          <Button variant="destructive" onclick={terminatePod}>
+            <Square class="size-4" /> Terminate
+          </Button>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
+      <Tabs.List>
+        <Tabs.Trigger value="terminal">
+          <TerminalIcon class="size-3.5" /> Terminal
+        </Tabs.Trigger>
+        <Tabs.Trigger value="metrics">
+          <Activity class="size-3.5" /> Metrics
+        </Tabs.Trigger>
+        <Tabs.Trigger value="usage">
+          <LineChart class="size-3.5" /> Usage
+        </Tabs.Trigger>
+        <Tabs.Trigger value="files">
+          <FileUp class="size-3.5" /> Files
+        </Tabs.Trigger>
+        <Tabs.Trigger value="details">
+          <Info class="size-3.5" /> Details
+        </Tabs.Trigger>
+      </Tabs.List>
+
+      <!-- Terminal -->
+      <Tabs.Content value="terminal" class="min-h-0 flex-1">
+        <div
+          class="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card terminal-frame"
+        >
+          <div class="flex items-center border-b border-border bg-muted/30">
+            <div class="flex flex-1 overflow-x-auto">
+              {#each terminalSessions as session, idx (session.id)}
+                <div
+                  class={`flex min-w-[10rem] items-center border-r border-border transition-colors ${
+                    activeTerminalId === session.id
+                      ? 'bg-card'
+                      : 'hover:bg-muted/60'
+                  }`}
+                >
+                  <button
+                    class={`flex flex-1 items-center gap-2 px-3 py-2 text-xs ${
+                      activeTerminalId === session.id
+                        ? 'font-medium text-foreground'
+                        : 'text-muted-foreground'
+                    }`}
+                    onclick={() => (activeTerminalId = session.id)}
+                  >
+                    <TerminalIcon class="size-3.5" />
+                    Terminal {idx + 1}
+                  </button>
+                  <button
+                    class="mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onclick={() => removeTerminal(session.id)}
+                    title="Close terminal"
+                    aria-label="Close terminal"
+                  >
+                    <X class="size-3.5" />
+                  </button>
+                </div>
+              {/each}
+            </div>
+            <Tooltip content="New terminal">
+              <button
+                class="px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onclick={addTerminal}
+                aria-label="New terminal"
+              >
+                <Plus class="size-4" />
+              </button>
+            </Tooltip>
+          </div>
+          <div class="relative min-h-0 flex-1 bg-black">
+            {#if !isRunning}
+              <div
+                class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 text-center text-white"
+              >
+                <TerminalIcon class="size-10 opacity-50" />
+                <p class="text-sm">
+                  VM is <span class="font-medium">{podState}</span>. Terminal access
+                  is only available when the VM is running.
+                </p>
               </div>
             {/if}
-            {#if data.pod.state === 'running'}
+            {#if isRunning}
               {#each terminalSessions as session (session.id)}
-                <div class="absolute inset-0 {activeTerminalId === session.id ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}">
-                  <Terminal podId={data.pod.id} sessionId={session.id} />
+                <div
+                  class={`absolute inset-0 ${
+                    activeTerminalId === session.id
+                      ? 'z-10 opacity-100'
+                      : 'pointer-events-none z-0 opacity-0'
+                  }`}
+                >
+                  <Terminal
+                    podId={data.pod.id}
+                    sessionId={session.id}
+                    isActive={activeTerminalId === session.id}
+                  />
                 </div>
               {/each}
             {/if}
           </div>
         </div>
-      {:else if activeTab === 'details'}
-        <div class="rounded-lg border bg-white p-6 overflow-y-auto h-full">
-          <dl class="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <dt class="text-gray-500">Plan</dt>
-              <dd class="font-medium capitalize">{data.pod.plan}</dd>
-            </div>
-            <div>
-              <dt class="text-gray-500">Image</dt>
-              <dd class="font-medium">{data.pod.image}</dd>
-            </div>
-            <div>
-              <dt class="text-gray-500">Resources</dt>
-              <dd class="font-medium">{data.pod.cpu ?? '-'} CPU / {data.pod.memory ?? '-'}</dd>
-            </div>
-            <div>
-              <dt class="text-gray-500">Namespace</dt>
-              <dd class="font-medium">{data.pod.namespace}</dd>
-            </div>
-            {#if data.pod.ssh_port}
-              <div class="col-span-2">
-                <dt class="text-gray-500">SSH Access</dt>
-                <dd class="font-mono text-indigo-600">ssh root@{data.nodeIp} -p {data.pod.ssh_port}</dd>
-              </div>
-            {/if}
-            {#if data.pod.vscode_port && data.pod.state === 'running'}
-              <div class="col-span-2">
-                <dt class="text-gray-500">VS Code</dt>
-                <dd class="flex items-center gap-3">
-                  <a
-                    href="/api/pods/{data.pod.id}/vscode/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-                  >
-                    Open VS Code ↗
-                  </a>
-                  <a
-                    href={getPreviewUrl(data.pod, 5000)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
-                  >
-                    Preview :5000 ↗
-                  </a>
+      </Tabs.Content>
+
+      <!-- Metrics -->
+      <Tabs.Content value="metrics" class="min-h-0 flex-1 overflow-y-auto">
+        {#if isRunning}
+          <GpuMetrics {metrics} />
+        {:else}
+          <Card class="border-dashed">
+            <CardContent class="py-12 text-center text-sm text-muted-foreground">
+              Live metrics are only available when the VM is running.
+            </CardContent>
+          </Card>
+        {/if}
+      </Tabs.Content>
+
+      <!-- Usage -->
+      <Tabs.Content value="usage" class="min-h-0 flex-1 overflow-y-auto">
+        <PodUsage podId={data.pod.id} />
+      </Tabs.Content>
+
+      <!-- Files -->
+      <Tabs.Content value="files" class="min-h-0 flex-1 overflow-y-auto">
+        <PodFiles podId={data.pod.id} podRunning={isRunning} />
+      </Tabs.Content>
+
+      <!-- Details -->
+      <Tabs.Content value="details" class="min-h-0 flex-1 overflow-y-auto">
+        <div class="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardContent class="space-y-4 pt-6">
+              <h3 class="text-sm font-semibold">Specifications</h3>
+              <Separator />
+              <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <dt class="text-muted-foreground">Plan</dt>
+                <dd class="font-medium capitalize">{data.pod.plan}</dd>
+
+                <dt class="text-muted-foreground">Image</dt>
+                <dd class="font-mono text-xs">{data.pod.image}</dd>
+
+                <dt class="text-muted-foreground">Resources</dt>
+                <dd class="font-medium">
+                  {data.pod.cpu ?? '—'} vCPU · {data.pod.memory ?? '—'}
                 </dd>
+
+                <dt class="text-muted-foreground">Namespace</dt>
+                <dd class="font-mono text-xs">{data.pod.namespace}</dd>
+
+                <dt class="text-muted-foreground">Node</dt>
+                <dd class="font-mono text-xs">{data.pod.node_name ?? '—'}</dd>
+
+                <dt class="text-muted-foreground">Created</dt>
+                <dd>{new Date(data.pod.created_at).toLocaleString()}</dd>
+              </dl>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent class="space-y-4 pt-6">
+              <h3 class="text-sm font-semibold">Access</h3>
+              <Separator />
+              {#if data.pod.ssh_port}
+                <div class="space-y-1.5">
+                  <div class="text-xs font-medium text-muted-foreground">
+                    SSH command
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <code
+                      class="flex-1 select-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs"
+                    >
+                      ssh root@{data.nodeIp} -p {data.pod.ssh_port}
+                    </code>
+                    <Tooltip content="Copy command">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onclick={() =>
+                          copyText(
+                            `ssh root@${data.nodeIp} -p ${data.pod!.ssh_port}`,
+                            'SSH command copied'
+                          )}
+                      >
+                        <Copy class="size-3.5" />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </div>
+              {/if}
+
+              {#if data.pod.ssh_password}
+                <div class="space-y-1.5">
+                  <div class="text-xs font-medium text-muted-foreground">
+                    Root password
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <code
+                      class="flex-1 select-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs tracking-widest"
+                    >
+                      {showPassword
+                        ? data.pod.ssh_password
+                        : '•'.repeat(Math.min(20, data.pod.ssh_password.length))}
+                    </code>
+                    <Tooltip content={showPassword ? 'Hide' : 'Reveal'}>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onclick={() => (showPassword = !showPassword)}
+                      >
+                        {#if showPassword}
+                          <EyeOff class="size-3.5" />
+                        {:else}
+                          <Eye class="size-3.5" />
+                        {/if}
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="Copy password">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onclick={() =>
+                          copyText(data.pod!.ssh_password ?? '', 'Password copied')}
+                      >
+                        <Copy class="size-3.5" />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </div>
+              {/if}
+
+              {#if isRunning && data.pod.vscode_port}
+                <div class="space-y-1.5">
+                  <div class="text-xs font-medium text-muted-foreground">
+                    Web tools
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <Button
+                      href={vscodeUrl(data.pod)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex-1"
+                    >
+                      <Code2 class="size-4" /> Open VS Code
+                      <ExternalLink class="ml-auto size-3 opacity-60" />
+                    </Button>
+                    <Button
+                      href={getPreviewUrl(data.pod, 5000)}
+                      variant="outline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Preview :5000 <ExternalLink class="size-3 opacity-60" />
+                    </Button>
+                  </div>
+                </div>
+              {/if}
+
+              <div class="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+                For passwordless access, register a key in
+                <a href="/settings/ssh-keys" class="font-medium text-primary hover:underline">
+                  Settings → SSH Keys
+                </a>.
               </div>
-            {/if}
-            <div>
-              <dt class="text-gray-500">Created</dt>
-              <dd class="font-medium">{new Date(data.pod.created_at).toLocaleString()}</dd>
-            </div>
-          </dl>
+            </CardContent>
+          </Card>
         </div>
-      {:else if activeTab === 'vscode'}
-        <div class="h-full flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
-          {#if data.pod.state !== 'running'}
-            <div class="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
-              <p>VS Code is only available when the VM is running.</p>
-              <p class="text-sm">Current state: {data.pod.state}</p>
-            </div>
-          {:else if !data.pod.vscode_port}
-            <div class="flex flex-col items-center justify-center h-full text-gray-500 space-y-2">
-              <p>code-server is starting — please refresh in a moment.</p>
-            </div>
-          {:else}
-            <iframe
-              src="/api/pods/{data.pod.id}/vscode/"
-              class="w-full h-full border-0"
-              title="VS Code"
-            ></iframe>
-          {/if}
-        </div>
-      {:else if activeTab === 'metrics'}
-        <div class="h-full overflow-y-auto">
-          {#if data.pod.state === 'running'}
-            <GpuMetrics {metrics} />
-          {:else}
-            <div class="text-center py-12 border bg-white rounded-lg h-full flex flex-col items-center justify-center">
-              <p class="text-gray-500">Metrics are only available for running VMs</p>
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </div>
+      </Tabs.Content>
+    </Tabs.Root>
   </div>
 {:else}
-  <div class="text-center py-12">
-    <p class="text-gray-500">VM not found</p>
-    <a href="/pods" class="mt-4 inline-block text-indigo-600 hover:underline">Back to VMs</a>
+  <div class="flex flex-col items-center justify-center gap-3 py-24 text-center">
+    <p class="text-sm text-muted-foreground">VM not found.</p>
+    <Button href="/pods" variant="outline">
+      <ArrowLeft class="size-4" /> Back to VMs
+    </Button>
   </div>
 {/if}

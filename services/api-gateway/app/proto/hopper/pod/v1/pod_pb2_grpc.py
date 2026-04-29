@@ -5,7 +5,7 @@ import warnings
 
 from app.proto.hopper.pod.v1 import pod_pb2 as hopper_dot_pod_dot_v1_dot_pod__pb2
 
-GRPC_GENERATED_VERSION = '1.78.0'
+GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

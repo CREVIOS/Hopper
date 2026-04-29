@@ -1,1 +1,3 @@
-<p class="text-gray-500">Redirecting...</p>
+<div class="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+  Redirecting…
+</div>

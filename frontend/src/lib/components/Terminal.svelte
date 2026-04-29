@@ -1,133 +1,194 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
   import '@xterm/xterm/css/xterm.css';
 
-  let { sessionId = '', podId = '', onClose }: { sessionId: string, podId: string, onClose?: () => void } = $props();
+  let {
+    sessionId = '',
+    podId = '',
+    isActive = true,
+    onClose,
+  }: {
+    sessionId: string;
+    podId: string;
+    isActive?: boolean;
+    onClose?: () => void;
+  } = $props();
 
   let terminalEl: HTMLDivElement;
-  let term: any;
-  let ws: WebSocket;
-  let fitAddon: any;
-  let resizeObserver: ResizeObserver;
-  let isDisposed = false;
-  let reconnectTimer: number;
 
-  function connect() {
-    if (isDisposed) return;
-    
-    if (term) term.writeln('\r\nConnecting to pod...');
-    
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.host}/api/pods/${podId}/terminal`);
+  // Shared so the activation effect can drive focus()/fit() when this tab
+  // becomes visible. xterm's FitAddon returns garbage when the element is
+  // hidden (parent width computes to "auto"); we must refit on activation.
+  let termRef: any = null;
+  let fitAddonRef: any = null;
+  let wsRef: WebSocket | null = null;
 
-    ws.onopen = () => {
-      if (isDisposed) return;
-      window.reconnectAttempts = 0;
-      if (term) {
-         term.writeln('\r\nConnected!\r\n');
-         try { term.focus(); } catch (e) {}
-      }
-      if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
-         try {
-           fitAddon.fit();
-           if (term.cols > 0 && term.rows > 0) {
-             ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-           }
-         } catch (e) {}
-      }
-    };
+  // Refocus + refit when this terminal becomes the active tab. Without this,
+  // a "+"-spawned new tab leaves DOM focus on the previous xterm so keystrokes
+  // go to the wrong terminal, and a backgrounded tab keeps stale rows/cols
+  // from the moment its parent had clientHeight === 0 / opacity-0.
+  $effect(() => {
+    if (!isActive || !termRef) return;
+    queueMicrotask(() => {
+      try { termRef.focus(); } catch {}
+      try {
+        if (fitAddonRef && terminalEl && terminalEl.clientHeight > 0) {
+          fitAddonRef.fit();
+          if (
+            wsRef && wsRef.readyState === WebSocket.OPEN
+            && termRef.cols > 0 && termRef.rows > 0
+          ) {
+            wsRef.send(JSON.stringify({ type: 'resize', cols: termRef.cols, rows: termRef.rows }));
+          }
+        }
+      } catch {}
+    });
+  });
 
-    ws.onmessage = (ev) => {
-        if (isDisposed || !term) return;
+  // Single $effect handles full lifecycle (setup + teardown) — runes-native,
+  // avoids the chunk-split runtime-context mismatch that broke onMount/onDestroy.
+  $effect(() => {
+    let term: any;
+    let ws: WebSocket | null = null;
+    let fitAddon: any;
+    let resizeObserver: ResizeObserver | null = null;
+    let reconnectTimer: number | undefined;
+    let resizeTimer: number | undefined;
+    let heartbeatTimer: number | undefined;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let cancelled = false;
+
+    function connect() {
+      if (cancelled) return;
+
+      if (term) term.writeln('\r\nConnecting to pod...');
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}/api/pods/${podId}/terminal`);
+      wsRef = ws;
+
+      ws.onopen = () => {
+        if (cancelled) return;
+        reconnectAttempts = 0;
+        if (term) {
+          term.writeln('\r\nConnected!\r\n');
+          try { term.focus(); } catch {}
+        }
+        if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
+          try {
+            fitAddon.fit();
+            if (term.cols > 0 && term.rows > 0) {
+              ws?.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+            }
+          } catch {}
+        }
+        // App-level heartbeat — keeps idle proxies (LB / nginx) from dropping
+        // the connection. The api-gateway recognises and discards these.
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = window.setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            try { ws.send('{"type":"ping"}'); } catch {}
+          }
+        }, 20000);
+      };
+
+      ws.onmessage = (ev) => {
+        if (cancelled || !term) return;
         try {
           term.write(ev.data);
         } catch (e) {
-          console.error("Terminal write error:", e);
+          console.error('Terminal write error:', e);
         }
-    };
+      };
 
-    ws.onerror = (ev) => {
-      console.error("WebSocket error:", ev);
-    };
+      ws.onerror = (ev) => {
+        console.error('WebSocket error:', ev);
+      };
 
-    ws.onclose = (ev) => {
-      if (isDisposed) return;
+      ws.onclose = (ev) => {
+        clearInterval(heartbeatTimer);
+        if (cancelled) return;
 
-      const code = ev.code;
-      if (code === 1008 || code === 1003 || code >= 4000) {
-        term.writeln(`\r\nConnection closed (${code}).`);
-        return;
-      }
+        const code = ev.code;
+        if (code === 1008 || code === 1003 || code >= 4000) {
+          if (term) term.writeln(`\r\nConnection closed (${code}).`);
+          return;
+        }
 
-      if (typeof reconnectAttempts === 'undefined' || typeof maxReconnectAttempts === 'undefined') {
-         window.reconnectAttempts = (window.reconnectAttempts || 0);
-         window.maxReconnectAttempts = 5;
-      }
+        if (reconnectAttempts >= maxReconnectAttempts) {
+          if (term) term.writeln(`\r\nMax reconnect attempts reached. Please refresh.`);
+          return;
+        }
 
-      if (window.reconnectAttempts >= window.maxReconnectAttempts) {
-        term.writeln(`\r\nMax reconnect attempts reached. Please refresh.`);
-        return;
-      }
+        const backoff = Math.min(3000 * Math.pow(1.5, reconnectAttempts), 15000);
+        reconnectAttempts++;
 
-      const backoff = Math.min(3000 * Math.pow(1.5, window.reconnectAttempts), 15000);
-      window.reconnectAttempts++;
+        if (term) {
+          term.writeln(`\r\nConnection lost — Reconnecting in ${Math.round(backoff / 1000)}s (Attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
+        }
+        clearTimeout(reconnectTimer);
+        reconnectTimer = window.setTimeout(connect, backoff);
+      };
+    }
 
-      term.writeln(`\r\nConnection lost — Reconnecting in ${Math.round(backoff / 1000)}s (Attempt ${window.reconnectAttempts}/${window.maxReconnectAttempts})...`);
+    (async () => {
+      const { Terminal } = await import('@xterm/xterm');
+      const { FitAddon } = await import('@xterm/addon-fit');
+      const { WebLinksAddon } = await import('@xterm/addon-web-links');
+
+      if (cancelled || !terminalEl) return;
+
+      term = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: 'monospace' });
+      fitAddon = new FitAddon();
+
+      term.loadAddon(fitAddon);
+      term.loadAddon(new WebLinksAddon());
+      term.open(terminalEl);
+      // Expose to the activation effect.
+      termRef = term;
+      fitAddonRef = fitAddon;
+
+      term.onData((data: string) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      term.onResize((size: { cols: number; rows: number }) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+        }
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
+          try { fitAddon.fit(); } catch {}
+        }
+      });
+
+      // Defer observation slightly so the container has its final size.
+      resizeTimer = window.setTimeout(() => {
+        if (!cancelled && terminalEl && resizeObserver) resizeObserver.observe(terminalEl);
+      }, 100);
+
+      connect();
+    })();
+
+    return () => {
+      cancelled = true;
       clearTimeout(reconnectTimer);
-      reconnectTimer = window.setTimeout(connect, backoff);
-    };
-  }
-
-  onMount(async () => {
-    const { Terminal } = await import('@xterm/xterm');
-    const { FitAddon } = await import('@xterm/addon-fit');
-    const { WebLinksAddon } = await import('@xterm/addon-web-links');
-
-    term = new Terminal({ cursorBlink: true, fontSize: 14, fontFamily: 'monospace' });
-    fitAddon = new FitAddon();
-
-    term.loadAddon(fitAddon);
-    term.loadAddon(new WebLinksAddon());
-    term.open(terminalEl);
-    
-    term.onData((data: string) => {
-       if (ws && ws.readyState === WebSocket.OPEN) {
-         ws.send(data);
-       }
-    });
-
-    term.onResize((size: {cols: number, rows: number}) => {
-       if (ws && ws.readyState === WebSocket.OPEN) {
-         ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
-       }
-    });
-
-    resizeObserver = new ResizeObserver(() => {
-       if (fitAddon && terminalEl && terminalEl.clientHeight > 0) {
-          try {
-             fitAddon.fit();
-          } catch (e) {}
-       }
-    });
-
-    // Wait for the terminal container to be fully rendered before observing
-    resizeTimer = window.setTimeout(() => {
-        if (!isDisposed && terminalEl) resizeObserver.observe(terminalEl);
-    }, 100);
-
-    connect();
-  });
-
-  onDestroy(() => {
-    isDisposed = true;
-    clearTimeout(reconnectTimer);
-    clearTimeout(resizeTimer);
-    if (ws) {
+      clearTimeout(resizeTimer);
+      clearInterval(heartbeatTimer);
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
         ws.onclose = null;
         ws.close();
-    }
-    if (resizeObserver) resizeObserver.disconnect();
-    if (term) term.dispose();
+      }
+      if (resizeObserver) resizeObserver.disconnect();
+      if (term) term.dispose();
+    };
   });
 </script>
 

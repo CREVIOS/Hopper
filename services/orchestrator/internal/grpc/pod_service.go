@@ -46,18 +46,19 @@ func podToProtoState(s pod.State) podv1.PodState {
 
 func podToProto(p *pod.Pod) *podv1.PodStatus {
 	return &podv1.PodStatus{
-		Id:        p.ID,
-		UserId:    p.UserID,
-		State:     podToProtoState(p.State),
-		Plan:      p.Plan,
-		NodeName:  p.NodeName,
-		Namespace: p.Namespace,
-		SshPort:    p.SshPort,
-		VscodePort: p.VSCodePort,
-		Cpu:       p.CPU,
-		Memory:    p.Memory,
-		CreatedAt: timestamppb.New(p.CreatedAt),
-		UpdatedAt: timestamppb.New(p.UpdatedAt),
+		Id:          p.ID,
+		UserId:      p.UserID,
+		State:       podToProtoState(p.State),
+		Plan:        p.Plan,
+		NodeName:    p.NodeName,
+		Namespace:   p.Namespace,
+		SshPort:     p.SshPort,
+		VscodePort:  p.VSCodePort,
+		SshPassword: p.SshPassword,
+		Cpu:         p.CPU,
+		Memory:      p.Memory,
+		CreatedAt:   timestamppb.New(p.CreatedAt),
+		UpdatedAt:   timestamppb.New(p.UpdatedAt),
 	}
 }
 
@@ -92,10 +93,17 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		return nil, fmt.Errorf("transitioning to creating: %w", err)
 	}
 
-	// 3. Create the actual K8s pod + SSH + VS Code services
+	// 3. Create the actual K8s pod + SSH + VS Code services.
+	// PodID flows from the API (req.PodId) so the K8s label and the
+	// code-server --base-path use the same identifier external URLs use.
+	// Fall back to podName if the caller didn't pass one (e.g. older clients).
+	apiPodID := req.PodId
+	if apiPodID == "" {
+		apiPodID = podName
+	}
 	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
 		PodName: podName,
-		PodID:   podName,
+		PodID:   apiPodID,
 		UserID:  req.UserId,
 		Plan:    req.Plan,
 		Image:   req.Image,
@@ -112,8 +120,9 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		return nil, fmt.Errorf("creating k8s pod: %w", err)
 	}
 
-	// 4. Record ports and transition to running
+	// 4. Record ports + per-pod ssh password and transition to running
 	s.server.podManager.SetPorts(p.ID, ports.SSHPort, ports.VSCodePort)
+	s.server.podManager.SetSshPassword(p.ID, ports.SSHPassword)
 	_ = s.server.podManager.Transition(p.ID, pod.StateRunning)
 
 	// 5. Publish event
@@ -128,15 +137,18 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 	// 6. Start billing ticker
 	plan, ok := billingpkg.Plans[req.Plan]
 	if ok {
-		s.server.ticker.Start(p.ID, plan, func(podID string, amount float64) {
+		s.server.ticker.Start(p.ID, plan, func(ev billingpkg.TickEvent) {
 			s.server.logger.Info("billing tick",
-				zap.String("pod_id", podID),
-				zap.Float64("amount", amount),
+				zap.String("pod_id", ev.PodID),
+				zap.Float64("amount", ev.Amount),
+				zap.String("tx_id", ev.TxID),
 			)
 			_ = events.Publish(s.server.nc, events.SubjectBillDeduct, map[string]interface{}{
-				"pod_id":  podID,
-				"amount":  amount,
+				"pod_id":  ev.PodID,
+				"amount":  ev.Amount,
 				"user_id": req.UserId,
+				"tx_id":   ev.TxID,
+				"seq":     ev.Seq,
 			})
 		})
 	}

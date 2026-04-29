@@ -10,7 +10,13 @@ RUN apt-get update && \
     mkdir -p /run/sshd /var/log/supervisor && \
     echo 'root:hopper' | chpasswd && \
     sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    # PAM's pam_loginuid writes a kernel audit record on every session start.
+    # Inside K8s containers /proc/self/loginuid is restricted, sshd's audit
+    # hook then fatal()s with "linux_audit_write_entry failed: Operation not
+    # permitted" right after Connected!. Commenting the module out (the fix
+    # documented in moby/moby#8244 + podman#13012) makes login proceed.
+    sed -i '/pam_loginuid.so/s/^/#/g' /etc/pam.d/sshd
 
 # 2. Install code-server via direct deb download
 RUN curl -fL "https://github.com/coder/code-server/releases/download/v4.96.2/code-server_4.96.2_amd64.deb" \
