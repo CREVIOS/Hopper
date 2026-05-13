@@ -86,6 +86,7 @@ async def list_pods(
 @limiter.limit("10/minute")
 async def create_pod(
     request: Request,
+    response: Response,
     body: CreatePodRequest,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
