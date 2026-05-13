@@ -40,6 +40,11 @@ build-backend = "poetry.core.masonry.api"
 target-version = "py312"
 line-length = 100
 
+[tool.ruff.lint.per-file-ignores]
+# grpc_tools.protoc output — import order and unused deps are generator quirks
+"app/proto/**/*_pb2.py" = ["E402", "F401"]
+"app/proto/**/*_pb2_grpc.py" = ["F401"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

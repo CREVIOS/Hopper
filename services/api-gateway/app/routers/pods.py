@@ -9,13 +9,12 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -606,7 +605,7 @@ async def websocket_terminal(
     except (asyncssh.ConnectionLost, OSError) as e:
         logger.error("SSH connect failed pod=%s: %s", pod_id, e, exc_info=True)
         await _safe_send(websocket, "\r\nVM is unreachable — please retry shortly.\r\n")
-    except Exception as e:
+    except Exception:
         logger.exception("Unhandled SSH bridge failure pod=%s", pod_id)
         await _safe_send(websocket, "\r\nUnexpected error occurred while connecting.\r\n")
     finally:
