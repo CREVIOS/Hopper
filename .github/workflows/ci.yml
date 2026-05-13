@@ -111,11 +111,11 @@ jobs:
         working-directory: services/api-gateway
         run: poetry install --no-interaction
 
-      # Poetry --directory sets cwd to services/api-gateway; tests live at repo root.
+      # Use workspace-absolute path: Poetry 1.x may keep cwd at repo root, so ../../tests/ is wrong.
       - name: Integration tests (Testcontainers)
         run: |
           set +e
-          poetry --directory services/api-gateway run pytest ../../tests/integration/ -v --tb=short
+          poetry --directory services/api-gateway run pytest "${GITHUB_WORKSPACE}/tests/integration" -v --tb=short
           code=$?
           set -e
           if [ "$code" -eq 5 ]; then
