@@ -56,10 +56,11 @@ def _has_kid(jwks: dict, kid: str | None) -> bool:
 
 
 async def verify_token(token: str) -> TokenPayload | None:
-    """Validate a Keycloak-issued JWT.
+    """Validate a Keycloak-issued JWT (access token).
 
-    Verifies signature, exp, iss, and audience. Refreshes JWKS on `kid` miss
-    (Keycloak key rotation). Returns None on any validation failure.
+    Verifies signature, exp, iss, and Keycloak-style aud/azp (access tokens often
+    have aud ``account`` with ``azp`` set to the OIDC client id). Refreshes JWKS on
+    ``kid`` miss. Returns None on any validation failure.
     """
     try:
         unverified_header = jwt.get_unverified_header(token)
@@ -81,15 +82,17 @@ async def verify_token(token: str) -> TokenPayload | None:
         f"{settings.keycloak_external_url.rstrip('/')}/realms/{settings.keycloak_realm}"
     )
 
+    # Keycloak access tokens often use aud "account" only; the requesting client is in "azp".
+    # Strict aud==client_id fails SSO unless an Audience mapper is added in Keycloak.
     try:
         payload = jwt.decode(
             token,
             jwks,
             algorithms=[settings.jwt_algorithm],
-            audience=settings.keycloak_client_id,
+            audience=None,
             issuer=expected_issuer,
             options={
-                "verify_aud": True,
+                "verify_aud": False,
                 "verify_iss": True,
                 "verify_exp": True,
                 "verify_signature": True,
@@ -97,8 +100,27 @@ async def verify_token(token: str) -> TokenPayload | None:
             },
         )
     except JWTError as e:
-        logger.debug("Token validation failed: %s", e)
+        logger.warning("Token validation failed: %s", e)
         return None
+
+    aud_claim = payload.get("aud")
+    if isinstance(aud_claim, str):
+        aud_values = {aud_claim}
+    elif isinstance(aud_claim, list):
+        aud_values = {c for c in aud_claim if isinstance(c, str)}
+    else:
+        aud_values = set()
+
+    cid = settings.keycloak_client_id
+    allowed_aud = {cid, "account"}
+    if not (aud_values & allowed_aud):
+        logger.warning("Token aud not acceptable: %s", aud_claim)
+        return None
+    if cid not in aud_values:
+        azp = payload.get("azp")
+        if azp != cid:
+            logger.warning("Token azp mismatch (expected client %s): aud=%s azp=%s", cid, aud_claim, azp)
+            return None
 
     # App roles are realm-roles in Keycloak. Built-in Keycloak roles like
     # "default-roles-hopper" are filtered out.
