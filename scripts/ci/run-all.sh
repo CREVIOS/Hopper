@@ -51,7 +51,7 @@ fi
 if [[ "$RUN_INTEGRATION" == true ]]; then
   echo "==> Integration tests (Docker)"
   cd "$ROOT"
-  poetry --directory services/api-gateway run pytest ../../tests/integration/ -v --tb=short
+  poetry --directory services/api-gateway run pytest "${ROOT}/tests/integration" -v --tb=short
 fi
 
 echo "==> CI checks finished OK"

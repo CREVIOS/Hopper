@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.dependencies import get_current_user, get_db
 from app.schemas.user import TokenPayload
-import json
 
 router = APIRouter()
 
@@ -10,7 +10,7 @@ router = APIRouter()
 async def save_vscode_settings(
     settings_body: dict,
     current_user: TokenPayload = Depends(get_current_user),
-    db : AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Store VS Code settings blob per user.
     
