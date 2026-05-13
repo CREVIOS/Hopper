@@ -1,4 +1,8 @@
-.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load
+.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint ci clean vm-images vm-images-load
+
+# Same checks as GitHub Actions CI (no Docker integration tests)
+ci:
+	./scripts/ci/run-all.sh
 
 # Development environment
 dev-up:
