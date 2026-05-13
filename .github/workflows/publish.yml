@@ -1,10 +1,13 @@
 name: Publish images
 
 # Push Hopper service images to GHCR on: merge to main/master (push), version tags (v*),
-# or manual workflow_dispatch. Optionally roll out to a cluster via kubectl (dispatch only).
+# or manual workflow_dispatch. Optionally roll out with scripts/cd/k8s-rollout.sh (kubectl).
 #
-# Secrets (optional deploy):
-#   KUBE_CONFIG — complete kubeconfig file contents (YAML) for the target cluster
+# Continuous deployment (after images are pushed):
+#   • Secret KUBE_CONFIG — full kubeconfig YAML (cluster must be able to pull from GHCR).
+#   • Variable AUTO_DEPLOY_K8S — set exactly to "true" to roll out on every successful push to
+#     main/master or to a v* tag. Any other value or unset = no automatic rollout.
+#   • Manual CD: Actions → Publish images → Run workflow → set "deploy" to true.
 #
 # Configure GHCR package permissions if this is the first publish:
 #   Package settings → Actions → allow workflows from this repo.
@@ -13,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "After push, run scripts/cd/k8s-rollout.sh (set to true; requires KUBE_CONFIG secret)"
+        description: "After image push, run kubectl rollout (needs KUBE_CONFIG; same as AUTO_DEPLOY_K8S=true on push)"
         required: false
         default: "false"
         type: choice
@@ -71,7 +74,15 @@ jobs:
 
   deploy:
     needs: build-push
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+    if: |
+      needs.build-push.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true') ||
+        (github.event_name == 'push' && vars.AUTO_DEPLOY_K8S == 'true' && (
+          github.ref == 'refs/heads/main' ||
+          github.ref == 'refs/heads/master' ||
+          startsWith(github.ref, 'refs/tags/v')
+        ))
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
