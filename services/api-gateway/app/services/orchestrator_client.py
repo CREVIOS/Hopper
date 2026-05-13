@@ -5,6 +5,7 @@ generate_proto.sh — this thin wrapper keeps the POC working without
 requiring a proto compilation step during development.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -57,14 +58,17 @@ class OrchestratorClient:
 
     async def connect(self):
         self._channel = grpc.aio.insecure_channel(settings.orchestrator_url)
-        # Warm up the channel
+        # Do not block startup indefinitely: during rolling deploys the new API pod
+        # can come up before orchestrator is ready; /healthz is unreachable until lifespan
+        # finishes, so aggressive probes see connection refused and kill the container.
         try:
-            await self._channel.channel_ready()
+            await asyncio.wait_for(self._channel.channel_ready(), timeout=45.0)
             logger.info("Connected to orchestrator at %s", settings.orchestrator_url)
-        except Exception:
+        except (asyncio.TimeoutError, Exception) as exc:
             logger.warning(
-                "Orchestrator not reachable at %s — will retry on first call",
+                "Orchestrator not ready at %s (%s); continuing startup (retries on first call)",
                 settings.orchestrator_url,
+                exc,
             )
 
     async def close(self):
