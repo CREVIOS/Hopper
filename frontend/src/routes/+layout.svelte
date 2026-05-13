@@ -37,8 +37,15 @@
 
 {#if !data.isAuthenticated || isLogin}
   <!-- Public layout: login & redirects -->
-  <div class="min-h-screen bg-background text-foreground">
-    {@render children()}
+  <div class="flex min-h-screen flex-col bg-background text-foreground">
+    <div class="flex-1">
+      {@render children()}
+    </div>
+    <p
+      class="border-t border-border bg-muted/30 px-4 py-2 text-center text-xs font-medium text-muted-foreground"
+    >
+      Hopper · CD smoke — new frontend image is live if you read this line.
+    </p>
   </div>
 {:else}
   <!-- Authenticated layout: sidebar + topbar -->
@@ -101,6 +108,11 @@
           {@render children()}
         </div>
       </main>
+      <footer
+        class="border-t border-border bg-muted/30 px-4 py-2 text-center text-xs font-medium text-muted-foreground"
+      >
+        Hopper · CD smoke — new frontend image is live if you read this line.
+      </footer>
     </div>
   </div>
 {/if}
