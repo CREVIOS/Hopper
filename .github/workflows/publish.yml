@@ -129,11 +129,13 @@ jobs:
           fi
           chmod 644 ~/.ssh/known_hosts
 
+          # Quote every env value for the remote shell — spaces in KUBECTL (e.g. "k3s kubectl")
+          # must not split into: env ... KUBECTL=k3s kubectl bash -s  (that runs kubectl, not bash).
+          REMOTE_CMD="$(printf 'env NAMESPACE=%q USE_REGISTRY=%q API_IMAGE=%q ORCHESTRATOR_IMAGE=%q FRONTEND_IMAGE=%q KUBECTL=%q bash -s' \
+            "$NAMESPACE" "$USE_REGISTRY" "$API_IMAGE" "$ORCHESTRATOR_IMAGE" "$FRONTEND_IMAGE" "${KUBECTL:-}")"
+
           ssh -i ~/.ssh/hopper_cd_deploy \
             -o IdentitiesOnly=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "${VPS_USER}@${VPS_HOST}" \
-            env NAMESPACE="$NAMESPACE" USE_REGISTRY="$USE_REGISTRY" \
-            API_IMAGE="$API_IMAGE" ORCHESTRATOR_IMAGE="$ORCHESTRATOR_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
-            KUBECTL="${KUBECTL:-}" \
-            bash -s < scripts/cd/k8s-rollout.sh
+            bash -c "$REMOTE_CMD" < scripts/cd/k8s-rollout.sh
