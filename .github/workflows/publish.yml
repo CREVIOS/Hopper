@@ -1,13 +1,19 @@
 name: Publish images
 
 # Push Hopper service images to GHCR on: merge to main/master (push), version tags (v*),
-# or manual workflow_dispatch. Optionally roll out with scripts/cd/k8s-rollout.sh (kubectl).
+# or manual workflow_dispatch. Optional rollout runs kubectl on the VPS over SSH (Plan A).
 #
-# Continuous deployment (after images are pushed):
-#   • Secret KUBE_CONFIG — full kubeconfig YAML (cluster must be able to pull from GHCR).
-#   • Variable AUTO_DEPLOY_K8S — set exactly to "true" to roll out on every successful push to
-#     main/master or to a v* tag. Any other value or unset = no automatic rollout.
-#   • Manual CD: Actions → Publish images → Run workflow → set "deploy" to true.
+# CD secrets (deploy job — SSH into the VPS, then kubectl there against local/private API):
+#   VPS_SSH_KEY          — private key (full PEM/ed25519, include BEGIN/END lines)
+#   VPS_HOST             — VPS hostname or IP (SSH must be reachable from GitHub)
+#   VPS_USER             — SSH login user (use a dedicated deploy user + forced command when possible)
+#   VPS_SSH_KNOWN_HOSTS  — optional; output of: ssh-keyscan -H YOUR_VPS_HOST
+#                         If unset, the workflow runs ssh-keyscan once (pin this secret for MITM safety).
+#
+# Repo variable AUTO_DEPLOY_K8S — set exactly to "true" to roll out after every successful push to
+# main/master or v* tag. Manual: Actions → Publish images → Run workflow → deploy = true.
+#
+# VPS must have kubectl working locally (e.g. k3s) and nodes able to pull from GHCR.
 #
 # Configure GHCR package permissions if this is the first publish:
 #   Package settings → Actions → allow workflows from this repo.
@@ -16,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "After image push, run kubectl rollout (needs KUBE_CONFIG; same as AUTO_DEPLOY_K8S=true on push)"
+        description: "After image push, SSH to VPS and run kubectl rollout (needs VPS_* secrets)"
         required: false
         default: "false"
         type: choice
@@ -87,26 +93,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: azure/setup-kubectl@v4
-
-      - name: Configure kubeconfig
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-        run: |
-          mkdir -p ~/.kube
-          if [ -z "$KUBE_CONFIG" ]; then
-            echo "KUBE_CONFIG secret is empty" >&2
-            exit 1
-          fi
-          printf '%s\n' "$KUBE_CONFIG" > ~/.kube/config
-
-      - name: Roll out
+      - name: Roll out over SSH (kubectl on VPS)
         env:
           NAMESPACE: hopper
           USE_REGISTRY: "1"
           API_IMAGE: ${{ needs.build-push.outputs.api_image }}
           ORCHESTRATOR_IMAGE: ${{ needs.build-push.outputs.orchestrator_image }}
           FRONTEND_IMAGE: ${{ needs.build-push.outputs.frontend_image }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
-          chmod +x scripts/cd/k8s-rollout.sh
-          ./scripts/cd/k8s-rollout.sh
+          set -euo pipefail
+          for name in VPS_SSH_KEY VPS_HOST VPS_USER; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/hopper_cd_deploy
+          chmod 600 ~/.ssh/hopper_cd_deploy
+
+          if [ -n "${VPS_SSH_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "VPS_SSH_KNOWN_HOSTS unset; running ssh-keyscan (add secret to pin host keys)"
+            ssh-keyscan -H -T 30 "$VPS_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 644 ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/hopper_cd_deploy \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "${VPS_USER}@${VPS_HOST}" \
+            env NAMESPACE="$NAMESPACE" USE_REGISTRY="$USE_REGISTRY" \
+            API_IMAGE="$API_IMAGE" ORCHESTRATOR_IMAGE="$ORCHESTRATOR_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
+            bash -s < scripts/cd/k8s-rollout.sh
