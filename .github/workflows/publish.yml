@@ -10,6 +10,8 @@ name: Publish images
 #   VPS_SSH_KNOWN_HOSTS  — optional; output of: ssh-keyscan -H YOUR_VPS_HOST
 #                         If unset, the workflow runs ssh-keyscan once (pin this secret for MITM safety).
 #
+# Optional repo variable VPS_KUBECTL — e.g. "k3s kubectl" if system kubectl cannot talk to k3s (discovery /api errors).
+#
 # Repo variable AUTO_DEPLOY_K8S — set exactly to "true" to roll out after every successful push to
 # main/master or v* tag. Manual: Actions → Publish images → Run workflow → deploy = true.
 #
@@ -104,6 +106,7 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          KUBECTL: ${{ vars.VPS_KUBECTL }}
         run: |
           set -euo pipefail
           for name in VPS_SSH_KEY VPS_HOST VPS_USER; do
@@ -132,4 +135,5 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             env NAMESPACE="$NAMESPACE" USE_REGISTRY="$USE_REGISTRY" \
             API_IMAGE="$API_IMAGE" ORCHESTRATOR_IMAGE="$ORCHESTRATOR_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
+            KUBECTL="${KUBECTL:-}" \
             bash -s < scripts/cd/k8s-rollout.sh
