@@ -12,6 +12,7 @@
 #   export API_IMAGE=ghcr.io/org/hopper-api-gateway:abc123
 #   export ORCHESTRATOR_IMAGE=ghcr.io/org/hopper-orchestrator:abc123
 #   export FRONTEND_IMAGE=ghcr.io/org/hopper-frontend:abc123
+#   export ROLL_TIMEOUT=900s   # optional; default 900s (GHCR pulls on small nodes can exceed 5m)
 #   ./scripts/cd/k8s-rollout.sh
 #
 # For registry-backed clusters, imagePullPolicy is set to IfNotPresent.
@@ -31,7 +32,7 @@ kube() {
 }
 
 NAMESPACE="${NAMESPACE:-hopper}"
-ROLL_TIMEOUT="${ROLL_TIMEOUT:-300s}"
+ROLL_TIMEOUT="${ROLL_TIMEOUT:-900s}"
 
 if [[ -z "${API_IMAGE:-}" || -z "${ORCHESTRATOR_IMAGE:-}" || -z "${FRONTEND_IMAGE:-}" ]]; then
   echo "Set API_IMAGE, ORCHESTRATOR_IMAGE, and FRONTEND_IMAGE to full image references (with tag)." >&2
@@ -53,6 +54,7 @@ patch_pull_policy() {
 }
 
 echo "Namespace: $NAMESPACE"
+echo "Rollout timeout per deployment: $ROLL_TIMEOUT"
 echo "API:           $API_IMAGE"
 echo "Orchestrator: $ORCHESTRATOR_IMAGE"
 echo "Frontend:     $FRONTEND_IMAGE"
