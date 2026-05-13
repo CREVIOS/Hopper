@@ -186,7 +186,7 @@ async def callback(
 
     payload = await verify_token(access_token)
     if payload is None:
-        raise HTTPException(status_code=401, detail="invalid id token")
+        raise HTTPException(status_code=401, detail="invalid access token")
 
     # Domain gate (defence in depth — Keycloak realm should also enforce).
     if not _domain_allowed(payload.email):
