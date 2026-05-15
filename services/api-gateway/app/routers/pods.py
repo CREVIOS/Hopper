@@ -15,7 +15,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -37,6 +37,11 @@ router = APIRouter()
 
 
 def _session_to_response(s: PodSession) -> PodResponse:
+    # Only surface live connection details for running pods. Once a pod is
+    # stopped or terminated, its NodePort is released and may be reassigned,
+    # so leaking the stale port leads users to dial a black hole (or worse,
+    # someone else's pod).
+    is_live = s.state == "running"
     return PodResponse(
         id=s.id,
         user_id=s.user_id,
@@ -46,9 +51,9 @@ def _session_to_response(s: PodSession) -> PodResponse:
         cpu=s.cpu,
         memory=s.memory,
         namespace=s.namespace,
-        ssh_port=s.ssh_port,
-        vscode_port=s.vscode_port,
-        ssh_password=s.ssh_password,
+        ssh_port=s.ssh_port if is_live else None,
+        vscode_port=s.vscode_port if is_live else None,
+        ssh_password=s.ssh_password if is_live else None,
         created_at=s.started_at,
         updated_at=s.updated_at,
     )
@@ -87,6 +92,7 @@ async def list_pods(
 @limiter.limit("10/minute")
 async def create_pod(
     request: Request,
+    response: Response,
     body: CreatePodRequest,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -274,13 +280,34 @@ async def vscode_proxy(
     pod_id: str,
     path: str,
     request: Request,
-    current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Auth is inlined (instead of Depends(get_current_user)) so that a
+    # top-level navigation with a missing/expired session cookie redirects
+    # to /login instead of returning a JSON 401. Without that, the browser
+    # opens VS Code in a new tab and shows a blank "loading" screen until
+    # the user gives up and closes it.
+    token = request.cookies.get("session_token")
+    current_user = await verify_token(token) if token else None
+    if current_user is None:
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept and request.method == "GET":
+            from urllib.parse import quote
+            return_to = request.url.path
+            if request.url.query:
+                return_to += f"?{request.url.query}"
+            return RedirectResponse(
+                url=f"{settings.frontend_url}/login?return_to={quote(return_to, safe='')}",
+                status_code=302,
+            )
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
     session = result.scalar_one_or_none()
-    if not session or session.user_id != current_user.sub:
-        raise HTTPException(status_code=403)
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
 
     if session.state != "running":
         # Pod still starting / stopped — the user-facing 503 was confusing
@@ -488,11 +515,31 @@ async def websocket_terminal(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    # SSH NodePort lives on the K8s node, not inside this pod, so localhost
-    # would only work if the gateway is colocated with the node. Use the
-    # configured node IP — populated from the downward API in production.
-    host = settings.node_ip
-    port = session.ssh_port
+    # SSH NodePort isn't reachable from the api-gateway under the minikube
+    # docker driver (or most kind setups), so prefer a kubectl port-forward
+    # into the pod's sshd on port 22 — matching the path VS Code already takes.
+    # Fall back to the NodePort on bare-metal clusters where it does work.
+    host: str | None = None
+    port: int | None = None
+    if session.pod_name:
+        host = "127.0.0.1"
+        port = port_forward.get_local_port(session.pod_name, 22)
+        if not port:
+            try:
+                port = await port_forward.start(session.pod_name, session.namespace, 22)
+            except Exception as pf_err:
+                logger.warning(
+                    "ssh port-forward unavailable for %s: %s — falling back to NodePort",
+                    session.pod_name, pf_err,
+                )
+                host = port = None
+    if port is None:
+        if not session.ssh_port:
+            await _safe_send(websocket, "\r\nVM has no SSH endpoint yet — please retry.\r\n")
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
+        host = settings.node_ip
+        port = session.ssh_port
     username = "root"
     # Per-pod password generated by the orchestrator at create time. Refuse
     # to connect if the pod predates the 009 migration (no per-pod password)

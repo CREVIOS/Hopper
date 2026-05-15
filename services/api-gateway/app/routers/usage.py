@@ -90,6 +90,74 @@ async def get_pod_usage(
     }
 
 
+@router.get("/summary/me/series")
+async def get_my_usage_series(
+    range: str = "24h",
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregated time-series across all of the current user's pods.
+
+    Used by the dashboard to show busyness over time instead of a single
+    snapshot. Bucket size scales with the requested range so the response
+    stays small enough to render directly without client-side downsampling.
+    """
+    delta = RANGE_MAP.get(range, timedelta(hours=24))
+    since = datetime.utcnow() - delta
+
+    if delta <= timedelta(hours=1):
+        bucket = "1 minute"
+    elif delta <= timedelta(hours=6):
+        bucket = "5 minutes"
+    elif delta <= timedelta(hours=24):
+        bucket = "15 minutes"
+    else:
+        bucket = "1 hour"
+
+    try:
+        result = await db.execute(
+            text("""
+                SELECT time_bucket(:bucket, time) AS bucket,
+                       avg(cpu_percent) as avg_cpu,
+                       avg(memory_used_bytes) as avg_memory,
+                       max(memory_limit_bytes) as memory_limit
+                FROM metrics_samples
+                WHERE user_id = :user_id AND time > :since
+                GROUP BY bucket
+                ORDER BY bucket
+            """),
+            {"bucket": bucket, "user_id": current_user.sub, "since": since},
+        )
+    except Exception:
+        result = await db.execute(
+            text("""
+                SELECT date_trunc('hour', time) AS bucket,
+                       avg(cpu_percent) as avg_cpu,
+                       avg(memory_used_bytes) as avg_memory,
+                       max(memory_limit_bytes) as memory_limit
+                FROM metrics_samples
+                WHERE user_id = :user_id AND time > :since
+                GROUP BY bucket
+                ORDER BY bucket
+            """),
+            {"user_id": current_user.sub, "since": since},
+        )
+
+    rows = result.fetchall()
+    return {
+        "range": range,
+        "data": [
+            {
+                "time": row.bucket.isoformat() if row.bucket else None,
+                "cpu_percent": float(row.avg_cpu or 0),
+                "memory_used_bytes": int(row.avg_memory or 0),
+                "memory_limit_bytes": int(row.memory_limit or 0),
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/summary/me")
 async def get_my_usage_summary(
     current_user: TokenPayload = Depends(get_current_user),

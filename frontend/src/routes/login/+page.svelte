@@ -172,6 +172,26 @@
         </CardContent>
       </Card>
 
+      <div
+        class="rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground"
+      >
+        <p class="font-medium text-foreground">No sign-up form here — by design.</p>
+        <p class="mt-1">
+          Accounts are provisioned automatically through your university's single
+          sign-on. There's nothing to register, and there is no password for Hopper
+          to forget — if you can't log in, reset your <em>university</em> password
+          through your institution's IdP, then come back and click
+          <span class="font-medium text-foreground">Continue with University SSO</span>.
+        </p>
+        <p class="mt-2">
+          New student and not in the system yet? Email
+          <a class="font-medium text-foreground underline" href="mailto:hopper-admin@cs.du.ac.bd">
+            hopper-admin@cs.du.ac.bd
+          </a>
+          to be added.
+        </p>
+      </div>
+
       <p class="text-center text-xs text-muted-foreground">
         Trouble signing in?
         <a

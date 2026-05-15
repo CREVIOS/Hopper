@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,8 +58,13 @@ async def get_history(
 
 class AllocateRequest(BaseModel):
     user_id: str
-    amount: float
-    description: str = "allocation"
+    # Bounded positive amount. The ledger column is NUMERIC(12,4), which caps
+    # at 99,999,999.9999 — bound the input below that and reject ≤0 so admins
+    # can't accidentally deduct via a typo (deductions have their own audited
+    # path) and so a fat-finger 1e15 doesn't surface as a 500 from a numeric
+    # overflow in Postgres.
+    amount: float = Field(gt=0, le=1_000_000_000)
+    description: str = Field(default="allocation", max_length=500)
 
 
 @router.post("/allocate")

@@ -22,6 +22,7 @@
   } from '$lib/ui';
   import PodCard from '$lib/components/PodCard.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
+  import UsageTrend from '$lib/components/UsageTrend.svelte';
   import { relTime, formatBytes } from '$lib/utils';
 
   type Summary = {
@@ -114,6 +115,9 @@
       tone="default"
     />
   </div>
+
+  <!-- Usage trend -->
+  <UsageTrend />
 
   <!-- Active VMs -->
   <section>

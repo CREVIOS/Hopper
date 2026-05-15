@@ -14,7 +14,8 @@
     Copy,
     ExternalLink,
     Loader2,
-    Code2
+    Code2,
+    MessageSquareWarning
   } from 'lucide-svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -32,7 +33,9 @@
     Badge,
     Tabs,
     Separator,
-    Tooltip
+    Tooltip,
+    Dialog,
+    Textarea
   } from '$lib/ui';
   import type { Pod, User, VmMetrics } from '$lib/types';
 
@@ -84,6 +87,35 @@
       es.close();
     };
   });
+
+  // --- Report Issue dialog ---
+  let issueOpen = $state(false);
+  let issueText = $state('');
+  let issueSubmitting = $state(false);
+  async function submitIssue() {
+    if (!data.pod) return;
+    const description = issueText.trim();
+    if (description.length < 5) {
+      toast.error('Please describe the issue (at least 5 characters).');
+      return;
+    }
+    issueSubmitting = true;
+    const tid = toast.loading('Sending report…');
+    try {
+      await api.post('/issues/', { pod_id: data.pod.id, description });
+      toast.success('Report sent', {
+        id: tid,
+        description: 'An admin will take a look. Thanks for flagging it.'
+      });
+      issueText = '';
+      issueOpen = false;
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Failed to send report';
+      toast.error('Could not send report', { id: tid, description: msg });
+    } finally {
+      issueSubmitting = false;
+    }
+  }
 
   async function terminatePod() {
     if (!data.pod) return;
@@ -177,6 +209,11 @@
           >
             <Code2 class="size-4" /> Open VS Code
             <ExternalLink class="size-3 opacity-60" />
+          </Button>
+        {/if}
+        {#if isRunning}
+          <Button variant="outline" onclick={() => (issueOpen = true)}>
+            <MessageSquareWarning class="size-4" /> Report issue
           </Button>
         {/if}
         {#if canTerminate}
@@ -345,7 +382,7 @@
             <CardContent class="space-y-4 pt-6">
               <h3 class="text-sm font-semibold">Access</h3>
               <Separator />
-              {#if data.pod.ssh_port}
+              {#if data.pod.state === 'running' && data.pod.ssh_port}
                 <div class="space-y-1.5">
                   <div class="text-xs font-medium text-muted-foreground">
                     SSH command
@@ -452,6 +489,42 @@
       </Tabs.Content>
     </Tabs.Root>
   </div>
+
+  <Dialog
+    bind:open={issueOpen}
+    title="Report an issue with this VM"
+    description="Describe what's wrong — SSH dropped, billing looks off, pod restarted, anything. Session ID and timestamp are attached automatically so an admin can trace it."
+  >
+    <div class="space-y-3">
+      <div class="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+        <div class="font-mono text-muted-foreground">
+          Session: <span class="text-foreground">{data.pod.id}</span>
+        </div>
+        <div class="font-mono text-muted-foreground">
+          Timestamp: <span class="text-foreground">{new Date().toISOString()}</span>
+        </div>
+      </div>
+      <Textarea
+        bind:value={issueText}
+        placeholder="What happened? Steps to reproduce, error messages, what you expected..."
+        rows={6}
+        maxlength={2000}
+      />
+      <p class="text-right text-xs text-muted-foreground">
+        {issueText.length}/2000
+      </p>
+    </div>
+    {#snippet footer()}
+      <Button variant="outline" onclick={() => (issueOpen = false)}>Cancel</Button>
+      <Button onclick={submitIssue} disabled={issueSubmitting || issueText.trim().length < 5}>
+        {#if issueSubmitting}
+          <Loader2 class="size-4 animate-spin" /> Sending…
+        {:else}
+          Send report
+        {/if}
+      </Button>
+    {/snippet}
+  </Dialog>
 {:else}
   <div class="flex flex-col items-center justify-center gap-3 py-24 text-center">
     <p class="text-sm text-muted-foreground">VM not found.</p>

@@ -28,6 +28,10 @@ _ACTION_MAP = [
     (re.compile(r"^/auth/logout$"), "POST", "logout", "auth"),
     (re.compile(r"^/ssh-keys/?$"), "POST", "add_ssh_key", "ssh_key"),
     (re.compile(r"^/ssh-keys/([^/]+)$"), "DELETE", "delete_ssh_key", "ssh_key"),
+    (re.compile(r"^/issues/?$"), "POST", "report_issue", "issue"),
+    (re.compile(r"^/issues/admin/([^/]+)/resolve$"), "POST", "resolve_issue", "issue"),
+    (re.compile(r"^/files/([^/]+)/upload$"), "POST", "upload_file", "pod"),
+    (re.compile(r"^/admin/users/([^/]+)/role$"), "PATCH", "change_user_role", "user"),
 ]
 
 
