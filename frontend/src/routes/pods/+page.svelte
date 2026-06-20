@@ -41,10 +41,20 @@
     Dialog
   } from '$lib/ui';
   import PodCard from '$lib/components/PodCard.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
   let { data }: { data: { pods: Pod[]; nodeIp: string; balance: number } } = $props();
+
+  // Modest, vibrant per-image accent — visual only, used on the small icon tile.
+  // Kept as static class strings so Tailwind's JIT can detect them.
+  const templateAccent: Record<string, string> = {
+    orange: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
+    yellow: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    blue: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+    red: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+  };
 
   let selectedPlan = $state<VmPlan>('small');
   let selectedTemplate = $state<VmTemplate>('ubuntu');
@@ -173,20 +183,23 @@
   }
 </script>
 
-<div class="space-y-8">
+<div class="space-y-6">
   <!-- Header -->
-  <div class="flex flex-col gap-1">
-    <h1 class="text-3xl font-bold tracking-tight">Virtual Machines</h1>
-    <p class="text-sm text-muted-foreground">
-      Launch new VMs and manage your existing instances.
-    </p>
-  </div>
+  <PageHeader
+    title="Virtual Machines"
+    description="Launch new VMs and manage your existing instances."
+  />
 
   <!-- Launch panel -->
-  <Card>
+  <Card class="animate-fade-up surface-glow overflow-hidden">
     <CardHeader>
       <CardTitle class="flex items-center gap-2">
-        <Plus class="size-4 text-primary" /> Launch a new VM
+        <span
+          class="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-info text-primary-foreground shadow-sm"
+        >
+          <Plus class="size-4" />
+        </span>
+        Launch a new VM
       </CardTitle>
       <CardDescription>
         Pick a resource plan and a base image. Billing is per minute, charged
@@ -232,19 +245,19 @@
               <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
                 <div class="rounded-md bg-muted/50 p-2">
                   <div class="flex items-center gap-1 text-muted-foreground">
-                    <Cpu class="size-3" /> CPU
+                    <Cpu class="size-3 text-primary" /> CPU
                   </div>
                   <div class="mt-0.5 font-mono font-semibold">{info.cpu}</div>
                 </div>
                 <div class="rounded-md bg-muted/50 p-2">
                   <div class="flex items-center gap-1 text-muted-foreground">
-                    <MemoryStick class="size-3" /> RAM
+                    <MemoryStick class="size-3 text-info" /> RAM
                   </div>
                   <div class="mt-0.5 font-mono font-semibold">{info.memory}</div>
                 </div>
                 <div class="rounded-md bg-muted/50 p-2">
                   <div class="flex items-center gap-1 text-muted-foreground">
-                    <HardDrive class="size-3" /> Disk
+                    <HardDrive class="size-3 text-success" /> Disk
                   </div>
                   <div class="mt-0.5 font-mono font-semibold">{info.disk}</div>
                 </div>
@@ -265,7 +278,7 @@
             <button
               type="button"
               class={cn(
-                'rounded-xl border p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm',
+                'group rounded-xl border p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm',
                 selectedTemplate === key
                   ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
                   : 'border-border bg-card'
@@ -274,7 +287,10 @@
             >
               <div class="flex items-center gap-2">
                 <div
-                  class="flex size-8 items-center justify-center rounded-md bg-muted text-sm font-bold uppercase"
+                  class={cn(
+                    'flex size-8 items-center justify-center rounded-md text-sm font-bold uppercase transition-transform group-hover:scale-110',
+                    templateAccent[info.accent] ?? 'bg-muted text-foreground'
+                  )}
                 >
                   {info.name.slice(0, 1)}
                 </div>
@@ -329,10 +345,17 @@
   </Card>
 
   <!-- Pods list -->
-  <section>
+  <section class="animate-fade-up" style="animation-delay: 60ms">
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-2">
-        <h2 class="text-lg font-semibold tracking-tight">Your VMs</h2>
+        <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <span
+            class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+          >
+            <Server class="size-3.5" />
+          </span>
+          Your VMs
+        </h2>
         <Badge variant="muted">{counts.all} total</Badge>
       </div>
       <div class="flex items-center gap-2">
@@ -391,51 +414,55 @@
     </Card>
   {:else}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {#each filteredPods as pod (pod.id)}
-        <div class="relative">
-          <PodCard {pod} href="/pods/{pod.id}" />
-          <div class="absolute right-3 top-3">
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <button
-                    {...props}
-                    onclick={(e) => e.preventDefault()}
-                    class="flex size-7 items-center justify-center rounded-md border border-border bg-card/80 backdrop-blur transition-colors hover:bg-accent"
-                    aria-label="More actions"
-                  >
-                    <MoreVertical class="size-4" />
-                  </button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content>
-                <DropdownMenu.Item onclick={() => goto(`/pods/${pod.id}`)}>
-                  <ExternalLink class="size-4" /> Open
-                </DropdownMenu.Item>
-                {#if pod.state === 'running' && pod.ssh_port}
-                  <DropdownMenu.Item onclick={() => copySsh(pod)}>
-                    <Terminal class="size-4" /> Copy SSH command
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item onclick={() => openSshInfo(pod)}>
-                    <Terminal class="size-4" /> Show SSH info
-                  </DropdownMenu.Item>
-                  {#if pod.vscode_port}
-                    <DropdownMenu.Item
-                      onclick={() => window.open(vscodeUrl(pod), '_blank')}
+      {#each filteredPods as pod, i (pod.id)}
+        <div
+          class="animate-fade-up"
+          style="animation-delay: {Math.min(i * 40, 320)}ms"
+        >
+          <PodCard {pod} href="/pods/{pod.id}">
+            {#snippet actions()}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  {#snippet child({ props })}
+                    <button
+                      {...props}
+                      onclick={(e) => e.preventDefault()}
+                      class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label="More actions"
                     >
-                      <Code2 class="size-4" /> Open VS Code
+                      <MoreVertical class="size-4" />
+                    </button>
+                  {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content>
+                  <DropdownMenu.Item onclick={() => goto(`/pods/${pod.id}`)}>
+                    <ExternalLink class="size-4" /> Open
+                  </DropdownMenu.Item>
+                  {#if pod.state === 'running' && pod.ssh_port}
+                    <DropdownMenu.Item onclick={() => copySsh(pod)}>
+                      <Terminal class="size-4" /> Copy SSH command
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => openSshInfo(pod)}>
+                      <Terminal class="size-4" /> Show SSH info
+                    </DropdownMenu.Item>
+                    {#if pod.vscode_port}
+                      <DropdownMenu.Item
+                        onclick={() => window.open(vscodeUrl(pod), '_blank')}
+                      >
+                        <Code2 class="size-4" /> Open VS Code
+                      </DropdownMenu.Item>
+                    {/if}
+                    <DropdownMenu.Separator />
+                  {/if}
+                  {#if !['terminated', 'failed'].includes(pod.state)}
+                    <DropdownMenu.Item danger onclick={() => terminatePod(pod)}>
+                      <Square class="size-4" /> Terminate
                     </DropdownMenu.Item>
                   {/if}
-                  <DropdownMenu.Separator />
-                {/if}
-                {#if !['terminated', 'failed'].includes(pod.state)}
-                  <DropdownMenu.Item danger onclick={() => terminatePod(pod)}>
-                    <Square class="size-4" /> Terminate
-                  </DropdownMenu.Item>
-                {/if}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </div>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+            {/snippet}
+          </PodCard>
         </div>
       {/each}
     </div>

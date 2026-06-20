@@ -23,6 +23,8 @@
   import PodCard from '$lib/components/PodCard.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
   import UsageTrend from '$lib/components/UsageTrend.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
+  import SectionHeader from '$lib/components/SectionHeader.svelte';
   import { relTime, formatBytes } from '$lib/utils';
 
   type Summary = {
@@ -60,28 +62,23 @@
   }
 </script>
 
-<div class="space-y-8">
+<div class="space-y-6">
   <!-- Hero -->
-  <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <div
-        class="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-      >
-        <Sparkles class="size-3 text-primary" />
-        Welcome back
-      </div>
-      <h1 class="mt-2 text-3xl font-bold tracking-tight">Dashboard</h1>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Manage your virtual machines, monitor usage, and track credit spend.
-      </p>
-    </div>
-    <Button href="/pods" size="lg">
-      <Plus class="size-4" /> Launch a VM
-    </Button>
-  </div>
+  <PageHeader
+    eyebrow="Welcome back"
+    eyebrowIcon={Sparkles}
+    title="Dashboard"
+    description="Manage your virtual machines, monitor usage, and track credit spend."
+  >
+    {#snippet action()}
+      <Button href="/pods" size="lg">
+        <Plus class="size-4" /> Launch a VM
+      </Button>
+    {/snippet}
+  </PageHeader>
 
   <!-- Stats -->
-  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="animate-fade-up grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
     <StatCard
       label="Credit balance"
       value={data.balance.toFixed(1)}
@@ -117,27 +114,30 @@
   </div>
 
   <!-- Usage trend -->
-  <UsageTrend />
+  <div class="animate-fade-up" style="animation-delay: 60ms">
+    <UsageTrend />
+  </div>
 
   <!-- Active VMs -->
-  <section>
-    <div class="mb-3 flex items-end justify-between">
-      <div>
-        <h2 class="text-lg font-semibold tracking-tight">Active VMs</h2>
-        <p class="text-sm text-muted-foreground">
-          Currently running, pending, or starting up.
-        </p>
-      </div>
-      {#if activePods.length > 0}
-        <Button href="/pods" variant="ghost" size="sm">
-          Manage all <ArrowUpRight class="size-4" />
-        </Button>
-      {/if}
-    </div>
+  <section class="animate-fade-up" style="animation-delay: 90ms">
+    <SectionHeader
+      class="mb-3"
+      icon={Server}
+      title="Active VMs"
+      description="Currently running, pending, or starting up."
+    >
+      {#snippet action()}
+        {#if activePods.length > 0}
+          <Button href="/pods" variant="ghost" size="sm">
+            Manage all <ArrowUpRight class="size-4" />
+          </Button>
+        {/if}
+      {/snippet}
+    </SectionHeader>
 
     {#if activePods.length === 0}
       <Card class="border-dashed bg-muted/20">
-        <CardContent class="flex flex-col items-center gap-3 py-12 text-center">
+        <CardContent class="flex flex-col items-center gap-3 py-10 text-center">
           <div
             class="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary"
           >
@@ -165,13 +165,14 @@
 
   <div class="grid gap-6 lg:grid-cols-5">
     <!-- Recent VMs -->
-    <section class="lg:col-span-3">
-      <div class="mb-3 flex items-end justify-between">
-        <h2 class="text-lg font-semibold tracking-tight">Recent VMs</h2>
-        {#if data.pods.length > 0}
-          <Button href="/pods" variant="ghost" size="sm">All VMs</Button>
-        {/if}
-      </div>
+    <section class="animate-fade-up lg:col-span-3" style="animation-delay: 120ms">
+      <SectionHeader class="mb-3" icon={History} title="Recent VMs">
+        {#snippet action()}
+          {#if data.pods.length > 0}
+            <Button href="/pods" variant="ghost" size="sm">All VMs</Button>
+          {/if}
+        {/snippet}
+      </SectionHeader>
       {#if recentInactive.length === 0}
         <Card class="border-dashed">
           <CardContent class="py-8 text-center text-sm text-muted-foreground">
@@ -188,11 +189,12 @@
     </section>
 
     <!-- Recent activity -->
-    <section class="lg:col-span-2">
-      <div class="mb-3 flex items-end justify-between">
-        <h2 class="text-lg font-semibold tracking-tight">Recent activity</h2>
-        <Button href="/credits" variant="ghost" size="sm">All</Button>
-      </div>
+    <section class="animate-fade-up lg:col-span-2" style="animation-delay: 150ms">
+      <SectionHeader class="mb-3" icon={Coins} title="Recent activity">
+        {#snippet action()}
+          <Button href="/credits" variant="ghost" size="sm">All</Button>
+        {/snippet}
+      </SectionHeader>
       <Card>
         <CardHeader class="flex-row items-center gap-2 pb-3">
           <History class="size-4 text-muted-foreground" />
@@ -207,14 +209,15 @@
           {:else}
             <ul class="divide-y divide-border">
               {#each data.recent as tx (tx.id)}
-                <li class="flex items-center gap-3 px-4 py-3">
+                <li
+                  class="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40"
+                >
                   <span
-                    class="flex size-8 items-center justify-center rounded-full"
-                    class:bg-success-foreground={false}
-                    class:bg-success={false}
-                    class:text-success={tx.direction === 'credit'}
-                    class:bg-destructive={false}
-                    class:text-destructive={tx.direction === 'debit'}
+                    class={`flex size-8 shrink-0 items-center justify-center rounded-full ${
+                      tx.direction === 'credit'
+                        ? 'bg-success/15 text-success'
+                        : 'bg-destructive/15 text-destructive'
+                    }`}
                   >
                     {#if tx.direction === 'credit'}
                       <ArrowDownRight class="size-4" />
@@ -223,7 +226,7 @@
                     {/if}
                   </span>
                   <div class="min-w-0 flex-1">
-                    <div class="text-sm font-medium truncate">
+                    <div class="truncate text-sm font-medium">
                       {prettyTxType(tx.type)}
                     </div>
                     <div class="text-xs text-muted-foreground">

@@ -5,6 +5,7 @@
     TrendingUp,
     Search,
     Calendar,
+    History,
     ArrowUpRight,
     ArrowDownRight
   } from 'lucide-svelte';
@@ -16,11 +17,13 @@
     CardTitle,
     Input,
     Tabs,
+    Table,
     Badge,
     Separator
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
   import SpendChart from '$lib/components/SpendChart.svelte';
+  import PageHeader from '$lib/components/PageHeader.svelte';
   import { relTime } from '$lib/utils';
 
   let {
@@ -153,16 +156,14 @@
   });
 </script>
 
-<div class="space-y-8">
-  <div>
-    <h1 class="text-3xl font-bold tracking-tight">Credits</h1>
-    <p class="mt-1 text-sm text-muted-foreground">
-      Your balance and how it's being spent.
-    </p>
-  </div>
+<div class="space-y-6">
+  <PageHeader
+    title="Credits"
+    description="Your balance and how it's being spent."
+  />
 
   <!-- Stats -->
-  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  <div class="animate-fade-up grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     <StatCard
       label="Available balance"
       value={data.balance.toFixed(2)}
@@ -191,11 +192,24 @@
   </div>
 
   <!-- Spend chart -->
-  <Card>
-    <CardHeader>
+  <Card class="animate-fade-up surface-glow overflow-hidden" style="animation-delay: 60ms">
+    <CardHeader class="flex-row items-center justify-between">
       <CardTitle class="flex items-center gap-2 text-sm">
-        <Calendar class="size-4 text-primary" /> Last 14 days
+        <span
+          class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+        >
+          <Calendar class="size-3.5" />
+        </span>
+        Last 14 days
       </CardTitle>
+      <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <span class="inline-flex items-center gap-1.5">
+          <span class="size-2 rounded-full bg-destructive/70"></span> Spent
+        </span>
+        <span class="inline-flex items-center gap-1.5">
+          <span class="size-2 rounded-full bg-success/70"></span> Received
+        </span>
+      </div>
     </CardHeader>
     <Separator />
     <CardContent class="pt-6">
@@ -204,9 +218,16 @@
   </Card>
 
   <!-- Activity -->
-  <section>
+  <section class="animate-fade-up" style="animation-delay: 90ms">
     <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 class="text-lg font-semibold tracking-tight">Activity</h2>
+      <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">
+        <span
+          class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+        >
+          <History class="size-3.5" />
+        </span>
+        Activity
+      </h2>
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative">
           <Search
@@ -241,66 +262,98 @@
       </Card>
     {:else}
       <Card class="overflow-hidden">
-        {#each ['today', 'yesterday', 'week', 'older'] as g (g)}
-          {#if bucketed[g as Group].length > 0}
-            <div
-              class="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            >
-              <span>{groupTitle[g as Group]}</span>
-              <Badge variant="muted">{bucketed[g as Group].length}</Badge>
-            </div>
-            <ul class="divide-y divide-border">
-              {#each bucketed[g as Group] as r}
-                <li
-                  class="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-muted/30"
-                >
-                  <div class="flex min-w-0 items-center gap-3">
-                    <span
-                      class={`flex size-9 shrink-0 items-center justify-center rounded-full ${
-                        r.direction === 'credit'
-                          ? 'bg-success/15 text-success'
-                          : 'bg-destructive/15 text-destructive'
-                      }`}
-                    >
-                      {#if r.direction === 'credit'}
-                        <ArrowDownRight class="size-4" />
-                      {:else}
-                        <ArrowUpRight class="size-4" />
-                      {/if}
+        <!-- Fixed-height internal scroller: the list never grows the page,
+             header stays pinned while you scroll through entries. -->
+        <Table.Root containerClass="max-h-[30rem]">
+          <Table.Header
+            class="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+          >
+            <Table.Row class="hover:bg-transparent">
+              <Table.Head>Activity</Table.Head>
+              <Table.Head class="hidden md:table-cell">Source</Table.Head>
+              <Table.Head class="text-right">When</Table.Head>
+              <Table.Head class="text-right">Amount</Table.Head>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
+            {#each ['today', 'yesterday', 'week', 'older'] as g (g)}
+              {#if bucketed[g as Group].length > 0}
+                <tr>
+                  <td
+                    colspan="4"
+                    class="border-b border-border bg-muted/40 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    <span class="inline-flex items-center gap-2">
+                      {groupTitle[g as Group]}
+                      <Badge variant="muted" class="px-1.5 py-0 text-[10px]">
+                        {bucketed[g as Group].length}
+                      </Badge>
                     </span>
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="truncate text-sm font-medium">{r.label}</span>
-                        {#if r.count > 1}
-                          <Badge variant="muted" class="px-1.5 py-0 text-[10px]">
-                            ×{r.count}
-                          </Badge>
-                        {/if}
+                  </td>
+                </tr>
+                {#each bucketed[g as Group] as r}
+                  <Table.Row>
+                    <Table.Cell>
+                      <div class="flex min-w-0 items-center gap-3">
+                        <span
+                          class={`flex size-8 shrink-0 items-center justify-center rounded-full ${
+                            r.direction === 'credit'
+                              ? 'bg-success/15 text-success'
+                              : 'bg-destructive/15 text-destructive'
+                          }`}
+                        >
+                          {#if r.direction === 'credit'}
+                            <ArrowDownRight class="size-4" />
+                          {:else}
+                            <ArrowUpRight class="size-4" />
+                          {/if}
+                        </span>
+                        <div class="flex min-w-0 items-center gap-2">
+                          <span class="truncate text-sm font-medium">{r.label}</span>
+                          {#if r.count > 1}
+                            <Badge variant="muted" class="px-1.5 py-0 text-[10px]">
+                              ×{r.count}
+                            </Badge>
+                          {/if}
+                        </div>
                       </div>
-                      <div class="truncate text-xs text-muted-foreground">
-                        {r.sublabel ? `${r.sublabel} · ` : ''}{relTime(r.when)} ·
+                    </Table.Cell>
+                    <Table.Cell class="hidden md:table-cell">
+                      <span class="font-mono text-xs text-muted-foreground">
+                        {r.sublabel || '—'}
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell class="text-right whitespace-nowrap">
+                      <div class="text-xs text-muted-foreground">
+                        {relTime(r.when)}
+                      </div>
+                      <div class="text-[11px] text-muted-foreground/70">
                         {r.when.toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit'
                         })}
                       </div>
-                    </div>
-                  </div>
-                  <div class="shrink-0 text-right">
-                    <div
-                      class={`font-mono text-sm font-semibold ${
-                        r.direction === 'debit' ? 'text-destructive' : 'text-success'
-                      }`}
-                    >
-                      {r.direction === 'debit' ? '−' : '+'}{r.amount.toFixed(2)}
-                    </div>
-                    <div class="text-[11px] text-muted-foreground">credits</div>
-                  </div>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {/each}
+                    </Table.Cell>
+                    <Table.Cell class="text-right whitespace-nowrap">
+                      <span
+                        class={`font-mono text-sm font-semibold ${
+                          r.direction === 'debit' ? 'text-destructive' : 'text-success'
+                        }`}
+                      >
+                        {r.direction === 'debit' ? '−' : '+'}{r.amount.toFixed(2)}
+                      </span>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+              {/if}
+            {/each}
+          </Table.Body>
+        </Table.Root>
+        <div
+          class="border-t border-border bg-muted/20 px-4 py-2 text-xs text-muted-foreground"
+        >
+          Showing {filteredRows.length} entr{filteredRows.length === 1 ? 'y' : 'ies'}
+        </div>
       </Card>
     {/if}
   </section>

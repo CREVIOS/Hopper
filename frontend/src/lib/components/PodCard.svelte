@@ -5,37 +5,25 @@
     MemoryStick,
     Terminal,
     ArrowUpRight,
-    Container,
-    Loader2
+    Container
   } from 'lucide-svelte';
+  import type { Snippet } from 'svelte';
   import type { Pod } from '$lib/types';
-  import { Card, Badge } from '$lib/ui';
+  import { Card } from '$lib/ui';
+  import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { relTime, shortId } from '$lib/utils';
 
-  let { pod, href }: { pod: Pod; href?: string } = $props();
+  let {
+    pod,
+    href,
+    actions
+  }: { pod: Pod; href?: string; actions?: Snippet } = $props();
 
-  const stateConfig: Record<
-    string,
-    {
-      variant: 'success' | 'warning' | 'info' | 'destructive' | 'muted';
-      pulse: boolean;
-      label: string;
-    }
-  > = {
-    running: { variant: 'success', pulse: false, label: 'Running' },
-    pending: { variant: 'warning', pulse: true, label: 'Pending' },
-    creating: { variant: 'info', pulse: true, label: 'Creating' },
-    stopping: { variant: 'warning', pulse: true, label: 'Stopping' },
-    terminated: { variant: 'muted', pulse: false, label: 'Terminated' },
-    failed: { variant: 'destructive', pulse: false, label: 'Failed' }
-  };
-
-  const cfg = $derived(stateConfig[pod.state] ?? stateConfig.terminated);
   const imageName = $derived(pod.image?.split('/').pop()?.split(':')[0] ?? pod.image);
 </script>
 
 {#snippet body()}
-  <div class="flex items-start justify-between gap-3">
+  <div class="flex items-start justify-between gap-2">
     <div class="flex items-center gap-2.5 min-w-0">
       <div
         class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-info/15 text-primary"
@@ -49,19 +37,12 @@
         <div class="text-xs text-muted-foreground capitalize">{pod.plan}</div>
       </div>
     </div>
-    <Badge variant={cfg.variant}>
-      {#if cfg.pulse}
-        <Loader2 class="size-3 animate-spin" />
-      {:else}
-        <span
-          class="size-1.5 rounded-full"
-          class:bg-success={cfg.variant === 'success'}
-          class:bg-muted-foreground={cfg.variant === 'muted'}
-          class:bg-destructive={cfg.variant === 'destructive'}
-        ></span>
+    <div class="flex shrink-0 items-center gap-1">
+      <StatusBadge state={pod.state} />
+      {#if actions}
+        {@render actions()}
       {/if}
-      {cfg.label}
-    </Badge>
+    </div>
   </div>
 
   <dl class="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -101,13 +82,13 @@
 {/snippet}
 
 {#if href}
-  <a {href} class="group block">
-    <Card class="p-4 transition-all hover:border-primary/40 hover:shadow-md">
+  <a {href} class="group block h-full">
+    <Card class="card-lift h-full p-4 hover:border-primary/40 hover:shadow-md">
       {@render body()}
     </Card>
   </a>
 {:else}
-  <Card class="p-4">
+  <Card class="h-full p-4">
     {@render body()}
   </Card>
 {/if}
