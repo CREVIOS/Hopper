@@ -13,14 +13,13 @@ keyed on tx_id with a UNIQUE constraint, so a redelivery is a noop.
 
 Error handling:
   - ValueError: insufficient credits → publish billing.exhausted, ACK message
-  - sqlalchemy OperationalError / asyncpg transient: NAK when JetStream; core NATS cannot redeliver
+  - sqlalchemy OperationalError / asyncpg transient: NAK so JetStream redelivers
   - Any other: log + ACK (don't redeliver garbage forever)
 """
 
 import json
 import logging
 
-from nats.errors import NotJSMessageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -59,8 +58,9 @@ async def _handle_billing_deducted(msg):
         tx_id = data.get("tx_id")  # required for idempotency
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("Malformed billing.deducted message: %s", e)
-        # Bad message — ack so it doesn't redeliver forever (JetStream only).
-        await _safe_ack(msg)
+        # Bad message — ack so it doesn't redeliver forever.
+        if hasattr(msg, "ack"):
+            await msg.ack()
         return
 
     if not tx_id:
@@ -77,11 +77,13 @@ async def _handle_billing_deducted(msg):
                 "Deducted %.4f credits user=%s pod=%s tx=%s",
                 amount, user_id, pod_id, tx_id,
             )
-        await _safe_ack(msg)
+        if hasattr(msg, "ack"):
+            await msg.ack()
     except IntegrityError:
         # Duplicate tx_id — already applied. Safe to ack.
         logger.info("billing tx %s already applied — idempotent skip", tx_id)
-        await _safe_ack(msg)
+        if hasattr(msg, "ack"):
+            await msg.ack()
     except ValueError:
         logger.warning("Credits exhausted for user %s, pod %s", user_id, pod_id)
         nc = nats_client.get_nc()
@@ -89,15 +91,18 @@ async def _handle_billing_deducted(msg):
             "billing.exhausted",
             json.dumps({"pod_id": pod_id, "user_id": user_id}).encode(),
         )
-        await _safe_ack(msg)
+        if hasattr(msg, "ack"):
+            await msg.ack()
     except OperationalError:
-        # Transient DB blip — JetStream would NAK for redelivery; core NATS cannot.
+        # Transient DB blip — let JetStream redeliver after backoff.
         logger.exception("Transient DB error on billing tick pod=%s — NAK", pod_id)
-        await _safe_nak(msg, delay=10)
+        if hasattr(msg, "nak"):
+            await msg.nak(delay=10)
     except Exception:
         # Unknown failure — log loudly and ack so the queue doesn't pile up.
         logger.exception("Failed to deduct credits for pod %s — ack and skip", pod_id)
-        await _safe_ack(msg)
+        if hasattr(msg, "ack"):
+            await msg.ack()
 
 
 async def _handle_billing_exhausted(msg):

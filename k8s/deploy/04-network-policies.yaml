@@ -306,3 +306,31 @@ spec:
     - Ingress
   ingress:
     - {}
+
+---
+# 9. EXTERNAL SSH → USER VMs — Allow internet traffic to reach user-vm sshd
+# Teaching: Each user-vm gets a NodePort Service mapping a high port on the
+# node to container port 22. Cilium's BPF NodePort dataplane correctly DNATs
+# the inbound SYN to the pod IP, but the pod's ingress policy is what
+# ultimately decides whether sshd sees the packet. With default-deny-all in
+# place and no rule allowing the `world` identity, the SYN is dropped at
+# bpf_lxc.c with "Policy denied" — externally this looks like a TCP timeout
+# even though the NodePort, sshd, and Azure NSG are all healthy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-allow-external-ssh
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 22

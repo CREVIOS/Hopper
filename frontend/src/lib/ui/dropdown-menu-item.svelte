@@ -13,14 +13,21 @@
     children: Snippet;
     class?: string;
     danger?: boolean;
-    onclick?: (e: MouseEvent) => void;
+    onclick?: (e: Event) => void;
     disabled?: boolean;
   } = $props();
+
+  // bits-ui v2 Menu.Item uses `onSelect`, not native `onclick`. The menu
+  // intercepts clicks on its own to fire selection + close in one step, so a
+  // plain `onclick` either misses the event or races the portal teardown
+  // (which is what made the admin/user-menu buttons appear unresponsive).
+  // We forward our public `onclick` prop to `onSelect` so call sites don't
+  // need to change.
 </script>
 
 <Bits.Item
   {disabled}
-  {onclick}
+  onSelect={onclick}
   class={cn(
     'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors',
     'focus:bg-accent focus:text-accent-foreground',

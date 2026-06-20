@@ -10,7 +10,7 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin
+from app.routers import auth, pods, credits, admin, files, issues, ssh_keys, usage
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
@@ -64,16 +64,34 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "X-CSRF-Token"],
     )
 
+    # Baseline security headers applied to every response. nginx-ingress
+    # adds HSTS at the edge; we add the rest here so they're present even
+    # on responses that bypass the edge (e.g. internal port-forward calls
+    # used by the test harness).
+    @app.middleware("http")
+    async def _security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        return response
+
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     app.include_router(pods.router, prefix="/pods", tags=["pods"])
     app.include_router(credits.router, prefix="/credits", tags=["credits"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
-    @app.get("/healthz")
+    app.include_router(ssh_keys.router, prefix="/ssh-keys", tags=["ssh-keys"])
+    app.include_router(files.router, prefix="/files", tags=["files"])
+    app.include_router(issues.router, prefix="/issues", tags=["issues"])
+    app.include_router(usage.router, prefix="/usage", tags=["usage"])
+    # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
+    # to the GET handler — load balancers and uptime probes that issue HEAD
+    # would see 405 without this. Same body, same status, no payload.
+    @app.api_route("/healthz", methods=["GET", "HEAD"])
     async def healthz():
         return {"status": "ok"}
 
-    @app.get("/readyz")
+    @app.api_route("/readyz", methods=["GET", "HEAD"])
     async def readyz():
         return {"status": "ready"}
 
