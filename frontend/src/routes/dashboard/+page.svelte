@@ -23,7 +23,7 @@
   import PodCard from '$lib/components/PodCard.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
   import UsageTrend from '$lib/components/UsageTrend.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import SectionHeader from '$lib/components/SectionHeader.svelte';
   import { relTime, formatBytes } from '$lib/utils';
 
@@ -64,7 +64,7 @@
 
 <div class="space-y-6">
   <!-- Hero -->
-  <PageHeader
+  <PageTitle
     eyebrow="Welcome back"
     eyebrowIcon={Sparkles}
     title="Dashboard"
@@ -75,7 +75,7 @@
         <Plus class="size-4" /> Launch a VM
       </Button>
     {/snippet}
-  </PageHeader>
+  </PageTitle>
 
   <!-- Stats -->
   <div class="animate-fade-up grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

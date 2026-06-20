@@ -20,21 +20,23 @@
   }: { pod: Pod; href?: string; actions?: Snippet } = $props();
 
   const imageName = $derived(pod.image?.split('/').pop()?.split(':')[0] ?? pod.image);
+  const isRunning = $derived(pod.state === 'running');
 </script>
 
 {#snippet body()}
+  <!-- Header -->
   <div class="flex items-start justify-between gap-2">
-    <div class="flex items-center gap-2.5 min-w-0">
+    <div class="flex min-w-0 items-center gap-2.5">
       <div
-        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-info/15 text-primary"
+        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-info/15 text-primary ring-1 ring-inset ring-primary/10"
       >
         <Server class="size-4" />
       </div>
       <div class="min-w-0">
-        <div class="font-mono text-sm font-semibold truncate">
+        <div class="truncate font-mono text-sm font-semibold leading-tight">
           {shortId(pod.id, 8)}
         </div>
-        <div class="text-xs text-muted-foreground capitalize">{pod.plan}</div>
+        <div class="text-xs capitalize text-muted-foreground">{pod.plan}</div>
       </div>
     </div>
     <div class="flex shrink-0 items-center gap-1">
@@ -45,36 +47,45 @@
     </div>
   </div>
 
-  <dl class="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-    <div class="flex items-center gap-1.5 text-muted-foreground">
-      <Container class="size-3.5" /> Image
+  <!-- Specs — compact chips instead of a tall spec list -->
+  <div class="mt-3.5 flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
+    <span
+      class="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1"
+      title={pod.image}
+    >
+      <Container class="size-3.5 shrink-0 text-muted-foreground" />
+      <span class="truncate">{imageName}</span>
+    </span>
+    <span class="inline-flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1">
+      <Cpu class="size-3.5 text-primary" />
+      {pod.cpu ?? '—'} vCPU
+    </span>
+    <span class="inline-flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1">
+      <MemoryStick class="size-3.5 text-info" />
+      {pod.memory ?? '—'}
+    </span>
+  </div>
+
+  {#if isRunning && pod.ssh_port}
+    <div class="mt-1.5 text-[11px] font-medium">
+      <span
+        class="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 font-mono text-primary"
+      >
+        <Terminal class="size-3.5" />
+        :{pod.ssh_port}
+      </span>
     </div>
-    <dd class="text-right font-medium truncate" title={pod.image}>{imageName}</dd>
+  {/if}
 
-    <div class="flex items-center gap-1.5 text-muted-foreground">
-      <Cpu class="size-3.5" /> vCPU
-    </div>
-    <dd class="text-right font-medium">{pod.cpu ?? '—'}</dd>
-
-    <div class="flex items-center gap-1.5 text-muted-foreground">
-      <MemoryStick class="size-3.5" /> Memory
-    </div>
-    <dd class="text-right font-medium">{pod.memory ?? '—'}</dd>
-
-    {#if pod.ssh_port && pod.state === 'running'}
-      <div class="flex items-center gap-1.5 text-muted-foreground">
-        <Terminal class="size-3.5" /> SSH
-      </div>
-      <dd class="text-right font-mono text-primary">:{pod.ssh_port}</dd>
-    {/if}
-  </dl>
-
+  <!-- Footer -->
   <div
-    class="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground"
+    class="mt-3.5 flex items-center justify-between border-t border-border/70 pt-2.5 text-xs text-muted-foreground"
   >
     <span>Created {relTime(pod.created_at)}</span>
     {#if href}
-      <span class="inline-flex items-center gap-1 text-foreground opacity-0 transition-opacity group-hover:opacity-100">
+      <span
+        class="inline-flex items-center gap-1 font-medium text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+      >
         Open <ArrowUpRight class="size-3" />
       </span>
     {/if}

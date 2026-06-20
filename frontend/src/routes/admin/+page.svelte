@@ -29,6 +29,7 @@
     Separator
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import Avatar from '$lib/ui/avatar.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { relTime, shortId } from '$lib/utils';
@@ -236,19 +237,12 @@
 </script>
 
 <div class="space-y-8">
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-    <div>
-      <div
-        class="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-      >
-        <ShieldAlert class="size-3 text-primary" /> Admin console
-      </div>
-      <h1 class="mt-2 text-3xl font-bold tracking-tight">Admin</h1>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Platform overview, user management, and audit trail.
-      </p>
-    </div>
-  </div>
+  <PageTitle
+    title="Admin"
+    eyebrow="Admin console"
+    eyebrowIcon={ShieldAlert}
+    description="Platform overview, user management, and audit trail."
+  />
 
   <!-- Stats -->
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

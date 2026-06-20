@@ -23,6 +23,7 @@
     Separator
   } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import { confirm } from '$lib/confirm.svelte';
   import { copyToClipboard, relTime } from '$lib/utils';
   import type { SshKey } from '$lib/types';
@@ -105,18 +106,12 @@
 </script>
 
 <div class="space-y-8">
-  <div>
-    <div
-      class="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-    >
-      <KeyRound class="size-3 text-primary" /> Settings
-    </div>
-    <h1 class="mt-2 text-3xl font-bold tracking-tight">SSH keys</h1>
-    <p class="mt-1 text-sm text-muted-foreground">
-      Public keys registered here are pushed to every VM you launch — enabling
-      passwordless SSH from any device whose private key matches.
-    </p>
-  </div>
+  <PageTitle
+    title="SSH keys"
+    eyebrow="Settings"
+    eyebrowIcon={KeyRound}
+    description="Public keys registered here are pushed to every VM you launch — enabling passwordless SSH from any device whose private key matches."
+  />
 
   <Card>
     <CardContent class="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">

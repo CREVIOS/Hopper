@@ -197,7 +197,12 @@
   <CardContent class="space-y-3 pt-6">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="flex items-center gap-2 text-sm font-semibold">
-        <FolderOpen class="size-4 text-primary" /> VM file browser
+        <span
+          class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+        >
+          <FolderOpen class="size-3.5" />
+        </span>
+        VM file browser
       </h3>
       <div class="flex items-center gap-1.5">
         <Button
@@ -304,7 +309,12 @@
     <CardContent class="space-y-4 pt-6">
       <div>
         <h3 class="flex items-center gap-2 text-sm font-semibold">
-          <Upload class="size-4 text-primary" /> Upload to VM
+          <span
+            class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+          >
+            <Upload class="size-3.5" />
+          </span>
+          Upload to VM
         </h3>
         <p class="mt-1 text-xs text-muted-foreground">
           Files are pushed via SCP using the VM's SSH credentials. Uploads default
@@ -375,7 +385,12 @@
     <CardContent class="space-y-4 pt-6">
       <div>
         <h3 class="flex items-center gap-2 text-sm font-semibold">
-          <Download class="size-4 text-primary" /> Download from VM
+          <span
+            class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+          >
+            <Download class="size-3.5" />
+          </span>
+          Download from VM
         </h3>
         <p class="mt-1 text-xs text-muted-foreground">
           Click a file in the browser above to pre-fill the path, or paste an absolute

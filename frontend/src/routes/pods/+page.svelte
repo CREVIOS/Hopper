@@ -42,7 +42,7 @@
     Dialog
   } from '$lib/ui';
   import PodCard from '$lib/components/PodCard.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
@@ -200,7 +200,7 @@
 
 <div class="space-y-6">
   <!-- Header -->
-  <PageHeader
+  <PageTitle
     title="Virtual Machines"
     description="Launch new VMs and manage your existing instances."
   />
@@ -231,54 +231,57 @@
             <button
               type="button"
               class={cn(
-                'group relative rounded-xl border p-4 text-left transition-all',
+                'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all',
                 'hover:border-primary/50 hover:shadow-sm',
                 selectedPlan === plan
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                  ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
               onclick={() => (selectedPlan = plan as VmPlan)}
             >
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="text-base font-semibold capitalize">{plan}</div>
-                  <div class="mt-0.5 text-xs text-muted-foreground">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold capitalize">{plan}</div>
+                  <p class="mt-0.5 text-xs leading-snug text-muted-foreground">
                     {info.description}
-                  </div>
+                  </p>
                 </div>
                 <div
                   class={cn(
-                    'flex size-5 items-center justify-center rounded-full border transition-colors',
+                    'flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
                     selectedPlan === plan
                       ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-card'
+                      : 'border-border bg-card group-hover:border-primary/40'
                   )}
                 >
                   {#if selectedPlan === plan}<Check class="size-3" />{/if}
                 </div>
               </div>
-              <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <Cpu class="size-3 text-primary" /> CPU
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.cpu}</div>
-                </div>
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <MemoryStick class="size-3 text-info" /> RAM
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.memory}</div>
-                </div>
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <HardDrive class="size-3 text-success" /> Disk
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.disk}</div>
-                </div>
+
+              <div
+                class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium"
+              >
+                <span class="inline-flex items-center gap-1.5">
+                  <Cpu class="size-3.5 text-primary" />
+                  {info.cpu}
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <MemoryStick class="size-3.5 text-info" />
+                  {info.memory}
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <HardDrive class="size-3.5 text-success" />
+                  {info.disk}
+                </span>
               </div>
-              <div class="mt-3 flex items-center gap-1.5 text-sm font-semibold text-primary">
-                <Coins class="size-3.5" /> {info.rate} credit{info.rate === 1 ? '' : 's'}/hr
+
+              <div
+                class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
+              >
+                <Coins class="size-3.5" />
+                {info.rate} credit{info.rate === 1 ? '' : 's'}<span
+                  class="font-normal text-muted-foreground">/hr</span
+                >
               </div>
             </button>
           {/each}
@@ -293,29 +296,37 @@
             <button
               type="button"
               class={cn(
-                'group rounded-xl border p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm',
+                'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
                 selectedTemplate === key
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                  ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
               onclick={() => (selectedTemplate = key as VmTemplate)}
             >
-              <div class="flex items-center gap-2">
+              {#if selectedTemplate === key}
+                <div
+                  class="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                >
+                  <Check class="size-3" />
+                </div>
+              {/if}
+              <div class="flex items-center gap-2.5">
                 <div
                   class={cn(
-                    'flex size-8 items-center justify-center rounded-md text-sm font-bold uppercase transition-transform group-hover:scale-110',
+                    'flex size-9 shrink-0 items-center justify-center rounded-lg text-base font-bold uppercase transition-transform group-hover:scale-105',
                     templateAccent[info.accent] ?? 'bg-muted text-foreground'
                   )}
                 >
                   {info.name.slice(0, 1)}
                 </div>
-                <div class="font-semibold">{info.name}</div>
-                {#if selectedTemplate === key}
-                  <Check class="ml-auto size-4 text-primary" />
-                {/if}
+                <div class="min-w-0 pr-5">
+                  <div class="truncate text-sm font-semibold">{info.name}</div>
+                  <p class="truncate text-[11px] text-muted-foreground">
+                    {info.tagline}
+                  </p>
+                </div>
               </div>
-              <p class="mt-2 text-xs text-muted-foreground">{info.tagline}</p>
-              <p class="mt-1 text-[11px] text-muted-foreground/80">
+              <p class="mt-2.5 text-[11px] leading-snug text-muted-foreground">
                 {info.description}
               </p>
             </button>

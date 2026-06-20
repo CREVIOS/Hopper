@@ -24,7 +24,7 @@
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
   import SpendChart from '$lib/components/SpendChart.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import { relTime } from '$lib/utils';
 
   let {
@@ -174,7 +174,7 @@
 </script>
 
 <div class="space-y-6">
-  <PageHeader
+  <PageTitle
     title="Credits"
     description="Your balance and how it's being spent."
   />
