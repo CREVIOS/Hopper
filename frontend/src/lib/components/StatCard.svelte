@@ -102,7 +102,7 @@
   <a {href} class="group block h-full">
     <Card
       class={cn(
-        'card-lift relative h-full overflow-hidden bg-gradient-to-br from-card p-5 hover:border-primary/40 hover:shadow-md',
+        'card-lift relative h-full overflow-hidden bg-gradient-to-br from-card p-4 hover:border-primary/40 hover:shadow-md',
         surfaceMap[tone],
         className
       )}
@@ -113,7 +113,7 @@
 {:else}
   <Card
     class={cn(
-      'group relative h-full overflow-hidden bg-gradient-to-br from-card p-5',
+      'card-lift group relative h-full overflow-hidden bg-gradient-to-br from-card p-4 hover:border-primary/40 hover:shadow-md',
       surfaceMap[tone],
       className
     )}

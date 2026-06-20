@@ -18,6 +18,7 @@ export { default as Dialog } from './dialog.svelte';
 export { default as AlertDialog } from './alert-dialog.svelte';
 export { Tabs } from './tabs.svelte';
 export { Table } from './table.svelte';
+export { default as Pagination } from './pagination.svelte';
 export { default as Tooltip } from './tooltip.svelte';
 export { Select } from './select.svelte';
 export { DropdownMenu } from './dropdown-menu.svelte';

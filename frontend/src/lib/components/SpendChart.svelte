@@ -43,6 +43,18 @@
     return buckets;
   }
 
+  // Soft vertical gradient on each bar — stronger at the top, fading down.
+  function barGradient(token: string) {
+    return (ctx: { chart: ChartType }) => {
+      const { ctx: c, chartArea } = ctx.chart;
+      if (!chartArea) return chartColor(token, 0.7);
+      const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+      g.addColorStop(0, chartColor(token, 0.9));
+      g.addColorStop(1, chartColor(token, 0.4));
+      return g;
+    };
+  }
+
   function buildConfig(): ChartConfiguration<'bar'> {
     const buckets = buildBuckets();
     return {
@@ -53,19 +65,21 @@
           {
             label: 'Spent',
             data: buckets.map((b) => b.debit),
-            backgroundColor: chartColor('destructive', 0.75),
+            backgroundColor: barGradient('destructive'),
             hoverBackgroundColor: chartColor('destructive'),
             borderRadius: 6,
-            maxBarThickness: 28,
+            borderSkipped: false,
+            maxBarThickness: 18,
             stack: 's'
           },
           {
             label: 'Received',
             data: buckets.map((b) => b.credit),
-            backgroundColor: chartColor('success', 0.75),
+            backgroundColor: barGradient('success'),
             hoverBackgroundColor: chartColor('success'),
             borderRadius: 6,
-            maxBarThickness: 28,
+            borderSkipped: false,
+            maxBarThickness: 18,
             stack: 's'
           }
         ]
@@ -73,24 +87,17 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 8 } },
+        animation: { duration: 600 },
         plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              color: chartColor('muted-foreground'),
-              boxWidth: 10,
-              boxHeight: 10,
-              usePointStyle: true,
-              pointStyle: 'circle',
-              padding: 16
-            }
-          },
+          legend: { display: false },
           tooltip: {
             backgroundColor: chartColor('popover'),
             borderColor: chartColor('border'),
             borderWidth: 1,
             padding: 10,
             cornerRadius: 8,
+            usePointStyle: true,
             titleColor: chartColor('popover-foreground'),
             bodyColor: chartColor('popover-foreground'),
             callbacks: {
@@ -105,8 +112,10 @@
             border: { display: false },
             ticks: {
               color: chartColor('muted-foreground'),
+              font: { size: 11 },
               autoSkip: true,
-              maxRotation: 0
+              maxRotation: 0,
+              padding: 4
             }
           },
           y: {
@@ -114,9 +123,15 @@
             border: { display: false },
             ticks: {
               color: chartColor('muted-foreground'),
+              font: { size: 11 },
+              maxTicksLimit: 4,
+              padding: 6,
               callback: (v) => `${(+v).toFixed(0)}`
             },
-            grid: { color: chartColor('border', 0.5) }
+            grid: {
+              color: chartColor('border', 0.4),
+              lineWidth: 1
+            }
           }
         }
       }

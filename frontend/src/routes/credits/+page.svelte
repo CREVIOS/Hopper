@@ -18,6 +18,7 @@
     Input,
     Tabs,
     Table,
+    Pagination,
     Badge,
     Separator
   } from '$lib/ui';
@@ -45,6 +46,16 @@
 
   let query = $state('');
   let filter = $state<'all' | 'spend' | 'income'>('all');
+
+  const PER_PAGE = 25;
+  let page = $state(1);
+
+  // Reset to the first page whenever the result set changes.
+  $effect(() => {
+    query;
+    filter;
+    page = 1;
+  });
 
   function prettyType(raw: string): string {
     if (raw.startsWith('vm_usage')) return 'VM usage';
@@ -129,6 +140,12 @@
     return list;
   });
 
+  // Only the current page's rows are displayed; bucketing happens on that slice
+  // so day-group headers still appear within the page.
+  const pageRows = $derived(
+    filteredRows.slice((page - 1) * PER_PAGE, page * PER_PAGE)
+  );
+
   const bucketed = $derived.by(() => {
     const buckets: Record<Group, Row[]> = {
       today: [],
@@ -136,7 +153,7 @@
       week: [],
       older: []
     };
-    for (const r of filteredRows) buckets[groupOf(r.when)].push(r);
+    for (const r of pageRows) buckets[groupOf(r.when)].push(r);
     return buckets;
   });
 
@@ -193,7 +210,7 @@
 
   <!-- Spend chart -->
   <Card class="animate-fade-up surface-glow overflow-hidden" style="animation-delay: 60ms">
-    <CardHeader class="flex-row items-center justify-between">
+    <CardHeader class="flex-row items-center justify-between px-5 py-4">
       <CardTitle class="flex items-center gap-2 text-sm">
         <span
           class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
@@ -212,7 +229,7 @@
       </div>
     </CardHeader>
     <Separator />
-    <CardContent class="pt-6">
+    <CardContent class="px-3 pb-3 pt-3">
       <SpendChart transactions={data.transactions} days={14} />
     </CardContent>
   </Card>
@@ -262,19 +279,24 @@
       </Card>
     {:else}
       <Card class="overflow-hidden">
-        <!-- Fixed-height internal scroller: the list never grows the page,
-             header stays pinned while you scroll through entries. -->
-        <Table.Root containerClass="max-h-[30rem]">
-          <Table.Header
-            class="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80"
-          >
+        <!-- Fixed header lives OUTSIDE the scroll area so the scrollbar only
+             spans the body, never the column names. Both tables use table-fixed
+             + matching widths + a stable scrollbar gutter so columns line up. -->
+        <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
+          <Table.Header class="bg-muted/40">
             <Table.Row class="hover:bg-transparent">
               <Table.Head>Activity</Table.Head>
-              <Table.Head class="hidden md:table-cell">Source</Table.Head>
-              <Table.Head class="text-right">When</Table.Head>
-              <Table.Head class="text-right">Amount</Table.Head>
+              <Table.Head class="hidden w-44 md:table-cell">Source</Table.Head>
+              <Table.Head class="w-28 text-right">When</Table.Head>
+              <Table.Head class="w-28 text-right">Amount</Table.Head>
             </Table.Row>
           </Table.Header>
+        </Table.Root>
+        <!-- Scrolling body: bounded height; paginated at {PER_PAGE}/page. -->
+        <Table.Root
+          class="table-fixed"
+          containerClass="max-h-[26rem] [scrollbar-gutter:stable]"
+        >
           <Table.Body>
             {#each ['today', 'yesterday', 'week', 'older'] as g (g)}
               {#if bucketed[g as Group].length > 0}
@@ -292,14 +314,14 @@
                   </td>
                 </tr>
                 {#each bucketed[g as Group] as r}
-                  <Table.Row>
+                  <Table.Row class="group">
                     <Table.Cell>
                       <div class="flex min-w-0 items-center gap-3">
                         <span
-                          class={`flex size-8 shrink-0 items-center justify-center rounded-full ${
+                          class={`flex size-8 shrink-0 items-center justify-center rounded-full ring-1 ring-inset transition-transform duration-200 group-hover:scale-110 ${
                             r.direction === 'credit'
-                              ? 'bg-success/15 text-success'
-                              : 'bg-destructive/15 text-destructive'
+                              ? 'bg-success/15 text-success ring-success/20'
+                              : 'bg-destructive/15 text-destructive ring-destructive/20'
                           }`}
                         >
                           {#if r.direction === 'credit'}
@@ -318,26 +340,34 @@
                         </div>
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="hidden md:table-cell">
-                      <span class="font-mono text-xs text-muted-foreground">
-                        {r.sublabel || '—'}
-                      </span>
+                    <Table.Cell class="hidden w-44 md:table-cell">
+                      {#if r.sublabel}
+                        <span
+                          class="inline-flex max-w-full items-center truncate rounded-md border border-border/60 bg-muted/50 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                        >
+                          {r.sublabel}
+                        </span>
+                      {:else}
+                        <span class="text-muted-foreground/40">—</span>
+                      {/if}
                     </Table.Cell>
-                    <Table.Cell class="text-right whitespace-nowrap">
-                      <div class="text-xs text-muted-foreground">
+                    <Table.Cell class="w-28 text-right whitespace-nowrap">
+                      <div class="text-xs font-medium text-muted-foreground">
                         {relTime(r.when)}
                       </div>
-                      <div class="text-[11px] text-muted-foreground/70">
+                      <div class="text-[11px] text-muted-foreground/60">
                         {r.when.toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit'
                         })}
                       </div>
                     </Table.Cell>
-                    <Table.Cell class="text-right whitespace-nowrap">
+                    <Table.Cell class="w-28 text-right whitespace-nowrap">
                       <span
-                        class={`font-mono text-sm font-semibold ${
-                          r.direction === 'debit' ? 'text-destructive' : 'text-success'
+                        class={`inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold tabular-nums ${
+                          r.direction === 'debit'
+                            ? 'bg-destructive/10 text-destructive'
+                            : 'bg-success/10 text-success'
                         }`}
                       >
                         {r.direction === 'debit' ? '−' : '+'}{r.amount.toFixed(2)}
@@ -349,10 +379,13 @@
             {/each}
           </Table.Body>
         </Table.Root>
-        <div
-          class="border-t border-border bg-muted/20 px-4 py-2 text-xs text-muted-foreground"
-        >
-          Showing {filteredRows.length} entr{filteredRows.length === 1 ? 'y' : 'ies'}
+        <div class="border-t border-border bg-muted/20 px-4 py-3">
+          <Pagination
+            count={filteredRows.length}
+            perPage={PER_PAGE}
+            bind:page
+            itemLabel="entry"
+          />
         </div>
       </Card>
     {/if}

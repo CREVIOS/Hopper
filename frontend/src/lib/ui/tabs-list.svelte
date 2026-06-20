@@ -11,7 +11,7 @@
 
 <Bits.List
   class={cn(
-    'inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground',
+    'inline-flex h-9 items-center justify-center gap-1 rounded-full border border-border/60 bg-muted/60 p-1 text-muted-foreground backdrop-blur-sm',
     className
   )}
 >

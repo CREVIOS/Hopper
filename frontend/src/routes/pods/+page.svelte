@@ -37,6 +37,7 @@
     Badge,
     Separator,
     Tabs,
+    Pagination,
     DropdownMenu,
     Dialog
   } from '$lib/ui';
@@ -63,6 +64,16 @@
   // List filters
   let query = $state('');
   let stateFilter = $state<'all' | 'active' | 'past'>('active');
+
+  const PER_PAGE = 12;
+  let page = $state(1);
+
+  // Reset to the first page whenever the filtered set changes.
+  $effect(() => {
+    query;
+    stateFilter;
+    page = 1;
+  });
 
   let sshDialogOpen = $state(false);
   let sshDialogPod = $state<Pod | null>(null);
@@ -92,6 +103,10 @@
     }
     return list;
   });
+
+  const pagedPods = $derived(
+    filteredPods.slice((page - 1) * PER_PAGE, page * PER_PAGE)
+  );
 
   const counts = $derived({
     active: data.pods.filter((p) =>
@@ -414,7 +429,7 @@
     </Card>
   {:else}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {#each filteredPods as pod, i (pod.id)}
+      {#each pagedPods as pod, i (pod.id)}
         <div
           class="animate-fade-up"
           style="animation-delay: {Math.min(i * 40, 320)}ms"
@@ -466,6 +481,15 @@
         </div>
       {/each}
     </div>
+    {#if filteredPods.length > PER_PAGE}
+      <Pagination
+        class="mt-6"
+        count={filteredPods.length}
+        perPage={PER_PAGE}
+        bind:page
+        itemLabel="VM"
+      />
+    {/if}
   {/if}
 {/snippet}
 

@@ -163,9 +163,9 @@
     {/if}
   </section>
 
-  <div class="grid gap-6 lg:grid-cols-5">
+  <div class="space-y-6">
     <!-- Recent VMs -->
-    <section class="animate-fade-up lg:col-span-3" style="animation-delay: 120ms">
+    <section class="animate-fade-up" style="animation-delay: 120ms">
       <SectionHeader class="mb-3" icon={History} title="Recent VMs">
         {#snippet action()}
           {#if data.pods.length > 0}
@@ -180,7 +180,7 @@
           </CardContent>
         </Card>
       {:else}
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {#each recentInactive as pod (pod.id)}
             <PodCard {pod} href="/pods/{pod.id}" />
           {/each}
@@ -189,7 +189,7 @@
     </section>
 
     <!-- Recent activity -->
-    <section class="animate-fade-up lg:col-span-2" style="animation-delay: 150ms">
+    <section class="animate-fade-up" style="animation-delay: 150ms">
       <SectionHeader class="mb-3" icon={Coins} title="Recent activity">
         {#snippet action()}
           <Button href="/credits" variant="ghost" size="sm">All</Button>
