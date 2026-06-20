@@ -1,0 +1,6 @@
+# pnpm 10+ blocks dependency build scripts by default. esbuild (a transitive
+# dep of vite) needs its build step to fetch its native binary; without this,
+# `pnpm install` / `pnpm dev` exit 1 with ERR_PNPM_IGNORED_BUILDS. The Dockerfile
+# sidesteps this by pinning pnpm 9; local hosts on pnpm 10/11 need this allowlist.
+allowBuilds:
+  esbuild: true

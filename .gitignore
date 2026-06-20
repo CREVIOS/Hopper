@@ -74,3 +74,4 @@ docs/*.bbl
 docs/*.blg
 docs/*.bcf
 docs/*.run.xml
+.gstack/

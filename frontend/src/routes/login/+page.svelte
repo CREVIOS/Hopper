@@ -10,6 +10,7 @@
     AlertCircle
   } from 'lucide-svelte';
   import { page } from '$app/state';
+  import { dev } from '$app/environment';
   import { Button, Card, CardContent } from '$lib/ui';
 
   let signing = $state(false);
@@ -148,6 +149,20 @@
             </span>
             <ArrowRight class="size-4" />
           </Button>
+
+          {#if dev}
+            <!-- Dev-only: the real SSO flow can't complete on localhost (backend
+                 returns the Keycloak callback to the deployed host). This mints a
+                 token directly and sets the session cookies. Never ships — the
+                 /dev-login endpoint 404s outside `vite dev`. -->
+            <a
+              href="/dev-login"
+              data-sveltekit-reload
+              class="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-4 py-2 text-sm font-medium text-warning-foreground hover:bg-warning/10"
+            >
+              <KeyRound class="size-4" /> Dev login (skip SSO)
+            </a>
+          {/if}
 
           <div class="my-6 flex items-center gap-3 text-xs text-muted-foreground">
             <div class="h-px flex-1 bg-border"></div>

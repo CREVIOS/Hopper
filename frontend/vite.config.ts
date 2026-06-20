@@ -2,13 +2,26 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, loadEnv } from 'vite';
 
-const proxyErrorHandlers = (proxy: any) => {
+// Build the http-proxy `configure` callback. When `origin` is set, the proxy
+// overrides the browser's Origin header on both HTTP and WebSocket upgrades.
+// A deployed backend gates WebSockets (terminal, VS Code) by Origin against its
+// CORS allowlist; `changeOrigin` only rewrites Host, so without this the proxied
+// localhost Origin is rejected (403 / close 1008) and the terminal can't connect.
+const makeConfigure = (origin: string) => (proxy: any) => {
   proxy.on('error', (err: Error, req: any, res: any) => {
     console.error('[vite proxy] error:', req.url, err.message);
     if (res && !res.headersSent) {
       try { res.writeHead(502); res.end(`Proxy error: ${err.message}`); } catch {}
     }
   });
+  if (origin) {
+    proxy.on('proxyReq', (proxyReq: any) => {
+      try { proxyReq.setHeader('origin', origin); } catch {}
+    });
+    proxy.on('proxyReqWs', (proxyReq: any) => {
+      try { proxyReq.setHeader('origin', origin); } catch {}
+    });
+  }
   proxy.on('proxyReqWs', (_pr: any, req: any, socket: any) => {
     socket.on('error', (e: Error) => console.error('[vite proxy ws]', req.url, e));
   });
@@ -35,12 +48,23 @@ export default defineConfig(({ mode }) => {
   // Don't reject self-signed/staging certs when proxying to an https backend.
   const secure = (env.API_PROXY_SECURE ?? 'false') === 'true';
 
+  // Origin sent to the backend on proxied requests. A deployed backend rejects
+  // WebSockets whose Origin isn't in its CORS allowlist; the browser's Origin is
+  // localhost, so we present the backend's own origin instead. Explicit override
+  // via API_PROXY_ORIGIN; otherwise default to the target origin for https
+  // (remote) targets and leave unset for a local http gateway (which allows
+  // localhost already).
+  let proxyOrigin = env.API_PROXY_ORIGIN || '';
+  if (!proxyOrigin && apiTarget.startsWith('https://')) {
+    proxyOrigin = new URL(apiTarget).origin;
+  }
+
   const common = {
     target: apiTarget,
     changeOrigin: true,
     secure,
     rewrite,
-    configure: proxyErrorHandlers,
+    configure: makeConfigure(proxyOrigin),
   } as const;
 
   return {
