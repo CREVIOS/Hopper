@@ -1,7 +1,7 @@
 import asyncio
+import json
 import logging
 import uuid
-import json
 
 import httpx
 import websockets
@@ -9,7 +9,6 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -31,6 +30,7 @@ from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
 from app.services import port_forward
+from app.services.k8s_pod_lookup import resolve_vm_ssh_socket, resolve_vm_vscode_http_base
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -319,6 +319,16 @@ async def vscode_proxy(
             headers={"Retry-After": "5"},
         )
 
+    if session.state != "running":
+        # Pod still starting / stopped — the user-facing 503 was confusing
+        # because the gateway didn't disambiguate "no pod" from "pod still
+        # warming up". Tell the browser to retry shortly.
+        raise HTTPException(
+            status_code=503,
+            detail=f"VM is {session.state} — VS Code will be available once running.",
+            headers={"Retry-After": "5"},
+        )
+
     # Get or (re)start the kubectl port-forward — needed for minikube Docker driver
     # where NodePorts are not reachable from the host directly.
     local_port = port_forward.get_local_port(session.pod_name)
@@ -330,9 +340,6 @@ async def vscode_proxy(
 
     if local_port:
         target_base = f"http://127.0.0.1:{local_port}"
-    elif session.vscode_port:
-        # Fallback: direct NodePort (works in bare-metal K8s, not minikube Docker driver)
-        target_base = f"http://{settings.node_ip}:{session.vscode_port}"
     else:
         raise HTTPException(
             status_code=503,
@@ -653,7 +660,7 @@ async def websocket_terminal(
     except (asyncssh.ConnectionLost, OSError) as e:
         logger.error("SSH connect failed pod=%s: %s", pod_id, e, exc_info=True)
         await _safe_send(websocket, "\r\nVM is unreachable — please retry shortly.\r\n")
-    except Exception as e:
+    except Exception:
         logger.exception("Unhandled SSH bridge failure pod=%s", pod_id)
         await _safe_send(websocket, "\r\nUnexpected error occurred while connecting.\r\n")
     finally:

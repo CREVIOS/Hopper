@@ -1,6 +1,4 @@
 import asyncio
-import sys
-import os
 from logging.config import fileConfig
 
 # Make sure `app` is importable regardless of how alembic is invoked.

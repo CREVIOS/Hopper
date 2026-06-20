@@ -56,6 +56,9 @@ infrastructure/pulumi/venv/
 *.pem
 *.key
 credentials.json
+# Local deploy SSH keypair (GitHub Actions CD); private key must only live in repo Secrets
+hopper-github-deploy
+hopper-github-deploy.pub
 
 # LaTeX outputs under docs/ (built from *.tex sources)
 docs/*.pdf

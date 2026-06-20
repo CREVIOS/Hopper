@@ -31,6 +31,23 @@ from app.services.credit_service import deduct_credits
 logger = logging.getLogger(__name__)
 
 
+async def _safe_ack(msg) -> None:
+    """Core NATS subscriptions are not JetStream — ack() raises NotJSMessageError."""
+    try:
+        await msg.ack()
+    except NotJSMessageError:
+        pass
+
+
+async def _safe_nak(msg, *, delay: int = 0) -> None:
+    try:
+        await msg.nak(delay=delay)
+    except NotJSMessageError:
+        logger.warning(
+            "Cannot NAK non-JetStream billing message — DB retry will not redeliver"
+        )
+
+
 async def _handle_billing_deducted(msg):
     """Process a billing tick: deduct credits idempotently from the ledger."""
     try:
