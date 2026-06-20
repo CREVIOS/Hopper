@@ -86,6 +86,13 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # The OIDC callback's 302 sets three JWT cookies (access + refresh +
+    # id_token) and deletes the PKCE/state pair — easily 5KB of response
+    # headers, which overflows nginx's default 4KB proxy buffer and surfaces
+    # as a 502 right at the final login redirect. Same fix as the frontend
+    # ingress; 32k leaves plenty of headroom.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
     # Per-source request limits — defence against credential-stuffing on
     # /auth and brute-force on /pods. Tune higher if a legitimate course
     # demo creates a lot of VMs at once.
@@ -163,6 +170,12 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # SvelteKit SSR emits large Link preload headers plus several Set-Cookie
+    # entries; the default 4k buffer overflows for authenticated requests
+    # ("upstream sent too big header"). Bumping the response buffers prevents
+    # 502s on /pods/{id} and similar SSR pages.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
 spec:
   ingressClassName: nginx
   tls:

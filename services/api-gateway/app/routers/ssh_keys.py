@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -71,7 +71,31 @@ async def add_key(
     except Exception:
         raise HTTPException(status_code=400, detail="Could not parse SSH public key")
 
-    # Limit to 10 keys per user
+    # Serialize concurrent inserts per-user. Without this, two parallel POSTs
+    # both observe count=9 and both succeed, busting the 10-key cap. The
+    # advisory lock is transactional and released on commit/rollback — same
+    # pattern the credit ledger uses.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"ssh-key:{current_user.sub}"},
+    )
+
+    # Reject duplicates by fingerprint so users don't see the same key listed
+    # twice and re-importing from `~/.ssh` is a no-op. Scoped per user —
+    # different users may legitimately upload the same key.
+    existing = await db.scalar(
+        select(SSHKey).where(
+            SSHKey.user_id == current_user.sub,
+            SSHKey.fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409, detail="This SSH key is already on your account"
+        )
+
+    # 10-key cap, now read under the advisory lock so the check-then-insert
+    # is atomic w.r.t. other writers for the same user.
     count = await db.scalar(
         select(func.count()).select_from(SSHKey).where(SSHKey.user_id == current_user.sub)
     )

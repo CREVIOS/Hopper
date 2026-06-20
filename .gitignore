@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.pnpm-store/
 
 # Build outputs
 dist/

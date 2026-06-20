@@ -161,11 +161,17 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		// AUDIT_WRITE is required by PAM's pam_loginuid — without it sshd
 		// prints "linux_audit_write_entry failed: Operation not permitted"
 		// on every connection (login still succeeds, but it's noise).
-		// SETGID/SETUID/SETPCAP/DAC_OVERRIDE were dropped: privilege-escalation
-		// surface (sudo/su, file permission overrides) outweighs the
-		// convenience for a tenant that never needs to add OS users.
+		// SETGID/SETUID are required by sshd's privilege separation — without
+		// them, the privsep child fails setgroups() with EPERM during the
+		// pre-auth phase ("setgroups: Operation not permitted [preauth]") and
+		// every connection dies as "kex_exchange_identification: Connection
+		// closed by remote host". The earlier comment claiming these are
+		// optional was wrong: sshd can't accept *any* connection without them.
+		// Adding them only allows UID/GID changes *inside* the container,
+		// which is bounded by the container's user namespace; it does not
+		// weaken the cluster's pod-level isolation.
 		"AUDIT_WRITE", "CHOWN", "FOWNER", "FSETID", "KILL",
-		"NET_BIND_SERVICE", "SYS_CHROOT",
+		"NET_BIND_SERVICE", "SETGID", "SETUID", "SYS_CHROOT",
 	}
 
 	// Short grace period: when the user clicks Terminate we want their open
