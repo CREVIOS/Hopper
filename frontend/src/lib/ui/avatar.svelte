@@ -24,10 +24,36 @@
 
 <div
   class={cn(
-    'inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white',
+    'avatar inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white',
     className
   )}
-  style="background: linear-gradient(135deg, hsl({hue(name)} 70% 55%) 0%, hsl({(hue(name) + 40) % 360} 70% 45%) 100%);"
+  style="--h1: {hue(name)}; --h2: {(hue(name) + 40) % 360};"
 >
   {initials(name)}
 </div>
+
+<style>
+  /* Modest, lower-saturation tint — a soft identicon, not a neon dot.
+     Light and dark get their own toning so white initials stay legible. */
+  .avatar {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--h1) 42% 54%) 0%,
+      hsl(var(--h2) 40% 46%) 100%
+    );
+    /* soft top sheen + inner edge for a subtle, modern depth */
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.25),
+      inset 0 0 0 1px hsl(0 0% 100% / 0.08);
+  }
+  :global(.dark) .avatar {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--h1) 38% 46%) 0%,
+      hsl(var(--h2) 36% 38%) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.15),
+      inset 0 0 0 1px hsl(0 0% 0% / 0.18);
+  }
+</style>

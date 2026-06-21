@@ -21,7 +21,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     fetch(apiUrl('/admin/nodes'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/users'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/active-vms'), { headers }).catch(() => null),
-    fetch(apiUrl('/admin/audit-logs?limit=20'), { headers }).catch(() => null)
+    fetch(apiUrl('/admin/audit-logs?limit=500'), { headers }).catch(() => null)
   ]);
 
   const stats = statsRes?.ok ? await statsRes.json() : { total_users: 0, active_vms: 0, total_vms_created: 0 };
