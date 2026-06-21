@@ -35,7 +35,7 @@
   import PageTitle from '$lib/components/PageTitle.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { confirm } from '$lib/confirm.svelte';
-  import { copyToClipboard, relTime, shortId } from '$lib/utils';
+  import { cn, copyToClipboard, relTime, shortId } from '$lib/utils';
   import {
     Button,
     Card,
@@ -185,7 +185,12 @@
   {@const isRunning = podState === 'running'}
   {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
-  <div class="flex h-[calc(100vh-7rem)] flex-col">
+  <div
+    class={cn(
+      'flex flex-col',
+      activeTab === 'terminal' && 'h-[calc(100vh-7rem)]'
+    )}
+  >
     <!-- Header -->
     <div class="mb-5 shrink-0">
       <a

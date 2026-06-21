@@ -6,7 +6,9 @@
     Copy,
     Fingerprint,
     Loader2,
-    ShieldCheck
+    ShieldCheck,
+    Terminal,
+    Check
   } from 'lucide-svelte';
   import { invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -20,7 +22,8 @@
     Textarea,
     Badge,
     Tooltip,
-    Separator
+    Separator,
+    Progress
   } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
   import PageTitle from '$lib/components/PageTitle.svelte';
@@ -29,6 +32,39 @@
   import type { SshKey } from '$lib/types';
 
   let { data }: { data: { keys: SshKey[] } } = $props();
+
+  const MAX_KEYS = 10;
+  const usedPct = $derived((data.keys.length / MAX_KEYS) * 100);
+
+  // Derive the key algorithm from the public key for a small, modest type chip.
+  function keyAlgo(pk: string): { label: string; tint: string } {
+    const prefix = pk?.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+    if (prefix.includes('ed25519'))
+      return { label: 'ED25519', tint: 'text-success bg-success/10 ring-success/20' };
+    if (prefix.includes('rsa'))
+      return { label: 'RSA', tint: 'text-info bg-info/10 ring-info/20' };
+    if (prefix.includes('ecdsa'))
+      return { label: 'ECDSA', tint: 'text-primary bg-primary/10 ring-primary/20' };
+    if (prefix.includes('dss'))
+      return { label: 'DSA', tint: 'text-warning bg-warning/10 ring-warning/20' };
+    return { label: 'KEY', tint: 'text-muted-foreground bg-muted ring-border' };
+  }
+
+  const KEYGEN_SNIPPET = `# Generate a new ed25519 key (skip if you already have one)
+ssh-keygen -t ed25519 -C "you@example.edu"
+
+# Copy the PUBLIC key to clipboard
+cat ~/.ssh/id_ed25519.pub | pbcopy   # macOS
+cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
+
+  async function copySnippet() {
+    try {
+      await copyToClipboard(KEYGEN_SNIPPET);
+      toast.success('Commands copied');
+    } catch {
+      toast.error('Could not access clipboard');
+    }
+  }
 
   let dialogOpen = $state(false);
   let newName = $state('');
@@ -105,46 +141,71 @@
   }
 </script>
 
-<div class="space-y-8">
+<div class="space-y-5">
   <PageTitle
     title="SSH keys"
     eyebrow="Settings"
     eyebrowIcon={KeyRound}
     description="Public keys registered here are pushed to every VM you launch — enabling passwordless SSH from any device whose private key matches."
-  />
+  >
+    {#snippet action()}
+      <Button onclick={() => (dialogOpen = true)} disabled={data.keys.length >= MAX_KEYS}>
+        <Plus class="size-4" /> Add SSH key
+      </Button>
+    {/snippet}
+  </PageTitle>
 
-  <Card>
-    <CardContent class="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+  <!-- Capacity panel — a small visual meter for the per-account key limit. -->
+  <Card class="animate-fade-up surface-glow overflow-hidden">
+    <CardContent class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-3">
-        <div class="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <div
+          class="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-info/15 text-primary ring-1 ring-inset ring-primary/10"
+        >
           <ShieldCheck class="size-5" />
         </div>
         <div>
-          <div class="font-medium">{data.keys.length} of 10 keys</div>
+          <div class="flex items-baseline gap-1.5">
+            <span class="text-xl font-bold tracking-tight">{data.keys.length}</span>
+            <span class="text-sm text-muted-foreground">of {MAX_KEYS} keys used</span>
+          </div>
           <p class="text-sm text-muted-foreground">
-            Maximum of 10 keys per account.
+            {#if data.keys.length >= MAX_KEYS}
+              You've reached the limit — remove one to add another.
+            {:else}
+              {MAX_KEYS - data.keys.length} slot{MAX_KEYS - data.keys.length === 1 ? '' : 's'} remaining on your account.
+            {/if}
           </p>
         </div>
       </div>
-      <Button onclick={() => (dialogOpen = true)} disabled={data.keys.length >= 10}>
-        <Plus class="size-4" /> Add SSH key
-      </Button>
+      <div class="w-full sm:w-48">
+        <Progress
+          value={usedPct}
+          class="h-2"
+          indicatorClass={data.keys.length >= MAX_KEYS
+            ? 'bg-gradient-to-r from-warning to-destructive'
+            : 'bg-gradient-to-r from-primary to-info'}
+        />
+        <div class="mt-1.5 text-right text-xs font-medium text-muted-foreground">
+          {Math.round(usedPct)}% full
+        </div>
+      </div>
     </CardContent>
   </Card>
 
   {#if data.keys.length === 0}
-    <Card class="border-dashed bg-muted/20">
-      <CardContent class="flex flex-col items-center gap-3 py-12 text-center">
+    <Card class="animate-fade-up border-dashed bg-muted/20" style="animation-delay: 60ms">
+      <CardContent class="flex flex-col items-center gap-3 py-10 text-center">
         <div
-          class="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary"
+          class="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-info/15 text-primary ring-1 ring-inset ring-primary/10"
         >
-          <KeyRound class="size-5" />
+          <KeyRound class="size-6" />
         </div>
         <div>
-          <p class="font-medium">No keys registered yet</p>
+          <p class="font-semibold">No keys registered yet</p>
           <p class="mt-1 max-w-sm text-sm text-muted-foreground">
             Add your laptop's public key (usually <code
-              class="font-mono text-xs">~/.ssh/id_ed25519.pub</code
+              class="rounded bg-muted px-1 py-0.5 font-mono text-xs">~/.ssh/id_ed25519.pub</code
             >) so you can SSH into VMs without typing the root password.
           </p>
         </div>
@@ -154,40 +215,58 @@
       </CardContent>
     </Card>
   {:else}
-    <Card>
+    <Card class="animate-fade-up overflow-hidden" style="animation-delay: 60ms">
       <CardContent class="p-0">
         <ul class="divide-y divide-border">
-          {#each data.keys as k (k.id)}
-            <li class="flex items-center gap-4 p-4">
+          {#each data.keys as k, i (k.id)}
+            {@const algo = keyAlgo(k.public_key)}
+            <li
+              class="group flex items-center gap-3 p-3 transition-colors hover:bg-muted/40"
+              style="animation: fade-up 0.5s cubic-bezier(0.16,1,0.3,1) both; animation-delay: {80 + i * 45}ms"
+            >
               <div
-                class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                class="flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-transform group-hover:scale-105 {algo.tint}"
               >
                 <KeyRound class="size-4" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-medium">{k.name}</span>
-                  <Badge variant="muted">added {relTime(k.created_at)}</Badge>
+                  <span class="min-w-0 break-all font-medium">{k.name}</span>
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wide ring-1 ring-inset {algo.tint}"
+                  >
+                    {algo.label}
+                  </span>
+                  <Badge variant="muted" class="shrink-0">added {relTime(k.created_at)}</Badge>
                 </div>
-                <div class="mt-1 flex items-center gap-1 truncate text-xs text-muted-foreground">
-                  <Fingerprint class="size-3" />
-                  <code class="truncate font-mono">{k.fingerprint}</code>
+                <div class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                  <Fingerprint class="size-3 shrink-0" />
+                  <code class="min-w-0 truncate font-mono">{k.fingerprint}</code>
                 </div>
               </div>
-              <Tooltip content="Copy fingerprint">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onclick={() => copyFingerprint(k.fingerprint)}
-                >
-                  <Copy class="size-3.5" />
-                </Button>
-              </Tooltip>
-              <Tooltip content="Remove key">
-                <Button variant="ghost" size="icon" onclick={() => deleteKey(k)}>
-                  <Trash2 class="size-3.5 text-destructive" />
-                </Button>
-              </Tooltip>
+              <div
+                class="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100"
+              >
+                <Tooltip content="Copy fingerprint">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onclick={() => copyFingerprint(k.fingerprint)}
+                  >
+                    <Copy class="size-3.5" />
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Remove key">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="hover:bg-destructive/10"
+                    onclick={() => deleteKey(k)}
+                  >
+                    <Trash2 class="size-3.5 text-destructive" />
+                  </Button>
+                </Tooltip>
+              </div>
             </li>
           {/each}
         </ul>
@@ -195,19 +274,34 @@
     </Card>
   {/if}
 
-  <Card class="border-border/60 bg-muted/20">
-    <CardContent class="space-y-2 pt-6 text-sm text-muted-foreground">
-      <div class="font-semibold text-foreground">How to find your public key</div>
+  <Card class="animate-fade-up border-border/60 bg-muted/20" style="animation-delay: 120ms">
+    <CardContent class="space-y-2.5 p-4 text-sm text-muted-foreground">
+      <div class="flex items-center gap-2">
+        <span class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Terminal class="size-4" />
+        </span>
+        <span class="font-semibold text-foreground">How to find your public key</span>
+      </div>
       <p>On macOS / Linux, run:</p>
-      <pre
-        class="overflow-x-auto rounded-md border border-border bg-card p-3 font-mono text-xs"
-        ># Generate a new ed25519 key (skip if you already have one)
-ssh-keygen -t ed25519 -C "you@example.edu"
-
-# Copy the PUBLIC key to clipboard
-cat ~/.ssh/id_ed25519.pub | pbcopy   # macOS
-cat ~/.ssh/id_ed25519.pub | xclip    # Linux</pre>
-      <p>Paste the public key (the file ending in <code>.pub</code>) above. Never paste your private key.</p>
+      <div class="group relative">
+        <pre
+          class="overflow-x-auto rounded-lg border border-border bg-card p-3 pr-12 font-mono text-xs leading-relaxed"
+          >{KEYGEN_SNIPPET}</pre>
+        <Tooltip content="Copy commands">
+          <Button
+            variant="ghost"
+            size="icon"
+            class="absolute right-2 top-2 size-7 opacity-70 transition-opacity hover:opacity-100"
+            onclick={copySnippet}
+          >
+            <Copy class="size-3.5" />
+          </Button>
+        </Tooltip>
+      </div>
+      <p class="flex items-start gap-1.5">
+        <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
+        Paste the public key (the file ending in <code class="rounded bg-muted px-1 font-mono text-xs">.pub</code>) above. Never paste your private key.
+      </p>
     </CardContent>
   </Card>
 </div>

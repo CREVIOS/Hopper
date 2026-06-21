@@ -31,6 +31,26 @@
     range; // track
     load();
   });
+
+  // Hero stats for the active metric (current / avg / peak / low).
+  const metricVals = $derived(
+    (series?.data ?? []).map((p) =>
+      metric === 'cpu' ? p.cpu_percent : p.memory_used_bytes / 1024 ** 3
+    )
+  );
+  const stats = $derived.by(() => {
+    const v = metricVals;
+    if (!v.length) return null;
+    return {
+      current: v[v.length - 1],
+      avg: v.reduce((a, b) => a + b, 0) / v.length,
+      peak: Math.max(...v),
+      low: Math.min(...v)
+    };
+  });
+  const unit = $derived(metric === 'cpu' ? '%' : ' GB');
+  const toneText = $derived(metric === 'cpu' ? 'text-primary' : 'text-info');
+  const fmt = (n: number) => (metric === 'cpu' ? n.toFixed(1) : n.toFixed(2));
 </script>
 
 <Card>
@@ -66,10 +86,37 @@
       </div>
     </div>
 
+    {#if stats}
+      <div
+        class="flex flex-wrap items-end gap-x-10 gap-y-3 rounded-xl border border-border/60 bg-muted/20 px-5 py-4"
+      >
+        <div>
+          <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {metric === 'cpu' ? 'CPU now' : 'Memory now'}
+          </div>
+          <div class={`mt-1 text-3xl font-bold tabular-nums ${toneText}`}>
+            {fmt(stats.current)}<span class="text-lg font-medium text-muted-foreground">{unit}</span>
+          </div>
+        </div>
+        <div class="flex items-end gap-x-8">
+          {#each [{ l: 'Avg', v: stats.avg }, { l: 'Peak', v: stats.peak }, { l: 'Low', v: stats.low }] as s (s.l)}
+            <div>
+              <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {s.l}
+              </div>
+              <div class="mt-1 text-base font-semibold tabular-nums">
+                {fmt(s.v)}<span class="text-xs font-normal text-muted-foreground">{unit}</span>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     {#if loading && !series}
       <Skeleton class="h-[22rem] w-full" />
     {:else if series && series.data.length > 0}
-      <UsageChart points={series.data} {metric} height={352} />
+      <UsageChart points={series.data} {metric} height={320} />
     {:else}
       <div
         class="flex h-[22rem] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-sm text-muted-foreground"

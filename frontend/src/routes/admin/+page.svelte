@@ -5,13 +5,14 @@
     Database,
     Activity,
     Coins,
-    Plus,
     Search,
     Loader2,
     ShieldAlert,
     HardDrive,
     Cpu,
-    MemoryStick
+    MemoryStick,
+    ScrollText,
+    ArrowRight
   } from 'lucide-svelte';
   import { invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -23,12 +24,14 @@
     Label,
     Badge,
     Tabs,
+    Table,
     Tooltip,
     Dialog,
     Progress,
     Separator
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
+  import SectionHeader from '$lib/components/SectionHeader.svelte';
   import PageTitle from '$lib/components/PageTitle.svelte';
   import Avatar from '$lib/ui/avatar.svelte';
   import { api, ApiError } from '$lib/api/client';
@@ -234,6 +237,18 @@
     if (code >= 400) return 'text-warning';
     return 'text-success';
   }
+
+  // Small icon-chip tone for the activity feed, derived from the status code.
+  function activityTone(code: number | null | undefined): {
+    dot: string;
+    chip: string;
+  } {
+    if (code && code >= 500)
+      return { dot: 'bg-destructive', chip: 'bg-destructive/10 text-destructive' };
+    if (code && code >= 400)
+      return { dot: 'bg-warning', chip: 'bg-warning/10 text-warning' };
+    return { dot: 'bg-success', chip: 'bg-success/10 text-success' };
+  }
 </script>
 
 <div class="space-y-8">
@@ -251,18 +266,21 @@
       value={data.stats.total_users}
       icon={Users}
       tone="primary"
+      class="animate-fade-up"
     />
     <StatCard
       label="Active VMs"
       value={data.stats.active_vms}
       icon={Server}
       tone="success"
+      class="animate-fade-up [animation-delay:70ms]"
     />
     <StatCard
       label="VMs all-time"
       value={data.stats.total_vms_created}
       icon={Database}
       tone="info"
+      class="animate-fade-up [animation-delay:140ms]"
     />
     <StatCard
       label="Compute nodes"
@@ -270,41 +288,68 @@
       sub={`${data.nodes.filter((n) => n.ready).length} ready`}
       icon={Activity}
       tone={data.nodes.every((n) => n.ready) ? 'success' : 'warning'}
+      class="animate-fade-up [animation-delay:210ms]"
     />
   </div>
 
   <!-- Tabs -->
   <Tabs.Root bind:value={tab}>
-    <Tabs.List class="w-full justify-start sm:w-auto">
-      <Tabs.Trigger value="overview">Overview</Tabs.Trigger>
-      <Tabs.Trigger value="users">Users</Tabs.Trigger>
-      <Tabs.Trigger value="vms">Active VMs</Tabs.Trigger>
-      <Tabs.Trigger value="nodes">Nodes</Tabs.Trigger>
-      <Tabs.Trigger value="audit">Audit log</Tabs.Trigger>
+    <Tabs.List
+      class="flex w-full max-w-full justify-start overflow-x-auto [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden"
+    >
+      <Tabs.Trigger value="overview"><Activity /> Overview</Tabs.Trigger>
+      <Tabs.Trigger value="users"><Users /> Users</Tabs.Trigger>
+      <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
+      <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
+      <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
     </Tabs.List>
 
     <!-- Overview -->
     <Tabs.Content value="overview">
       <div class="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardContent class="space-y-4 pt-6">
-            <h3 class="text-sm font-semibold">Recent activity</h3>
+        <Card class="animate-fade-up">
+          <CardContent class="space-y-3 pt-6">
+            <SectionHeader title="Recent activity" icon={Activity}>
+              {#snippet action()}
+                <button
+                  type="button"
+                  onclick={() => (tab = 'audit')}
+                  class="group inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  View all
+                  <ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              {/snippet}
+            </SectionHeader>
             <Separator />
             {#if data.auditLogs.length === 0}
-              <p class="text-sm text-muted-foreground">No events yet.</p>
+              <div class="flex flex-col items-center gap-2 py-10 text-center">
+                <span class="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <ScrollText class="size-5" />
+                </span>
+                <p class="text-sm text-muted-foreground">No events yet.</p>
+              </div>
             {:else}
-              <ul class="divide-y divide-border">
-                {#each data.auditLogs.slice(0, 6) as log (log.id)}
-                  <li class="flex items-center gap-3 py-2 text-sm">
+              <ul class="-mx-2 space-y-0.5">
+                {#each data.auditLogs.slice(0, 7) as log (log.id)}
+                  {@const tone = activityTone(log.status_code)}
+                  <li
+                    class="flex items-center gap-3 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-muted/50"
+                  >
                     <span
-                      class={`size-2 rounded-full ${
-                        log.status_code && log.status_code >= 400
-                          ? 'bg-destructive'
-                          : 'bg-success'
-                      }`}
-                    ></span>
-                    <span class="font-medium">{log.action}</span>
-                    <span class="ml-auto text-xs text-muted-foreground">
+                      class={`flex size-7 shrink-0 items-center justify-center rounded-lg ${tone.chip}`}
+                    >
+                      <span class={`size-2 rounded-full ${tone.dot}`}></span>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate font-medium">{log.action}</div>
+                      {#if log.resource_type}
+                        <div class="truncate text-xs text-muted-foreground">
+                          {log.resource_type}{log.resource_id ? ` · ${shortId(log.resource_id, 8)}` : ''}
+                        </div>
+                      {/if}
+                    </div>
+                    <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {relTime(log.created_at)}
                     </span>
                   </li>
@@ -314,12 +359,17 @@
           </CardContent>
         </Card>
 
-        <Card>
+        <Card class="animate-fade-up [animation-delay:80ms]">
           <CardContent class="space-y-4 pt-6">
-            <h3 class="text-sm font-semibold">Cluster pressure</h3>
+            <SectionHeader title="Cluster pressure" icon={Server} />
             <Separator />
             {#if data.nodes.length === 0}
-              <p class="text-sm text-muted-foreground">No nodes reporting.</p>
+              <div class="flex flex-col items-center gap-2 py-10 text-center">
+                <span class="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <HardDrive class="size-5" />
+                </span>
+                <p class="text-sm text-muted-foreground">No nodes reporting.</p>
+              </div>
             {:else}
               {@const totalCpu = data.nodes.reduce((a, n) => a + (parseFloat(n.cpu_capacity) || 0), 0)}
               {@const allocCpu = data.nodes.reduce((a, n) => a + (parseFloat(n.cpu_allocatable) || 0), 0)}
@@ -327,29 +377,37 @@
               {@const allocMem = data.nodes.reduce((a, n) => a + (memoryToGb(n.memory_allocatable) || 0), 0)}
               {@const cpuUsedPct = totalCpu ? ((totalCpu - allocCpu) / totalCpu) * 100 : 0}
               {@const memUsedPct = totalMem ? ((totalMem - allocMem) / totalMem) * 100 : 0}
-              <div>
-                <div class="mb-1.5 flex items-baseline justify-between text-sm">
-                  <span class="flex items-center gap-1.5 text-muted-foreground">
-                    <Cpu class="size-3.5" /> CPU reserved
+              <div class="rounded-xl border border-border/60 bg-muted/20 p-3.5">
+                <div class="mb-2 flex items-baseline justify-between text-sm">
+                  <span class="flex items-center gap-1.5 font-medium">
+                    <Cpu class="size-3.5 text-primary" /> CPU reserved
                   </span>
-                  <span class="font-semibold">{cpuUsedPct.toFixed(0)}%</span>
+                  <span class="font-semibold tabular-nums">{cpuUsedPct.toFixed(0)}%</span>
                 </div>
-                <Progress value={cpuUsedPct} />
-                <p class="mt-1 text-xs text-muted-foreground">
+                <Progress value={cpuUsedPct} indicatorClass="bg-gradient-to-r from-primary to-info" />
+                <p class="mt-1.5 text-xs text-muted-foreground">
                   {(totalCpu - allocCpu).toFixed(1)} of {totalCpu.toFixed(1)} cores reserved
                 </p>
               </div>
-              <div>
-                <div class="mb-1.5 flex items-baseline justify-between text-sm">
-                  <span class="flex items-center gap-1.5 text-muted-foreground">
-                    <MemoryStick class="size-3.5" /> Memory reserved
+              <div class="rounded-xl border border-border/60 bg-muted/20 p-3.5">
+                <div class="mb-2 flex items-baseline justify-between text-sm">
+                  <span class="flex items-center gap-1.5 font-medium">
+                    <MemoryStick class="size-3.5 text-info" /> Memory reserved
                   </span>
-                  <span class="font-semibold">{memUsedPct.toFixed(0)}%</span>
+                  <span class="font-semibold tabular-nums">{memUsedPct.toFixed(0)}%</span>
                 </div>
-                <Progress value={memUsedPct} />
-                <p class="mt-1 text-xs text-muted-foreground">
+                <Progress value={memUsedPct} indicatorClass="bg-gradient-to-r from-info to-primary" />
+                <p class="mt-1.5 text-xs text-muted-foreground">
                   {(totalMem - allocMem).toFixed(1)} of {totalMem.toFixed(1)} GB reserved
                 </p>
+              </div>
+              <div class="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3.5 py-2.5 text-sm">
+                <span class="flex items-center gap-1.5 font-medium">
+                  <Activity class="size-3.5 text-success" /> Nodes ready
+                </span>
+                <Badge variant={data.nodes.every((n) => n.ready) ? 'success' : 'warning'}>
+                  {data.nodes.filter((n) => n.ready).length} / {data.nodes.length}
+                </Badge>
               </div>
             {/if}
           </CardContent>
@@ -359,255 +417,298 @@
 
     <!-- Users -->
     <Tabs.Content value="users">
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-base font-semibold">Users ({data.users.length})</h2>
-        <div class="relative">
-          <Search
-            class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            placeholder="Search users…"
-            bind:value={userQuery}
-            class="h-9 w-64 pl-8"
-          />
-        </div>
-      </div>
+      <div class="animate-fade-up space-y-3">
+        <SectionHeader title="Users" icon={Users} description={`${data.users.length} registered`}>
+          {#snippet action()}
+            <div class="relative">
+              <Search
+                class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                type="search"
+                placeholder="Search users…"
+                bind:value={userQuery}
+                class="h-9 w-40 pl-8 sm:w-64"
+              />
+            </div>
+          {/snippet}
+        </SectionHeader>
 
-      <Card class="overflow-hidden">
-        <table class="w-full">
-          <thead class="border-b border-border bg-muted/30">
-            <tr class="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <th class="px-4 py-3">User</th>
-              <th class="px-4 py-3">Email</th>
-              <th class="px-4 py-3">Role</th>
-              <th class="px-4 py-3">Joined</th>
-              <th class="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each filteredUsers as u (u.id)}
-              <tr class="text-sm transition-colors hover:bg-muted/30">
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2.5">
-                    <Avatar name={u.name || u.email} class="size-7" />
-                    <div class="font-medium">{u.name || '—'}</div>
-                  </div>
-                </td>
-                <td class="px-4 py-3 text-muted-foreground">{u.email}</td>
-                <td class="px-4 py-3">
-                  {#if data.currentUserRole === 'admin' && u.id !== data.currentUserId}
-                    <select
-                      class="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium capitalize disabled:opacity-50"
-                      value={u.role}
-                      disabled={pendingRoleChange === u.id}
-                      onchange={(e) =>
-                        changeRole(u, (e.currentTarget as HTMLSelectElement).value)}
-                      aria-label={`Change role for ${u.email}`}
-                    >
-                      <option value="student">Student</option>
-                      <option value="professor">Professor</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  {:else}
-                    <Badge variant={roleBadge[u.role] ?? 'muted'} class="capitalize">
-                      {u.role}
-                    </Badge>
-                  {/if}
-                </td>
-                <td class="px-4 py-3 text-muted-foreground">
-                  {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
-                </td>
-                <td class="px-4 py-3 text-right">
-                  <Tooltip content="Allocate credits to this user">
-                    <Button variant="outline" size="sm" onclick={() => openAlloc(u)}>
-                      <Coins class="size-3.5" /> Allocate
-                    </Button>
-                  </Tooltip>
-                </td>
-              </tr>
-            {/each}
-            {#if filteredUsers.length === 0}
-              <tr>
-                <td colspan="5" class="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No users match your search.
-                </td>
-              </tr>
-            {/if}
-          </tbody>
-        </table>
-      </Card>
+        <Card class="overflow-hidden">
+          <Table.Root>
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head>User</Table.Head>
+                <Table.Head class="hidden md:table-cell">Email</Table.Head>
+                <Table.Head>Role</Table.Head>
+                <Table.Head class="hidden sm:table-cell">Joined</Table.Head>
+                <Table.Head class="text-right">Actions</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each filteredUsers as u (u.id)}
+                <Table.Row class="group">
+                  <Table.Cell>
+                    <div class="flex items-center gap-2.5">
+                      <Avatar name={u.name || u.email} class="size-8 ring-1 ring-border/60" />
+                      <div class="min-w-0">
+                        <div class="truncate font-medium">{u.name || '—'}</div>
+                        <div class="truncate text-xs text-muted-foreground md:hidden">{u.email}</div>
+                      </div>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell class="hidden text-muted-foreground md:table-cell">{u.email}</Table.Cell>
+                  <Table.Cell>
+                    {#if data.currentUserRole === 'admin' && u.id !== data.currentUserId}
+                      <select
+                        class="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium capitalize transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                        value={u.role}
+                        disabled={pendingRoleChange === u.id}
+                        onchange={(e) =>
+                          changeRole(u, (e.currentTarget as HTMLSelectElement).value)}
+                        aria-label={`Change role for ${u.email}`}
+                      >
+                        <option value="student">Student</option>
+                        <option value="professor">Professor</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    {:else}
+                      <Badge variant={roleBadge[u.role] ?? 'muted'} class="capitalize">
+                        {u.role}
+                      </Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="hidden text-muted-foreground sm:table-cell">
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <Tooltip content="Allocate credits to this user">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="opacity-70 transition-opacity group-hover:opacity-100"
+                        onclick={() => openAlloc(u)}
+                      >
+                        <Coins class="size-3.5" /> Allocate
+                      </Button>
+                    </Tooltip>
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+              {#if filteredUsers.length === 0}
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Cell colspan={5} class="py-10 text-center text-sm text-muted-foreground">
+                    No users match your search.
+                  </Table.Cell>
+                </Table.Row>
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </Card>
+      </div>
     </Tabs.Content>
 
     <!-- Active VMs -->
     <Tabs.Content value="vms">
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-base font-semibold">Active VMs ({data.activeVms.length})</h2>
-        <div class="relative">
-          <Search
-            class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            placeholder="Search VMs or owners…"
-            bind:value={vmQuery}
-            class="h-9 w-64 pl-8"
-          />
-        </div>
-      </div>
+      <div class="animate-fade-up space-y-3">
+        <SectionHeader title="Active VMs" icon={Server} description={`${data.activeVms.length} running`}>
+          {#snippet action()}
+            <div class="relative">
+              <Search
+                class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                type="search"
+                placeholder="Search VMs or owners…"
+                bind:value={vmQuery}
+                class="h-9 w-40 pl-8 sm:w-64"
+              />
+            </div>
+          {/snippet}
+        </SectionHeader>
 
-      <Card class="overflow-hidden">
-        <table class="w-full">
-          <thead class="border-b border-border bg-muted/30">
-            <tr class="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <th class="px-4 py-3">VM</th>
-              <th class="px-4 py-3">Owner</th>
-              <th class="px-4 py-3">Plan</th>
-              <th class="px-4 py-3">Resources</th>
-              <th class="px-4 py-3">State</th>
-              <th class="px-4 py-3 text-right">Started</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each filteredVms as vm (vm.id)}
-              <tr class="text-sm transition-colors hover:bg-muted/30">
-                <td class="px-4 py-3 font-mono text-xs">{shortId(vm.id, 10)}</td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <Avatar name={vm.user_name || vm.user_email} class="size-6" />
-                    <div>
-                      <div class="font-medium">{vm.user_name ?? '—'}</div>
-                      <div class="text-xs text-muted-foreground">
-                        {vm.user_email ?? ''}
+        <Card class="overflow-hidden">
+          <Table.Root>
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head>VM</Table.Head>
+                <Table.Head>Owner</Table.Head>
+                <Table.Head class="hidden sm:table-cell">Plan</Table.Head>
+                <Table.Head class="hidden lg:table-cell">Resources</Table.Head>
+                <Table.Head>State</Table.Head>
+                <Table.Head class="text-right">Started</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each filteredVms as vm (vm.id)}
+                <Table.Row class="group">
+                  <Table.Cell class="font-mono text-xs">{shortId(vm.id, 10)}</Table.Cell>
+                  <Table.Cell>
+                    <div class="flex items-center gap-2">
+                      <Avatar name={vm.user_name || vm.user_email} class="size-7 ring-1 ring-border/60" />
+                      <div class="min-w-0">
+                        <div class="truncate font-medium">{vm.user_name ?? '—'}</div>
+                        <div class="truncate text-xs text-muted-foreground">
+                          {vm.user_email ?? ''}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </td>
-                <td class="px-4 py-3 capitalize">{vm.plan}</td>
-                <td class="px-4 py-3 text-xs text-muted-foreground">
-                  {vm.cpu ?? '—'} CPU · {vm.memory ?? '—'}
-                </td>
-                <td class="px-4 py-3">
-                  <Badge variant={stateBadge[vm.state] ?? 'muted'} class="capitalize">
-                    {vm.state}
-                  </Badge>
-                </td>
-                <td class="px-4 py-3 text-right text-xs text-muted-foreground">
-                  {relTime(vm.started_at)}
-                </td>
-              </tr>
-            {/each}
-            {#if filteredVms.length === 0}
-              <tr>
-                <td colspan="6" class="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No active VMs.
-                </td>
-              </tr>
-            {/if}
-          </tbody>
-        </table>
-      </Card>
+                  </Table.Cell>
+                  <Table.Cell class="hidden capitalize sm:table-cell">{vm.plan}</Table.Cell>
+                  <Table.Cell class="hidden text-xs text-muted-foreground lg:table-cell">
+                    {vm.cpu ?? '—'} CPU · {vm.memory ?? '—'}
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Badge variant={stateBadge[vm.state] ?? 'muted'} class="capitalize">
+                      {vm.state}
+                    </Badge>
+                  </Table.Cell>
+                  <Table.Cell class="text-right text-xs text-muted-foreground">
+                    {relTime(vm.started_at)}
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+              {#if filteredVms.length === 0}
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
+                    <Server class="mx-auto mb-2 size-5 opacity-50" />
+                    No active VMs.
+                  </Table.Cell>
+                </Table.Row>
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </Card>
+      </div>
     </Tabs.Content>
 
     <!-- Nodes -->
     <Tabs.Content value="nodes">
-      <Card class="overflow-hidden">
-        <table class="w-full">
-          <thead class="border-b border-border bg-muted/30">
-            <tr class="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <th class="px-4 py-3">Node</th>
-              <th class="px-4 py-3">Status</th>
-              <th class="px-4 py-3">CPU</th>
-              <th class="px-4 py-3">Memory</th>
-              <th class="px-4 py-3 text-right">Pods</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each data.nodes as n (n.name)}
-              <tr class="text-sm transition-colors hover:bg-muted/30">
-                <td class="px-4 py-3 font-mono text-xs">{n.name}</td>
-                <td class="px-4 py-3">
-                  <Badge variant={n.ready ? 'success' : 'destructive'}>
-                    <span
-                      class={`size-1.5 rounded-full ${n.ready ? 'bg-success' : 'bg-destructive'}`}
-                    ></span>
-                    {n.ready ? 'Ready' : 'Not ready'}
-                  </Badge>
-                </td>
-                <td class="px-4 py-3 text-xs text-muted-foreground">
-                  {n.cpu_allocatable} / {n.cpu_capacity}
-                </td>
-                <td class="px-4 py-3 text-xs text-muted-foreground">
-                  {fmtMem(n.memory_allocatable)} / {fmtMem(n.memory_capacity)}
-                </td>
-                <td class="px-4 py-3 text-right font-medium">{n.pod_count}</td>
-              </tr>
-            {/each}
-            {#if data.nodes.length === 0}
-              <tr>
-                <td colspan="5" class="px-4 py-10 text-center text-sm text-muted-foreground">
-                  <HardDrive class="mx-auto mb-2 size-5 opacity-50" />
-                  No nodes are reporting yet.
-                </td>
-              </tr>
-            {/if}
-          </tbody>
-        </table>
-      </Card>
+      <div class="animate-fade-up space-y-3">
+        <SectionHeader
+          title="Compute nodes"
+          icon={HardDrive}
+          description={`${data.nodes.filter((n) => n.ready).length} of ${data.nodes.length} ready`}
+        />
+        <Card class="overflow-hidden">
+          <Table.Root>
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head>Node</Table.Head>
+                <Table.Head>Status</Table.Head>
+                <Table.Head class="hidden sm:table-cell">CPU</Table.Head>
+                <Table.Head class="hidden sm:table-cell">Memory</Table.Head>
+                <Table.Head class="text-right">Pods</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each data.nodes as n (n.name)}
+                <Table.Row class="group">
+                  <Table.Cell>
+                    <div class="flex items-center gap-2.5">
+                      <span
+                        class={`flex size-8 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105 ${n.ready ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}
+                      >
+                        <HardDrive class="size-4" />
+                      </span>
+                      <span class="font-mono text-xs">{n.name}</span>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <Badge variant={n.ready ? 'success' : 'destructive'}>
+                      <span
+                        class={`size-1.5 rounded-full ${n.ready ? 'bg-success' : 'bg-destructive'}`}
+                      ></span>
+                      {n.ready ? 'Ready' : 'Not ready'}
+                    </Badge>
+                  </Table.Cell>
+                  <Table.Cell class="hidden text-xs text-muted-foreground sm:table-cell">
+                    {n.cpu_allocatable} / {n.cpu_capacity}
+                  </Table.Cell>
+                  <Table.Cell class="hidden text-xs text-muted-foreground sm:table-cell">
+                    {fmtMem(n.memory_allocatable)} / {fmtMem(n.memory_capacity)}
+                  </Table.Cell>
+                  <Table.Cell class="text-right font-medium tabular-nums">{n.pod_count}</Table.Cell>
+                </Table.Row>
+              {/each}
+              {#if data.nodes.length === 0}
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Cell colspan={5} class="py-12 text-center text-sm text-muted-foreground">
+                    <HardDrive class="mx-auto mb-2 size-5 opacity-50" />
+                    No nodes are reporting yet.
+                  </Table.Cell>
+                </Table.Row>
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </Card>
+      </div>
     </Tabs.Content>
 
     <!-- Audit -->
     <Tabs.Content value="audit">
-      <Card class="overflow-hidden">
-        <table class="w-full">
-          <thead class="border-b border-border bg-muted/30">
-            <tr class="text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              <th class="px-4 py-3">Time</th>
-              <th class="px-4 py-3">Action</th>
-              <th class="px-4 py-3">Resource</th>
-              <th class="px-4 py-3">User</th>
-              <th class="px-4 py-3">IP</th>
-              <th class="px-4 py-3 text-right">Status</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each data.auditLogs as log (log.id)}
-              <tr class="text-sm transition-colors hover:bg-muted/30">
-                <td class="px-4 py-3 text-xs text-muted-foreground">
-                  {relTime(log.created_at)}
-                </td>
-                <td class="px-4 py-3 font-medium">{log.action}</td>
-                <td class="px-4 py-3 text-xs text-muted-foreground">
-                  {#if log.resource_type}
-                    <span>{log.resource_type}</span>
-                    {#if log.resource_id}
-                      <span class="ml-1 font-mono">{shortId(log.resource_id, 8)}</span>
+      <div class="animate-fade-up space-y-3">
+        <SectionHeader
+          title="Audit log"
+          icon={ScrollText}
+          description={`${data.auditLogs.length} recorded event${data.auditLogs.length === 1 ? '' : 's'}`}
+        />
+        <Card class="overflow-hidden">
+          <Table.Root>
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head>Time</Table.Head>
+                <Table.Head>Action</Table.Head>
+                <Table.Head class="hidden md:table-cell">Resource</Table.Head>
+                <Table.Head class="hidden lg:table-cell">User</Table.Head>
+                <Table.Head class="hidden lg:table-cell">IP</Table.Head>
+                <Table.Head class="text-right">Status</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each data.auditLogs as log (log.id)}
+                <Table.Row class="group">
+                  <Table.Cell class="whitespace-nowrap text-xs text-muted-foreground">
+                    {relTime(log.created_at)}
+                  </Table.Cell>
+                  <Table.Cell class="font-medium">{log.action}</Table.Cell>
+                  <Table.Cell class="hidden text-xs text-muted-foreground md:table-cell">
+                    {#if log.resource_type}
+                      <span>{log.resource_type}</span>
+                      {#if log.resource_id}
+                        <span class="ml-1 font-mono">{shortId(log.resource_id, 8)}</span>
+                      {/if}
+                    {:else}
+                      —
                     {/if}
-                  {:else}
-                    —
-                  {/if}
-                </td>
-                <td class="px-4 py-3 font-mono text-xs">
-                  {log.user_id ? shortId(log.user_id, 8) : '—'}
-                </td>
-                <td class="px-4 py-3 font-mono text-xs text-muted-foreground">
-                  {log.ip_address ?? '—'}
-                </td>
-                <td class={`px-4 py-3 text-right font-mono text-xs ${statusTone(log.status_code)}`}>
-                  {log.status_code ?? '—'}
-                </td>
-              </tr>
-            {/each}
-            {#if data.auditLogs.length === 0}
-              <tr>
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-muted-foreground">
-                  No audit events recorded yet.
-                </td>
-              </tr>
-            {/if}
-          </tbody>
-        </table>
-      </Card>
+                  </Table.Cell>
+                  <Table.Cell class="hidden font-mono text-xs lg:table-cell">
+                    {log.user_id ? shortId(log.user_id, 8) : '—'}
+                  </Table.Cell>
+                  <Table.Cell class="hidden font-mono text-xs text-muted-foreground lg:table-cell">
+                    {log.ip_address ?? '—'}
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <span
+                      class={`inline-flex items-center rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-semibold ${statusTone(log.status_code)}`}
+                    >
+                      {log.status_code ?? '—'}
+                    </span>
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+              {#if data.auditLogs.length === 0}
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
+                    <ScrollText class="mx-auto mb-2 size-5 opacity-50" />
+                    No audit events recorded yet.
+                  </Table.Cell>
+                </Table.Row>
+              {/if}
+            </Table.Body>
+          </Table.Root>
+        </Card>
+      </div>
     </Tabs.Content>
   </Tabs.Root>
 </div>

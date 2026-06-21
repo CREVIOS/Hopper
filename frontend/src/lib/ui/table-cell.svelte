@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import type { HTMLAttributes } from 'svelte/elements';
+  import type { HTMLTdAttributes } from 'svelte/elements';
   import { cn } from '$lib/utils';
 
   type Props = {
     class?: string;
     children: Snippet;
-  } & Omit<HTMLAttributes<HTMLTableCellElement>, 'class' | 'children'>;
+  } & Omit<HTMLTdAttributes, 'class' | 'children'>;
 
   let { class: className, children, ...rest }: Props = $props();
 </script>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
   import type { User } from '$lib/types';
   import { ModeWatcher } from 'mode-watcher';
@@ -21,6 +22,20 @@
   } = $props();
 
   let mobileOpen = $state(false);
+
+  // Desktop sidebar collapse — persisted so it survives reloads.
+  let collapsed = $state(false);
+  const COLLAPSE_KEY = 'hopper:sidebar-collapsed';
+
+  onMount(() => {
+    collapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+  });
+
+  $effect(() => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+    }
+  });
 
   // Close the mobile sidebar on navigation.
   $effect(() => {
@@ -44,9 +59,17 @@
   <!-- Authenticated layout: sidebar + topbar -->
   <div class="flex min-h-screen bg-background text-foreground">
     <!-- Desktop sidebar -->
-    <div class="hidden w-64 shrink-0 lg:block">
-      <div class="fixed inset-y-0 w-64">
-        <Sidebar user={data.user} />
+    <div
+      class={`hidden shrink-0 transition-[width] duration-200 ease-out lg:block ${collapsed ? 'w-16' : 'w-64'}`}
+    >
+      <div
+        class={`fixed inset-y-0 transition-[width] duration-200 ease-out ${collapsed ? 'w-16' : 'w-64'}`}
+      >
+        <Sidebar
+          user={data.user}
+          {collapsed}
+          onToggleCollapse={() => (collapsed = !collapsed)}
+        />
       </div>
     </div>
 
