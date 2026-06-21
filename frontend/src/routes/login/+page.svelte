@@ -193,16 +193,25 @@
 
           {#if dev}
             <!-- Dev-only: the real SSO flow can't complete on localhost (backend
-                 returns the Keycloak callback to the deployed host). This mints a
-                 token directly and sets the session cookies. Never ships — the
+                 returns the Keycloak callback to the deployed host). These mint a
+                 token directly and set the session cookies. Never ship — the
                  /dev-login endpoint 404s outside `vite dev`. -->
-            <a
-              href="/dev-login"
-              data-sveltekit-reload
-              class="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-4 py-1.5 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
-            >
-              <KeyRound class="size-4" /> Dev login (skip SSO)
-            </a>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+              <a
+                href="/dev-login?as=admin"
+                data-sveltekit-reload
+                class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-1.5 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
+              >
+                <KeyRound class="size-4" /> Dev: admin
+              </a>
+              <a
+                href="/dev-login?as=user"
+                data-sveltekit-reload
+                class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-1.5 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
+              >
+                <KeyRound class="size-4" /> Dev: user
+              </a>
+            </div>
           {/if}
 
           <div class="my-4 flex items-center gap-3 text-xs text-muted-foreground">

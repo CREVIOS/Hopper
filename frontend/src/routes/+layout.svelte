@@ -29,6 +29,17 @@
 
   onMount(() => {
     collapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+
+    // Keepalive: the access token (session_token cookie) lives ~5 min. Long-lived
+    // pages with no navigation — chiefly the pod terminal's WebSocket — would
+    // otherwise let it expire, so a transient WS drop reconnects with a dead
+    // cookie (close 1008) and never recovers. Refresh it well before expiry so
+    // the cookie stays valid for reconnects and client /api calls alike.
+    if (!data.isAuthenticated) return;
+    const refreshTimer = setInterval(() => {
+      fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    }, 4 * 60 * 1000);
+    return () => clearInterval(refreshTimer);
   });
 
   $effect(() => {

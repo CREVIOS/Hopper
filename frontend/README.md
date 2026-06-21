@@ -70,8 +70,10 @@ SSR `+page.server.ts` / `+layout.server.ts` fetch the backend directly via
 | `KEYCLOAK_REALM` | `hopper` | Realm. |
 | `KEYCLOAK_CLIENT_ID` | `hopper-api` | OIDC client (public, PKCE). |
 | `KEYCLOAK_CLIENT_SECRET` | _(empty)_ | Only for a confidential client. |
-| `DEV_LOGIN_USER` | `admin` | Username for `/dev-login`. |
-| `DEV_LOGIN_PASS` | _(empty)_ | Password — put a real dev credential in `.env`. |
+| `DEV_LOGIN_USER` | `admin` | Admin account — `/dev-login` or `/dev-login?as=admin`. |
+| `DEV_LOGIN_PASS` | _(empty)_ | Admin password — put a real dev credential in `.env`. |
+| `DEV_LOGIN_USER_ALT` | `testuser` | Regular (non-admin) account — `/dev-login?as=user`. |
+| `DEV_LOGIN_PASS_ALT` | _(empty)_ | Regular-account password. |
 
 ## Why login needs a workaround
 
@@ -99,17 +101,28 @@ remote API accepts it no matter which host presents it. Both call paths then
 authenticate: SSR loads (via `API_INTERNAL_URL`) and client fetches (via the
 Vite `/api` proxy).
 
-The login page shows a **"Dev login (skip SSO)"** button only when `dev` is
-true. Test another account without editing `.env`:
+The login page shows two dev-only buttons (only when `dev` is true):
+
+- **Dev: admin** → `/dev-login?as=admin` (role `admin`)
+- **Dev: user** → `/dev-login?as=user` (regular non-admin account, role `student`)
+
+Test any other account without editing `.env`:
 
 ```
 http://127.0.0.1:5173/dev-login?user=someone&pass=secret
 ```
 
-**Session lifetime:** the access token is short-lived (~5 min). The
-`refresh_token` cookie (~30 min) lets `+layout.server.ts` auto-refresh on each
-SSR navigation. If the app goes 401 after sitting idle, just click **Dev login**
-again.
+**Session lifetime:** the access token is short-lived (~5 min). Two things keep
+the session alive:
+
+1. `+layout.server.ts` refreshes on each SSR navigation, and
+2. `+layout.svelte` runs a **client-side keepalive** — it POSTs
+   `/api/auth/refresh` every 4 minutes while authenticated.
+
+The keepalive matters for long-lived pages with no navigation (chiefly the pod
+**terminal**): without it the access cookie expires, and the first transient
+WebSocket drop would reconnect with a dead cookie (close 1008) and never
+recover. With it, the terminal stays connected indefinitely.
 
 ## Why the terminal / VS Code need `API_PROXY_ORIGIN`
 
@@ -131,6 +144,19 @@ live shell. The same applies to the VS Code WebSocket.
 `API_PROXY_ORIGIN` defaults to the `API_PROXY_TARGET` origin for https targets,
 so the remote setup works even if you don't set it explicitly. Leave it **unset**
 when targeting a local gateway (it already allows localhost).
+
+### VS Code (code-server) — extra proxy rule
+
+"Open VS Code" navigates to `/{userId}/code/{podId}/` (and the port-preview proxy
+at `.../proxy/{port}/`). These are **not** under `/api`, so the default proxy
+wouldn't forward them — they'd hit SvelteKit and 404. `vite.config.ts` adds a
+regex proxy rule (`^/[^/]+/code/`) that forwards the whole code-server path tree
+to the backend with `ws: true` (code-server's RPC socket) and the same Origin
+override. With it, the full VS Code workbench loads in the browser locally.
+
+> The 404s on `vsda.js` / `vsda_bg.wasm` in the console are harmless — that's
+> code-server's optional proprietary signing module; it 404s on the real
+> deployment too.
 
 ### CORS / origin gotcha
 
@@ -173,6 +199,8 @@ redirect URI. Otherwise use **Dev login** as above.
 | Login bounces to `hopper.farefin.com` | Expected for the real SSO button on localhost. Use **Dev login**. |
 | `/dev-login` shows `?error=devlogin` | Keycloak token request failed — check `DEV_LOGIN_USER`/`DEV_LOGIN_PASS` and `KEYCLOAK_*`. |
 | Terminal: *"Connection lost — Reconnecting"* | `API_PROXY_ORIGIN` not set / wrong. Must be the backend's origin. |
+| Terminal drops after a few minutes | Was the expiring access token; the `+layout.svelte` keepalive fixes it. If it still drops, check `/api/auth/refresh` returns 200 through the proxy. |
+| VS Code: blank page / 404 / 502 | Missing the `^/[^/]+/code/` proxy rule, or the session cookie expired (re-click **Dev login**). |
 | App goes 401 after idle | Access token expired; click **Dev login** again. |
 | `ERR_PNPM_IGNORED_BUILDS: esbuild` | pnpm 10/11 — ensure `pnpm-workspace.yaml` has `allowBuilds: { esbuild: true }`, then `pnpm install`. |
 | 404 on `/api/...` | `API_PROXY_STRIP_PREFIX` wrong for your target (false for remote ingress, true for local gateway). |

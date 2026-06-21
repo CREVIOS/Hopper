@@ -24,9 +24,17 @@ export const GET: RequestHandler = async ({ cookies, fetch, url }) => {
   const kc = (env.KEYCLOAK_EXTERNAL_URL || 'https://hopper.farefin.com').replace(/\/$/, '');
   const realm = env.KEYCLOAK_REALM || 'hopper';
   const clientId = env.KEYCLOAK_CLIENT_ID || 'hopper-api';
-  // Allow ?user=&pass= overrides for testing other accounts; fall back to env.
-  const username = url.searchParams.get('user') || env.DEV_LOGIN_USER || 'admin';
-  const password = url.searchParams.get('pass') || env.DEV_LOGIN_PASS || 'admin123';
+
+  // Pick a credential profile. `?as=user` uses the regular (non-admin) account;
+  // anything else defaults to admin. `?user=&pass=` still override everything for
+  // ad-hoc accounts.
+  const as = url.searchParams.get('as');
+  const profile =
+    as === 'user'
+      ? { user: env.DEV_LOGIN_USER_ALT || 'testuser', pass: env.DEV_LOGIN_PASS_ALT || 'testuser123' }
+      : { user: env.DEV_LOGIN_USER || 'admin', pass: env.DEV_LOGIN_PASS || 'admin123' };
+  const username = url.searchParams.get('user') || profile.user;
+  const password = url.searchParams.get('pass') || profile.pass;
 
   const body = new URLSearchParams({
     grant_type: 'password',

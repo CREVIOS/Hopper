@@ -85,6 +85,12 @@ export default defineConfig(({ mode }) => {
         // Follow redirects so code-server's internal redirects resolve, and
         // enable WS for both the code-server WS path and /pods/{id}/terminal.
         '/api/pods': { ...common, followRedirects: true, ws: true },
+        // code-server (VS Code in browser) is served by the ingress at
+        // /{userId}/code/{podId}/... and the preview proxy at .../proxy/{port}/.
+        // These aren't under /api, so without this rule they'd hit SvelteKit and
+        // 404. Regex key (leading ^) matches the user-id segment. ws:true for
+        // code-server's RPC socket; followRedirects so its internal 302s resolve.
+        '^/[^/]+/code/': { ...common, followRedirects: true, ws: true },
         // Everything else
         '/api': { ...common, followRedirects: false },
       }
