@@ -78,8 +78,9 @@
   </PageTitle>
 
   <!-- Stats -->
-  <div class="animate-fade-up grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="animate-fade-up grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     <StatCard
+      compact
       label="Credit balance"
       value={data.balance.toFixed(1)}
       sub="credits remaining"
@@ -88,6 +89,7 @@
       href="/credits"
     />
     <StatCard
+      compact
       label="Active VMs"
       value={activePods.length}
       sub="of 3 max concurrent"
@@ -96,6 +98,7 @@
       href="/pods"
     />
     <StatCard
+      compact
       label="Avg CPU (24h)"
       value={`${data.summary.avg_cpu_percent.toFixed(1)}%`}
       sub={data.summary.pod_count
@@ -105,6 +108,7 @@
       tone="info"
     />
     <StatCard
+      compact
       label="Avg memory (24h)"
       value={formatBytes(data.summary.avg_memory_bytes ?? 0)}
       sub="rolling average"

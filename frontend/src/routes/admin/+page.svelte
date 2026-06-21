@@ -260,8 +260,9 @@
   />
 
   <!-- Stats -->
-  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     <StatCard
+      compact
       label="Total users"
       value={data.stats.total_users}
       icon={Users}
@@ -269,6 +270,7 @@
       class="animate-fade-up"
     />
     <StatCard
+      compact
       label="Active VMs"
       value={data.stats.active_vms}
       icon={Server}
@@ -276,6 +278,7 @@
       class="animate-fade-up [animation-delay:70ms]"
     />
     <StatCard
+      compact
       label="VMs all-time"
       value={data.stats.total_vms_created}
       icon={Database}
@@ -283,6 +286,7 @@
       class="animate-fade-up [animation-delay:140ms]"
     />
     <StatCard
+      compact
       label="Compute nodes"
       value={data.nodes.length}
       sub={`${data.nodes.filter((n) => n.ready).length} ready`}
@@ -295,7 +299,7 @@
   <!-- Tabs -->
   <Tabs.Root bind:value={tab}>
     <Tabs.List
-      class="flex w-full max-w-full justify-start overflow-x-auto [scrollbar-width:none] sm:w-auto [&::-webkit-scrollbar]:hidden"
+      class="max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <Tabs.Trigger value="overview"><Activity /> Overview</Tabs.Trigger>
       <Tabs.Trigger value="users"><Users /> Users</Tabs.Trigger>

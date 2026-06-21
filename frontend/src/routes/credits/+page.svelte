@@ -180,8 +180,9 @@
   />
 
   <!-- Stats -->
-  <div class="animate-fade-up grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  <div class="animate-fade-up grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
     <StatCard
+      compact
       label="Available balance"
       value={data.balance.toFixed(2)}
       sub="credits"
@@ -193,6 +194,7 @@
           : 'destructive'}
     />
     <StatCard
+      compact
       label="Spent on VMs"
       value={totals.vmSpend.toFixed(2)}
       sub="all-time"
@@ -200,6 +202,7 @@
       tone="destructive"
     />
     <StatCard
+      compact
       label="Total received"
       value={totals.credited.toFixed(2)}
       sub="allocations & refunds"

@@ -14,6 +14,7 @@
     icon,
     tone = 'default',
     href,
+    compact = false,
     class: className
   }: {
     label: string;
@@ -22,6 +23,8 @@
     icon?: IconLike;
     tone?: 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'info';
     href?: string;
+    /** Denser layout — smaller padding, value, and icon chip. */
+    compact?: boolean;
     class?: string;
   } = $props();
 
@@ -72,27 +75,34 @@
       railMap[tone]
     )}
   ></span>
-  <div class="relative flex items-start justify-between gap-3 pl-2">
+  <div class={cn('relative flex items-center justify-between pl-2', compact ? 'gap-2' : 'gap-3')}>
     <div class="min-w-0">
-      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <p class={cn('font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-xs')}>
         {label}
       </p>
-      <p class={cn('mt-2 text-3xl font-bold tracking-tight tabular-nums', toneMap[tone])}>
+      <p
+        class={cn(
+          'font-bold tracking-tight tabular-nums',
+          compact ? 'text-xl' : 'mt-2 text-3xl',
+          toneMap[tone]
+        )}
+      >
         {value}
       </p>
       {#if sub}
-        <p class="mt-1 text-xs text-muted-foreground">{sub}</p>
+        <p class={cn('text-muted-foreground', compact ? 'mt-0 text-[11px]' : 'mt-1 text-xs')}>{sub}</p>
       {/if}
     </div>
     {#if icon}
       {@const Icon = icon as unknown as typeof SvelteComponent}
       <div
         class={cn(
-          'flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm ring-1 ring-inset ring-border/50 transition-transform duration-200 group-hover:scale-110',
+          'flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm ring-1 ring-inset ring-border/50 transition-transform duration-200 group-hover:scale-110',
+          compact ? 'size-8' : 'size-11 rounded-xl',
           ringMap[tone]
         )}
       >
-        <Icon class="size-5" />
+        <Icon class={compact ? 'size-4' : 'size-5'} />
       </div>
     {/if}
   </div>
@@ -102,7 +112,8 @@
   <a {href} class="group block h-full">
     <Card
       class={cn(
-        'card-lift relative h-full overflow-hidden bg-gradient-to-br from-card p-4 hover:border-primary/40 hover:shadow-md',
+        'card-lift relative h-full overflow-hidden bg-gradient-to-br from-card hover:border-primary/40 hover:shadow-md',
+        compact ? 'px-4 py-2' : 'p-4',
         surfaceMap[tone],
         className
       )}
@@ -113,7 +124,8 @@
 {:else}
   <Card
     class={cn(
-      'card-lift group relative h-full overflow-hidden bg-gradient-to-br from-card p-4 hover:border-primary/40 hover:shadow-md',
+      'card-lift group relative h-full overflow-hidden bg-gradient-to-br from-card hover:border-primary/40 hover:shadow-md',
+      compact ? 'p-3' : 'p-4',
       surfaceMap[tone],
       className
     )}
