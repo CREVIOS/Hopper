@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    Sparkles,
     Server,
     Cpu,
     KeyRound,
@@ -15,7 +14,7 @@
   } from 'lucide-svelte';
   import { page } from '$app/state';
   import { dev } from '$app/environment';
-  import { Button, Card, CardContent } from '$lib/ui';
+  import { Button } from '$lib/ui';
 
   let signing = $state(false);
 
@@ -43,7 +42,7 @@
     {
       icon: Server,
       title: 'Spin up VMs in seconds',
-      desc: 'Pre-built images for ML, C++, Java and bare Ubuntu — one click.'
+      desc: 'Pre-built images for ML, C++, Java and bare Ubuntu, one click.'
     },
     {
       icon: Cpu,
@@ -65,70 +64,57 @@
   ];
 </script>
 
-<div class="grid min-h-screen bg-background lg:grid-cols-[1.05fr_1fr]">
-  <!-- Brand panel -->
-  <div
-    class="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary to-info p-7 text-primary-foreground lg:flex xl:p-9"
-  >
-    <!-- soft neutral light — drifts slowly, no hue clash -->
+<div class="grid min-h-[100dvh] bg-background lg:grid-cols-[1.1fr_1fr]">
+  <!-- Brand panel: a fixed deep-indigo surface in both themes (split-login
+       convention), textured with a faint dot grid instead of floating blobs. -->
+  <aside class="brand-panel relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-12">
+    <div class="dot-grid pointer-events-none absolute inset-0 opacity-[0.4]"></div>
     <div
-      class="orb pointer-events-none absolute -top-44 -left-32 size-[34rem] rounded-full bg-white/10 blur-3xl"
+      class="pointer-events-none absolute inset-0"
+      style="background:radial-gradient(80% 60% at 12% 8%, hsl(252 90% 70% / 0.20), transparent 60%);"
     ></div>
-    <div
-      class="orb orb-slow pointer-events-none absolute -bottom-44 -right-28 size-[30rem] rounded-full bg-white/[0.07] blur-3xl"
-    ></div>
-    <!-- gentle bottom deepening for depth + footer legibility -->
-    <div
-      class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent"
-    ></div>
-    <!-- subtle top sheen -->
-    <div
-      class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent"
-    ></div>
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/40 to-transparent"></div>
 
-    <div class="animate-fade-up relative">
-      <div class="flex items-center gap-2.5">
-        <div
-          class="flex size-9 items-center justify-center rounded-xl bg-white/20 shadow-lg shadow-black/10 ring-1 ring-inset ring-white/25 backdrop-blur"
-        >
-          <Sparkles class="size-5" />
-        </div>
-        <span class="text-xl font-bold tracking-tight">Hopper</span>
-      </div>
+    <!-- Wordmark lockup — a real monogram, not a generic sparkle. -->
+    <div class="animate-fade-up relative flex items-center gap-3">
+      <span class="grid size-10 place-items-center rounded-xl bg-white/[0.08] font-mono text-lg font-bold ring-1 ring-inset ring-white/15">H</span>
+      <span class="text-lg font-semibold tracking-tight">Hopper</span>
     </div>
 
-    <div class="relative max-w-md space-y-5">
-      <div class="animate-fade-up space-y-3.5" style="animation-delay: 60ms">
-        <span
-          class="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium text-white/90 ring-1 ring-inset ring-white/20 backdrop-blur"
-        >
-          <span class="size-1.5 animate-pulse rounded-full bg-white"></span>
-          Self-hosted · built for campus
-        </span>
-        <h1 class="text-4xl font-bold leading-[1.1] tracking-tight xl:text-5xl">
-          University compute, <br />
-          <span class="text-white/80">on demand.</span>
-        </h1>
-        <p class="max-w-md text-base leading-relaxed text-white/80">
-          A self-hosted VM cloud for students and researchers — slice bare-metal
-          compute into isolated containers, billed per minute.
-        </p>
-      </div>
+    <div class="relative max-w-lg">
+      <p
+        class="animate-fade-up mb-5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-white/45"
+        style="animation-delay: 40ms"
+      >
+        Self-hosted, built for campus
+      </p>
+      <h1
+        class="animate-fade-up text-[2.75rem] font-bold leading-[1.05] tracking-tight xl:text-6xl"
+        style="animation-delay: 80ms; text-wrap: balance"
+      >
+        University compute,
+        <span class="text-white/55">on demand.</span>
+      </h1>
+      <p
+        class="animate-fade-up mt-5 max-w-md text-[15px] leading-relaxed text-white/65"
+        style="animation-delay: 120ms"
+      >
+        A self-hosted VM cloud for students and researchers. Slice bare-metal
+        compute into isolated containers, billed by the minute.
+      </p>
 
-      <ul class="space-y-1.5">
+      <ul class="mt-10 divide-y divide-white/10 border-y border-white/10">
         {#each features as f, i}
           <li
-            class="feature-row animate-fade-up flex gap-3 rounded-xl p-2 transition-colors hover:bg-white/10"
-            style="animation-delay: {140 + i * 80}ms"
+            class="feature-row animate-fade-up flex items-start gap-4 py-4 transition-colors hover:bg-white/[0.04]"
+            style="animation-delay: {160 + i * 70}ms"
           >
-            <div
-              class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/15 backdrop-blur transition-transform"
-            >
-              <f.icon class="size-[1.05rem]" />
-            </div>
-            <div>
-              <div class="font-semibold">{f.title}</div>
-              <div class="text-sm leading-snug text-white/75">{f.desc}</div>
+            <span class="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.06] ring-1 ring-inset ring-white/10">
+              <f.icon class="size-[1.05rem]" strokeWidth={1.75} />
+            </span>
+            <div class="min-w-0">
+              <div class="font-medium leading-tight">{f.title}</div>
+              <div class="mt-1 text-sm leading-snug text-white/55">{f.desc}</div>
             </div>
           </li>
         {/each}
@@ -136,123 +122,103 @@
     </div>
 
     <div
-      class="animate-fade-up relative flex items-center gap-2 text-xs text-white/70"
+      class="animate-fade-up relative flex items-center gap-2 text-xs text-white/45"
       style="animation-delay: 420ms"
     >
-      <ShieldCheck class="size-4" />
-      <span>Secured by Keycloak OIDC · K8s + NATS · Open source</span>
+      <ShieldCheck class="size-4" strokeWidth={1.75} />
+      <span>Secured by Keycloak OIDC. Open source, K8s + NATS.</span>
     </div>
-  </div>
+  </aside>
 
   <!-- Sign-in panel -->
-  <div class="surface-glow relative flex items-center justify-center px-6 py-8 sm:px-8">
-    <!-- mobile-only ambient wash so the bare panel isn't flat on small screens -->
-    <div
-      class="pointer-events-none absolute -top-24 right-0 size-72 rounded-full bg-primary/10 blur-3xl lg:hidden"
-    ></div>
-
-    <div class="relative w-full max-w-sm space-y-5">
-      <div class="animate-fade-up space-y-1.5 text-center lg:text-left">
-        <div
-          class="mx-auto flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-info text-primary-foreground shadow-lg shadow-primary/25 lg:mx-0"
-        >
-          <Sparkles class="size-5" />
-        </div>
-        <h2 class="text-2xl font-bold tracking-tight">Welcome back</h2>
-        <p class="text-sm text-muted-foreground">
+  <main class="relative flex items-center justify-center px-6 py-10 sm:px-10">
+    <div class="relative w-full max-w-sm">
+      <div class="animate-fade-up mb-8 text-center lg:text-left">
+        <h2 class="text-[1.7rem] font-bold leading-tight tracking-tight">Welcome back</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
           Sign in with your university account to continue.
         </p>
       </div>
 
       {#if errorMessage}
         <div
-          class="animate-scale-in flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2.5 text-sm text-destructive"
+          class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
         >
           <AlertCircle class="mt-0.5 size-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       {/if}
 
-      <Card
-        class="animate-fade-up overflow-hidden border-border/60 shadow-lg shadow-black/[0.03]"
-        style="animation-delay: 80ms"
+      <Button
+        onclick={handleLogin}
+        disabled={signing}
+        size="lg"
+        class="group animate-fade-up h-12 w-full justify-between text-[15px] shadow-sm"
+        style="animation-delay: 60ms"
       >
-        <CardContent class="p-4 pt-4">
-          <Button
-            onclick={handleLogin}
-            disabled={signing}
-            size="lg"
-            class="group w-full justify-between shadow-md shadow-primary/20"
+        <span class="flex items-center gap-2.5">
+          <ShieldCheck class="size-4" />
+          {signing ? 'Redirecting…' : 'Continue with University SSO'}
+        </span>
+        <ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />
+      </Button>
+
+      {#if dev}
+        <!-- Dev-only: the real SSO flow can't complete on localhost (backend
+             returns the Keycloak callback to the deployed host). These mint a
+             token directly and set the session cookies. Never ship — the
+             /dev-login endpoint 404s outside `vite dev`. -->
+        <div class="animate-fade-up mt-2.5 grid grid-cols-2 gap-2.5" style="animation-delay: 90ms">
+          <a
+            href="/dev-login?as=admin"
+            data-sveltekit-reload
+            class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
           >
-            <span class="flex items-center gap-2">
-              <ShieldCheck class="size-4" />
-              {signing ? 'Redirecting…' : 'Continue with University SSO'}
-            </span>
-            <ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />
-          </Button>
+            <KeyRound class="size-4" /> Dev: admin
+          </a>
+          <a
+            href="/dev-login?as=user"
+            data-sveltekit-reload
+            class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
+          >
+            <KeyRound class="size-4" /> Dev: user
+          </a>
+        </div>
+      {/if}
 
-          {#if dev}
-            <!-- Dev-only: the real SSO flow can't complete on localhost (backend
-                 returns the Keycloak callback to the deployed host). These mint a
-                 token directly and set the session cookies. Never ship — the
-                 /dev-login endpoint 404s outside `vite dev`. -->
-            <div class="mt-2 grid grid-cols-2 gap-2">
-              <a
-                href="/dev-login?as=admin"
-                data-sveltekit-reload
-                class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-1.5 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
-              >
-                <KeyRound class="size-4" /> Dev: admin
-              </a>
-              <a
-                href="/dev-login?as=user"
-                data-sveltekit-reload
-                class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-1.5 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
-              >
-                <KeyRound class="size-4" /> Dev: user
-              </a>
-            </div>
-          {/if}
-
-          <div class="my-4 flex items-center gap-3 text-xs text-muted-foreground">
-            <div class="h-px flex-1 bg-border"></div>
-            <span>What you'll get</span>
-            <div class="h-px flex-1 bg-border"></div>
-          </div>
-
-          <ul class="space-y-1 text-sm">
-            {#each perks as p}
-              <li
-                class="flex items-center gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-muted/50"
-              >
-                <span
-                  class="flex size-7 shrink-0 items-center justify-center rounded-md {p.tint}"
-                >
-                  <p.icon class="size-4" />
-                </span>
-                <span class="min-w-0 font-medium text-foreground">{p.label}</span>
-                <Check class="ml-auto size-4 shrink-0 text-success/70" />
-              </li>
-            {/each}
-          </ul>
-        </CardContent>
-      </Card>
+      <!-- What you'll get -->
+      <div class="animate-fade-up mt-8" style="animation-delay: 130ms">
+        <p class="mb-3 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          What you'll get
+        </p>
+        <ul class="space-y-px">
+          {#each perks as p}
+            <li class="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50">
+              <span class="grid size-7 shrink-0 place-items-center rounded-md {p.tint}">
+                <p.icon class="size-4" strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 text-sm font-medium text-foreground">{p.label}</span>
+              <Check class="ml-auto size-4 shrink-0 text-success/70" />
+            </li>
+          {/each}
+        </ul>
+      </div>
 
       <div
-        class="animate-fade-up rounded-lg border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground"
-        style="animation-delay: 160ms"
+        class="animate-fade-up mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground"
+        style="animation-delay: 170ms"
       >
-        <p class="font-medium text-foreground">No sign-up form here — by design.</p>
-        <p class="mt-1">
+        <p class="font-medium text-foreground">No sign-up form here, by design.</p>
+        <p class="mt-1.5">
           Accounts are provisioned automatically through your university's single
           sign-on. There's nothing to register, and there is no password for Hopper
-          to forget — if you can't log in, reset your <em>university</em> password
+          to forget. If you can't log in, reset your <em>university</em> password
           through your institution's IdP, then come back and click
           <span class="font-medium text-foreground">Continue with University SSO</span>.
         </p>
-        <p class="mt-1.5">
+        <p class="mt-2">
           New student and not in the system yet? Email
-          <a class="font-medium text-foreground underline" href="mailto:hopper-admin@cs.du.ac.bd">
+          <a class="font-medium text-foreground underline underline-offset-2" href="mailto:hopper-admin@cs.du.ac.bd">
             hopper-admin@cs.du.ac.bd
           </a>
           to be added.
@@ -260,8 +226,8 @@
       </div>
 
       <p
-        class="animate-fade-up text-center text-xs text-muted-foreground"
-        style="animation-delay: 220ms"
+        class="animate-fade-up mt-5 text-center text-xs text-muted-foreground lg:text-left"
+        style="animation-delay: 210ms"
       >
         Trouble signing in?
         <a
@@ -274,33 +240,29 @@
         </a>
       </p>
     </div>
-  </div>
+  </main>
 </div>
 
 <style>
-  /* Slow, modest drift on the brand-panel orbs — disabled for reduced-motion. */
-  .orb {
-    animation: orb-float 16s ease-in-out infinite;
+  /* Fixed deep-indigo brand surface, consistent across light & dark themes. */
+  .brand-panel {
+    background:
+      linear-gradient(160deg, hsl(250 47% 10%) 0%, hsl(255 48% 13%) 55%, hsl(258 50% 16%) 100%);
   }
-  .orb-slow {
-    animation-duration: 22s;
-    animation-direction: reverse;
-  }
-  @keyframes orb-float {
-    0%,
-    100% {
-      transform: translate3d(0, 0, 0) scale(1);
-    }
-    50% {
-      transform: translate3d(20px, -24px, 0) scale(1.06);
-    }
+  /* Faint dot grid — sits still, no GPU-thrashing drift. */
+  .dot-grid {
+    background-image: radial-gradient(hsl(0 0% 100% / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
   .feature-row:hover :global(svg) {
-    transform: scale(1.08);
+    transform: scale(1.06);
+  }
+  .feature-row :global(svg) {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
   @media (prefers-reduced-motion: reduce) {
-    .orb {
-      animation: none;
+    .feature-row:hover :global(svg) {
+      transform: none;
     }
   }
 </style>

@@ -21,8 +21,7 @@
     Label,
     Textarea,
     Badge,
-    Tooltip,
-    Separator
+    Tooltip
   } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
   import PageTitle from '$lib/components/PageTitle.svelte';
@@ -91,7 +90,7 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
     }
     if (!validKey(key)) {
       toast.error(
-        'Public key looks invalid — should start with ssh-rsa, ssh-ed25519, ecdsa-sha2, or ssh-dss'
+        'Public key looks invalid. It should start with ssh-rsa, ssh-ed25519, ecdsa-sha2, or ssh-dss'
       );
       return;
     }
@@ -141,12 +140,12 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
   }
 </script>
 
-<div class="space-y-5">
+<div class="space-y-6">
   <PageTitle
     title="SSH keys"
     eyebrow="Settings"
     eyebrowIcon={KeyRound}
-    description="Public keys registered here are pushed to every VM you launch — enabling passwordless SSH from any device whose private key matches."
+    description="Public keys registered here are pushed to every VM you launch, enabling passwordless SSH from any device whose private key matches."
   >
     {#snippet action()}
       <Button onclick={() => (dialogOpen = true)} disabled={data.keys.length >= MAX_KEYS}>
@@ -157,45 +156,43 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
 
   <!-- Capacity panel — segmented slot meter for the per-account key limit. -->
   <Card class="animate-fade-up surface-glow overflow-hidden">
-    <CardContent class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div class="flex items-center gap-3">
-        <div
-          class="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-white shadow-sm shadow-primary/20"
-        >
-          <ShieldCheck class="size-5" />
+    <CardContent class="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-center gap-3.5">
+        <div class="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+          <ShieldCheck class="size-5" strokeWidth={1.75} />
         </div>
         <div>
           <div class="flex items-baseline gap-1.5">
-            <span class="text-xl font-bold tracking-tight tabular-nums">{data.keys.length}</span>
+            <span class="font-mono text-2xl font-bold tracking-tight tabular-nums">{data.keys.length}</span>
             <span class="text-sm text-muted-foreground">of {MAX_KEYS} keys used</span>
           </div>
-          <p class="text-sm text-muted-foreground">
+          <p class="mt-0.5 text-sm text-muted-foreground">
             {#if atLimit}
-              You've reached the limit — remove one to add another.
+              You've reached the limit. Remove one to add another.
             {:else}
               {MAX_KEYS - data.keys.length} slot{MAX_KEYS - data.keys.length === 1 ? '' : 's'} remaining on your account.
             {/if}
           </p>
         </div>
       </div>
-      <div class="w-full sm:w-64">
+      <div class="w-full sm:w-72">
         <div class="flex items-center gap-1.5">
           {#each { length: MAX_KEYS } as _, i (i)}
             <span
-              class={`h-2.5 flex-1 rounded-full transition-all duration-500 ${
+              class={`h-2 flex-1 rounded-full transition-all duration-500 ${
                 i < data.keys.length
                   ? atLimit
-                    ? 'bg-gradient-to-r from-warning to-destructive'
-                    : 'bg-gradient-to-r from-primary to-info'
+                    ? 'bg-destructive'
+                    : 'bg-primary'
                   : 'bg-muted'
               }`}
               style="transition-delay: {i * 35}ms"
             ></span>
           {/each}
         </div>
-        <div class="mt-2 flex items-center justify-between text-xs font-medium">
-          <span class="text-muted-foreground">{data.keys.length} used · {MAX_KEYS - data.keys.length} free</span>
-          <span class={atLimit ? 'text-destructive' : 'text-muted-foreground'}>{Math.round(usedPct)}% full</span>
+        <div class="mt-2.5 flex items-center justify-between font-mono text-[11px] font-medium uppercase tracking-[0.12em]">
+          <span class="text-muted-foreground tabular-nums">{data.keys.length} used · {MAX_KEYS - data.keys.length} free</span>
+          <span class={`tabular-nums ${atLimit ? 'text-destructive' : 'text-muted-foreground'}`}>{Math.round(usedPct)}% full</span>
         </div>
       </div>
     </CardContent>
@@ -203,25 +200,19 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
 
   {#if data.keys.length === 0}
     <Card class="animate-fade-up surface-glow overflow-hidden border-dashed" style="animation-delay: 60ms">
-      <CardContent class="relative flex flex-col items-center gap-4 py-14 text-center">
-        <!-- soft glow behind the key mark -->
-        <div class="relative flex items-center justify-center">
-          <span class="halo pointer-events-none absolute size-20 rounded-full bg-primary/20 blur-2xl"></span>
-          <div
-            class="relative flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-info text-white shadow-lg shadow-primary/30"
-          >
-            <KeyRound class="size-6" />
-          </div>
+      <CardContent class="flex flex-col items-center gap-5 py-16 text-center">
+        <div class="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+          <KeyRound class="size-6" strokeWidth={1.75} />
         </div>
         <div>
-          <p class="text-base font-semibold">No keys registered yet</p>
-          <p class="mt-1.5 max-w-sm text-sm leading-relaxed text-muted-foreground">
+          <p class="text-base font-semibold tracking-tight">No keys registered yet</p>
+          <p class="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
             Add your laptop's public key (usually <code
               class="rounded bg-muted px-1 py-0.5 font-mono text-xs">~/.ssh/id_ed25519.pub</code
             >) so you can SSH into VMs without typing the root password.
           </p>
         </div>
-        <Button onclick={() => (dialogOpen = true)} class="shadow-md shadow-primary/20">
+        <Button onclick={() => (dialogOpen = true)}>
           <Plus class="size-4" /> Add your first key
         </Button>
       </CardContent>
@@ -233,13 +224,13 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
           {#each data.keys as k, i (k.id)}
             {@const algo = keyAlgo(k.public_key)}
             <li
-              class="group flex items-center gap-3 p-3 transition-colors hover:bg-muted/40"
+              class="group flex items-center gap-3.5 p-4 transition-colors hover:bg-muted/40"
               style="animation: fade-up 0.5s cubic-bezier(0.16,1,0.3,1) both; animation-delay: {80 + i * 45}ms"
             >
               <div
-                class="flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-transform group-hover:scale-105 {algo.tint}"
+                class="grid size-9 shrink-0 place-items-center rounded-lg ring-1 ring-inset transition-transform group-hover:scale-105 {algo.tint}"
               >
-                <KeyRound class="size-4" />
+                <KeyRound class="size-4" strokeWidth={1.75} />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
@@ -251,7 +242,7 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
                   </span>
                   <Badge variant="muted" class="shrink-0">added {relTime(k.created_at)}</Badge>
                 </div>
-                <div class="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <div class="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                   <Fingerprint class="size-3 shrink-0" />
                   <code class="min-w-0 truncate font-mono">{k.fingerprint}</code>
                 </div>
@@ -286,17 +277,11 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
     </Card>
   {/if}
 
-  <!-- Help — styled as a terminal window -->
+  <!-- Help: finding your public key -->
   <Card class="animate-fade-up overflow-hidden" style="animation-delay: 120ms">
-    <div class="flex items-center gap-2 border-b border-border bg-muted/40 px-3.5 py-2.5">
-      <div class="flex gap-1.5">
-        <span class="size-3 rounded-full bg-destructive/60"></span>
-        <span class="size-3 rounded-full bg-warning/60"></span>
-        <span class="size-3 rounded-full bg-success/60"></span>
-      </div>
-      <span class="ml-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Terminal class="size-3.5" /> How to find your public key
-      </span>
+    <div class="flex items-center gap-2.5 border-b border-border bg-muted/40 px-4 py-3">
+      <Terminal class="size-4 text-muted-foreground" strokeWidth={1.75} />
+      <span class="text-sm font-medium">How to find your public key</span>
       <Tooltip content="Copy commands">
         <Button
           variant="ghost"
@@ -308,41 +293,18 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
         </Button>
       </Tooltip>
     </div>
-    <CardContent class="space-y-3 p-4 text-sm text-muted-foreground">
+    <CardContent class="space-y-3.5 p-5 text-sm text-muted-foreground">
       <p>On macOS / Linux, run:</p>
       <pre
-        class="overflow-x-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground/90"
+        class="overflow-x-auto rounded-lg border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed text-foreground/90"
         >{KEYGEN_SNIPPET}</pre>
-      <p class="flex items-start gap-1.5">
+      <p class="flex items-start gap-2">
         <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
         Paste the public key (the file ending in <code class="rounded bg-muted px-1 font-mono text-xs">.pub</code>) above. Never paste your private key.
       </p>
     </CardContent>
   </Card>
 </div>
-
-<style>
-  /* Gentle breathing halo behind the empty-state key mark. */
-  .halo {
-    animation: halo 3.2s ease-in-out infinite;
-  }
-  @keyframes halo {
-    0%,
-    100% {
-      opacity: 0.45;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.9;
-      transform: scale(1.06);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .halo {
-      animation: none;
-    }
-  }
-</style>
 
 <Dialog
   bind:open={dialogOpen}
