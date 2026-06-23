@@ -13,26 +13,35 @@
     EyeOff,
     Copy,
     ExternalLink,
-    Loader2,
     Code2,
-    MessageSquareWarning
+    MessageSquareWarning,
+    Cpu,
+    MemoryStick,
+    Server,
+    Clock,
+    KeyRound,
+    Layers,
+    Box,
+    Boxes,
+    HardDrive
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import GpuMetrics from '$lib/components/GpuMetrics.svelte';
   import Terminal from '$lib/components/Terminal.svelte';
   import PodUsage from '$lib/components/PodUsage.svelte';
   import PodFiles from '$lib/components/PodFiles.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { confirm } from '$lib/confirm.svelte';
-  import { copyToClipboard, relTime, shortId } from '$lib/utils';
+  import { cn, copyToClipboard, relTime, shortId } from '$lib/utils';
   import {
     Button,
     Card,
     CardContent,
     Badge,
     Tabs,
-    Separator,
     Tooltip,
     Dialog,
     Textarea
@@ -170,63 +179,71 @@
 </script>
 
 {#if data.pod}
+  {@const pod = data.pod}
   {@const podState = data.pod.state}
   {@const cfg = stateBadge[podState] ?? stateBadge.terminated}
   {@const isRunning = podState === 'running'}
   {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
-  <div class="flex h-[calc(100vh-7rem)] flex-col">
+  <div
+    class={cn(
+      'flex flex-col',
+      activeTab === 'terminal' && 'h-[calc(100vh-7rem)]'
+    )}
+  >
     <!-- Header -->
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
-        <Button href="/pods" variant="ghost" size="icon" aria-label="Back">
-          <ArrowLeft class="size-4" />
-        </Button>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="font-mono text-xl font-bold tracking-tight">
-              {shortId(data.pod.id, 12)}
-            </h1>
-            <Badge variant={cfg.variant}>
-              {#if cfg.pulse}
-                <Loader2 class="size-3 animate-spin" />
-              {/if}
-              {cfg.label}
-            </Badge>
+    <div class="mb-5 shrink-0">
+      <a
+        href="/pods"
+        class="group mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft class="size-4 transition-transform group-hover:-translate-x-0.5" />
+        Back to VMs
+      </a>
+      <PageTitle
+        mono
+        title={shortId(data.pod.id, 12)}
+        description={`${data.pod.plan} · ${data.pod.image} · created ${relTime(data.pod.created_at)}`}
+      >
+        {#snippet badge()}
+          <Badge variant={cfg.variant}>
+            {#if cfg.pulse}
+              <Spinner class="size-3" />
+            {/if}
+            {cfg.label}
+          </Badge>
+        {/snippet}
+        {#snippet action()}
+          <div class="flex flex-wrap items-center gap-2">
+            {#if isRunning && pod.vscode_port}
+              <Button
+                variant="outline"
+                href={vscodeUrl(pod)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Code2 class="size-4" /> Open VS Code
+                <ExternalLink class="size-3 opacity-60" />
+              </Button>
+            {/if}
+            {#if isRunning}
+              <Button variant="outline" onclick={() => (issueOpen = true)}>
+                <MessageSquareWarning class="size-4" /> Report issue
+              </Button>
+            {/if}
+            {#if canTerminate}
+              <Button variant="destructive" onclick={terminatePod}>
+                <Square class="size-4" /> Terminate
+              </Button>
+            {/if}
           </div>
-          <p class="mt-0.5 text-xs text-muted-foreground">
-            {data.pod.plan} · {data.pod.image} · created {relTime(data.pod.created_at)}
-          </p>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        {#if isRunning && data.pod.vscode_port}
-          <Button
-            variant="outline"
-            href={vscodeUrl(data.pod)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Code2 class="size-4" /> Open VS Code
-            <ExternalLink class="size-3 opacity-60" />
-          </Button>
-        {/if}
-        {#if isRunning}
-          <Button variant="outline" onclick={() => (issueOpen = true)}>
-            <MessageSquareWarning class="size-4" /> Report issue
-          </Button>
-        {/if}
-        {#if canTerminate}
-          <Button variant="destructive" onclick={terminatePod}>
-            <Square class="size-4" /> Terminate
-          </Button>
-        {/if}
-      </div>
+        {/snippet}
+      </PageTitle>
     </div>
 
     <!-- Tabs -->
     <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
-      <Tabs.List>
+      <Tabs.List class="mb-4 mt-1 self-start">
         <Tabs.Trigger value="terminal">
           <TerminalIcon class="size-3.5" /> Terminal
         </Tabs.Trigger>
@@ -327,7 +344,59 @@
       <!-- Metrics -->
       <Tabs.Content value="metrics" class="min-h-0 flex-1 overflow-y-auto">
         {#if isRunning}
-          <GpuMetrics {metrics} />
+          <div class="space-y-4">
+            <GpuMetrics {metrics} />
+
+            <!-- Allocation snapshot — modern, minimal segmented strip. -->
+            <Card
+              class="grid grid-cols-2 gap-px overflow-hidden bg-border/60 lg:grid-cols-4"
+            >
+              <div class="flex items-center gap-3 bg-card p-4">
+                <span class="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Server class="size-4" />
+                </span>
+                <div class="min-w-0">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Plan
+                  </div>
+                  <div class="truncate text-base font-semibold capitalize">{data.pod.plan}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 bg-card p-4">
+                <span class="flex size-9 items-center justify-center rounded-xl bg-info/10 text-info">
+                  <Cpu class="size-4" />
+                </span>
+                <div class="min-w-0">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    vCPU
+                  </div>
+                  <div class="truncate text-base font-semibold">{data.pod.cpu ?? '—'}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 bg-card p-4">
+                <span class="flex size-9 items-center justify-center rounded-xl bg-success/10 text-success">
+                  <MemoryStick class="size-4" />
+                </span>
+                <div class="min-w-0">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Memory
+                  </div>
+                  <div class="truncate text-base font-semibold">{data.pod.memory ?? '—'}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 bg-card p-4">
+                <span class="flex size-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                  <Clock class="size-4" />
+                </span>
+                <div class="min-w-0">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Uptime
+                  </div>
+                  <div class="truncate text-base font-semibold">{relTime(data.pod.created_at)}</div>
+                </div>
+              </div>
+            </Card>
+          </div>
         {:else}
           <Card class="border-dashed">
             <CardContent class="py-12 text-center text-sm text-muted-foreground">
@@ -350,83 +419,116 @@
       <!-- Details -->
       <Tabs.Content value="details" class="min-h-0 flex-1 overflow-y-auto">
         <div class="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardContent class="space-y-4 pt-6">
+          <!-- Specifications — edge-to-edge hairline grid -->
+          <Card class="overflow-hidden">
+            <div class="flex items-center gap-2.5 px-5 pb-4 pt-5">
+              <span
+                class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+              >
+                <Server class="size-4" />
+              </span>
               <h3 class="text-sm font-semibold">Specifications</h3>
-              <Separator />
-              <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <dt class="text-muted-foreground">Plan</dt>
-                <dd class="font-medium capitalize">{data.pod.plan}</dd>
-
-                <dt class="text-muted-foreground">Image</dt>
-                <dd class="font-mono text-xs">{data.pod.image}</dd>
-
-                <dt class="text-muted-foreground">Resources</dt>
-                <dd class="font-medium">
+            </div>
+            <dl class="grid grid-cols-2 gap-px border-t border-border/60 bg-border/60">
+              <div class="bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Layers class="size-3" /> Plan
+                </dt>
+                <dd class="mt-1 text-sm font-medium capitalize">{data.pod.plan}</dd>
+              </div>
+              <div class="bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Cpu class="size-3" /> Resources
+                </dt>
+                <dd class="mt-1 text-sm font-medium">
                   {data.pod.cpu ?? '—'} vCPU · {data.pod.memory ?? '—'}
                 </dd>
-
-                <dt class="text-muted-foreground">Namespace</dt>
-                <dd class="font-mono text-xs">{data.pod.namespace}</dd>
-
-                <dt class="text-muted-foreground">Node</dt>
-                <dd class="font-mono text-xs">{data.pod.node_name ?? '—'}</dd>
-
-                <dt class="text-muted-foreground">Created</dt>
-                <dd>{new Date(data.pod.created_at).toLocaleString()}</dd>
-              </dl>
-            </CardContent>
+              </div>
+              <div class="col-span-2 bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Box class="size-3" /> Image
+                </dt>
+                <dd class="mt-1 truncate font-mono text-xs">{data.pod.image}</dd>
+              </div>
+              <div class="bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Boxes class="size-3" /> Namespace
+                </dt>
+                <dd class="mt-1 font-mono text-xs">{data.pod.namespace}</dd>
+              </div>
+              <div class="bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <HardDrive class="size-3" /> Node
+                </dt>
+                <dd class="mt-1 font-mono text-xs">{data.pod.node_name ?? '—'}</dd>
+              </div>
+              <div class="col-span-2 bg-card px-5 py-3.5">
+                <dt class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Clock class="size-3" /> Created
+                </dt>
+                <dd class="mt-1 text-sm">{new Date(data.pod.created_at).toLocaleString()}</dd>
+              </div>
+            </dl>
           </Card>
 
-          <Card>
-            <CardContent class="space-y-4 pt-6">
+          <!-- Access — modern fields with inline actions -->
+          <Card class="overflow-hidden">
+            <div class="flex items-center gap-2.5 px-5 pb-4 pt-5">
+              <span
+                class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+              >
+                <KeyRound class="size-4" />
+              </span>
               <h3 class="text-sm font-semibold">Access</h3>
-              <Separator />
+            </div>
+            <div class="space-y-4 border-t border-border/60 px-5 py-5">
               {#if data.pod.state === 'running' && data.pod.ssh_port}
                 <div class="space-y-1.5">
-                  <div class="text-xs font-medium text-muted-foreground">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     SSH command
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div class="relative">
                     <code
-                      class="flex-1 select-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs"
+                      class="block w-full select-all overflow-x-auto whitespace-nowrap rounded-lg border border-border/60 bg-muted/50 py-2.5 pl-3 pr-11 font-mono text-xs"
                     >
                       ssh root@{data.nodeIp} -p {data.pod.ssh_port}
                     </code>
-                    <Tooltip content="Copy command">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onclick={() =>
-                          copyText(
-                            `ssh root@${data.nodeIp} -p ${data.pod!.ssh_port}`,
-                            'SSH command copied'
-                          )}
-                      >
-                        <Copy class="size-3.5" />
-                      </Button>
-                    </Tooltip>
+                    <button
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                      title="Copy command"
+                      aria-label="Copy SSH command"
+                      onclick={() =>
+                        copyText(
+                          `ssh root@${data.nodeIp} -p ${data.pod!.ssh_port}`,
+                          'SSH command copied'
+                        )}
+                    >
+                      <Copy class="size-3.5" />
+                    </button>
                   </div>
                 </div>
               {/if}
 
               {#if data.pod.ssh_password}
                 <div class="space-y-1.5">
-                  <div class="text-xs font-medium text-muted-foreground">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Root password
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div class="relative">
                     <code
-                      class="flex-1 select-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs tracking-widest"
+                      class="block w-full select-all overflow-x-auto whitespace-nowrap rounded-lg border border-border/60 bg-muted/50 py-2.5 pl-3 pr-[4.75rem] font-mono text-xs {showPassword
+                        ? ''
+                        : 'tracking-widest'}"
                     >
                       {showPassword
                         ? data.pod.ssh_password
                         : '•'.repeat(Math.min(20, data.pod.ssh_password.length))}
                     </code>
-                    <Tooltip content={showPassword ? 'Hide' : 'Reveal'}>
-                      <Button
-                        variant="outline"
-                        size="icon"
+                    <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                      <button
+                        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                        title={showPassword ? 'Hide' : 'Reveal'}
+                        aria-label={showPassword ? 'Hide password' : 'Reveal password'}
                         onclick={() => (showPassword = !showPassword)}
                       >
                         {#if showPassword}
@@ -434,25 +536,24 @@
                         {:else}
                           <Eye class="size-3.5" />
                         {/if}
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="Copy password">
-                      <Button
-                        variant="outline"
-                        size="icon"
+                      </button>
+                      <button
+                        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                        title="Copy password"
+                        aria-label="Copy password"
                         onclick={() =>
                           copyText(data.pod!.ssh_password ?? '', 'Password copied')}
                       >
                         <Copy class="size-3.5" />
-                      </Button>
-                    </Tooltip>
+                      </button>
+                    </div>
                   </div>
                 </div>
               {/if}
 
               {#if isRunning && data.pod.vscode_port}
                 <div class="space-y-1.5">
-                  <div class="text-xs font-medium text-muted-foreground">
+                  <div class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     Web tools
                   </div>
                   <div class="flex flex-wrap gap-2">
@@ -477,13 +578,18 @@
                 </div>
               {/if}
 
-              <div class="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-                For passwordless access, register a key in
-                <a href="/settings/ssh-keys" class="font-medium text-primary hover:underline">
-                  Settings → SSH Keys
-                </a>.
+              <div
+                class="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground"
+              >
+                <KeyRound class="mt-0.5 size-3.5 shrink-0 text-primary" />
+                <span>
+                  For passwordless access, register a key in
+                  <a href="/settings/ssh-keys" class="font-medium text-primary hover:underline">
+                    Settings → SSH Keys
+                  </a>.
+                </span>
               </div>
-            </CardContent>
+            </div>
           </Card>
         </div>
       </Tabs.Content>
@@ -518,7 +624,7 @@
       <Button variant="outline" onclick={() => (issueOpen = false)}>Cancel</Button>
       <Button onclick={submitIssue} disabled={issueSubmitting || issueText.trim().length < 5}>
         {#if issueSubmitting}
-          <Loader2 class="size-4 animate-spin" /> Sending…
+          <Spinner class="size-4" /> Sending…
         {:else}
           Send report
         {/if}

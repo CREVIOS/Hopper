@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { Chart as ChartType, ChartConfiguration } from 'chart.js';
   import type { CreditTransaction } from '$lib/types';
+  import { chartColor } from '$lib/utils';
 
   let {
     transactions,
@@ -42,6 +43,18 @@
     return buckets;
   }
 
+  // Soft vertical gradient on each bar — stronger at the top, fading down.
+  function barGradient(token: string) {
+    return (ctx: { chart: ChartType }) => {
+      const { ctx: c, chartArea } = ctx.chart;
+      if (!chartArea) return chartColor(token, 0.7);
+      const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+      g.addColorStop(0, chartColor(token, 0.9));
+      g.addColorStop(1, chartColor(token, 0.4));
+      return g;
+    };
+  }
+
   function buildConfig(): ChartConfiguration<'bar'> {
     const buckets = buildBuckets();
     return {
@@ -52,15 +65,21 @@
           {
             label: 'Spent',
             data: buckets.map((b) => b.debit),
-            backgroundColor: 'hsl(var(--destructive) / 0.7)',
+            backgroundColor: barGradient('destructive'),
+            hoverBackgroundColor: chartColor('destructive'),
             borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 18,
             stack: 's'
           },
           {
             label: 'Received',
             data: buckets.map((b) => b.credit),
-            backgroundColor: 'hsl(var(--success) / 0.7)',
+            backgroundColor: barGradient('success'),
+            hoverBackgroundColor: chartColor('success'),
             borderRadius: 6,
+            borderSkipped: false,
+            maxBarThickness: 18,
             stack: 's'
           }
         ]
@@ -68,20 +87,19 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 8 } },
+        animation: { duration: 600 },
         plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              color: 'hsl(var(--muted-foreground))',
-              boxWidth: 12
-            }
-          },
+          legend: { display: false },
           tooltip: {
-            backgroundColor: 'hsl(var(--popover))',
-            borderColor: 'hsl(var(--border))',
+            backgroundColor: chartColor('popover'),
+            borderColor: chartColor('border'),
             borderWidth: 1,
-            titleColor: 'hsl(var(--popover-foreground))',
-            bodyColor: 'hsl(var(--popover-foreground))',
+            padding: 10,
+            cornerRadius: 8,
+            usePointStyle: true,
+            titleColor: chartColor('popover-foreground'),
+            bodyColor: chartColor('popover-foreground'),
             callbacks: {
               label: (ctx) =>
                 `${ctx.dataset.label}: ${(+(ctx.parsed.y ?? 0)).toFixed(2)} cr`
@@ -91,28 +109,52 @@
         scales: {
           x: {
             grid: { display: false },
+            border: { display: false },
             ticks: {
-              color: 'hsl(var(--muted-foreground))',
+              color: chartColor('muted-foreground'),
+              font: { size: 11 },
               autoSkip: true,
-              maxRotation: 0
+              maxRotation: 0,
+              padding: 4
             }
           },
           y: {
             beginAtZero: true,
+            border: { display: false },
             ticks: {
-              color: 'hsl(var(--muted-foreground))',
+              color: chartColor('muted-foreground'),
+              font: { size: 11 },
+              maxTicksLimit: 4,
+              padding: 6,
               callback: (v) => `${(+v).toFixed(0)}`
             },
-            grid: { color: 'hsl(var(--border) / 0.5)' }
+            grid: {
+              color: chartColor('border', 0.4),
+              lineWidth: 1
+            }
           }
         }
       }
     };
   }
 
+  function applyConfig() {
+    if (!chart) return;
+    const cfg = buildConfig();
+    chart.data = cfg.data;
+    chart.options = cfg.options ?? {};
+    chart.update('none');
+  }
+
   onMount(() => {
     let cancelled = false;
     let local: ChartType | null = null;
+    // Rebuild on light/dark toggle so resolved canvas colors stay in sync.
+    const observer = new MutationObserver(() => applyConfig());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    });
     (async () => {
       const { Chart, registerables } = await import('chart.js');
       Chart.register(...registerables);
@@ -124,20 +166,19 @@
     })();
     return () => {
       cancelled = true;
+      observer.disconnect();
       local?.destroy();
       chart = null;
     };
   });
 
   $effect(() => {
-    if (!chart) return;
-    const cfg = buildConfig();
-    chart.data = cfg.data;
-    chart.options = cfg.options ?? {};
-    chart.update('none');
+    transactions;
+    days;
+    applyConfig();
   });
 </script>
 
-<div class="h-56 w-full">
+<div class="h-44 w-full sm:h-48">
   <canvas bind:this={canvas}></canvas>
 </div>

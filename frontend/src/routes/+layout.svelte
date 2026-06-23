@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
   import type { User } from '$lib/types';
   import { ModeWatcher } from 'mode-watcher';
@@ -7,6 +8,7 @@
   import { page } from '$app/state';
   import { Toaster, Button } from '$lib/ui';
   import Sidebar from '$lib/components/Sidebar.svelte';
+  import HopperLogo from '$lib/brand/HopperLogo.svelte';
   import UserMenu from '$lib/components/UserMenu.svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
@@ -21,6 +23,31 @@
   } = $props();
 
   let mobileOpen = $state(false);
+
+  // Desktop sidebar collapse — persisted so it survives reloads.
+  let collapsed = $state(false);
+  const COLLAPSE_KEY = 'hopper:sidebar-collapsed';
+
+  onMount(() => {
+    collapsed = localStorage.getItem(COLLAPSE_KEY) === '1';
+
+    // Keepalive: the access token (session_token cookie) lives ~5 min. Long-lived
+    // pages with no navigation — chiefly the pod terminal's WebSocket — would
+    // otherwise let it expire, so a transient WS drop reconnects with a dead
+    // cookie (close 1008) and never recovers. Refresh it well before expiry so
+    // the cookie stays valid for reconnects and client /api calls alike.
+    if (!data.isAuthenticated) return;
+    const refreshTimer = setInterval(() => {
+      fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    }, 4 * 60 * 1000);
+    return () => clearInterval(refreshTimer);
+  });
+
+  $effect(() => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+    }
+  });
 
   // Close the mobile sidebar on navigation.
   $effect(() => {
@@ -44,9 +71,17 @@
   <!-- Authenticated layout: sidebar + topbar -->
   <div class="flex min-h-screen bg-background text-foreground">
     <!-- Desktop sidebar -->
-    <div class="hidden w-64 shrink-0 lg:block">
-      <div class="fixed inset-y-0 w-64">
-        <Sidebar user={data.user} />
+    <div
+      class={`hidden shrink-0 transition-[width] duration-200 ease-out lg:block ${collapsed ? 'w-16' : 'w-64'}`}
+    >
+      <div
+        class={`fixed inset-y-0 transition-[width] duration-200 ease-out ${collapsed ? 'w-16' : 'w-64'}`}
+      >
+        <Sidebar
+          user={data.user}
+          {collapsed}
+          onToggleCollapse={() => (collapsed = !collapsed)}
+        />
       </div>
     </div>
 
@@ -65,7 +100,7 @@
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- Topbar -->
       <header
-        class="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md sm:px-6"
+        class="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-sidebar-border bg-sidebar px-4 sm:px-6"
       >
         <div class="flex items-center gap-3">
           <Button
@@ -81,9 +116,10 @@
               <Menu class="size-4" />
             {/if}
           </Button>
-          <div class="text-sm font-medium text-muted-foreground">
-            <a href="/dashboard" class="lg:hidden font-bold text-foreground">Hopper</a>
-          </div>
+          <a href="/dashboard" class="flex items-center gap-2 lg:hidden">
+            <HopperLogo size={24} />
+            <span class="font-bold text-foreground">Hopper</span>
+          </a>
         </div>
         <div class="flex items-center gap-2 sm:gap-3">
           {#if typeof data.balance === 'number'}

@@ -5,14 +5,16 @@
     File as FileIcon,
     Folder,
     FolderOpen,
-    Loader2,
     Trash2,
     ChevronRight,
     RefreshCw,
-    Home as HomeIcon
+    Home as HomeIcon,
+    AlertCircle,
+    CornerLeftUp
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import { toast } from 'svelte-sonner';
-  import { Button, Card, CardContent, Input, Label, Separator } from '$lib/ui';
+  import { Button, Card, Input, Label } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
   import { formatBytes, relTime } from '$lib/utils';
 
@@ -193,133 +195,143 @@
 </script>
 
 <!-- Directory browser — gives users concrete paths to click instead of guessing. -->
-<Card class="mb-4">
-  <CardContent class="space-y-3 pt-6">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="flex items-center gap-2 text-sm font-semibold">
-        <FolderOpen class="size-4 text-primary" /> VM file browser
-      </h3>
-      <div class="flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          onclick={() => loadDir(HOME)}
-          disabled={!podRunning || listing}
-        >
-          <HomeIcon class="size-3.5" /> Home
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onclick={() => loadDir(cwd)}
-          disabled={!podRunning || listing}
-        >
-          <RefreshCw class="size-3.5 {listing ? 'animate-spin' : ''}" /> Refresh
-        </Button>
+<Card class="mb-4 overflow-hidden">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-2 px-5 pb-3 pt-5">
+    <h3 class="flex items-center gap-2.5 text-sm font-semibold">
+      <span
+        class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary"
+      >
+        <FolderOpen class="size-4" />
+      </span>
+      VM file browser
+    </h3>
+    <div class="flex items-center gap-1.5">
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => loadDir(HOME)}
+        disabled={!podRunning || listing}
+      >
+        <HomeIcon class="size-3.5" /> Home
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => loadDir(cwd)}
+        disabled={!podRunning || listing}
+      >
+        <RefreshCw class="size-3.5 {listing ? 'animate-spin' : ''}" /> Refresh
+      </Button>
+    </div>
+  </div>
+
+  <!-- Breadcrumb toolbar -->
+  <nav
+    class="flex flex-wrap items-center gap-0.5 border-y border-border/60 bg-muted/30 px-4 py-2 font-mono text-xs"
+  >
+    {#each breadcrumbs as crumb, i (crumb.path)}
+      {#if i > 0}
+        <ChevronRight class="size-3 text-muted-foreground/60" />
+      {/if}
+      <button
+        class="rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:font-semibold disabled:text-foreground"
+        onclick={() => loadDir(crumb.path)}
+        disabled={crumb.path === cwd}
+        aria-label={i === 0 ? 'Root' : crumb.label}
+      >
+        {#if i === 0}
+          <HomeIcon class="-mt-0.5 inline size-3" />
+        {:else}
+          {crumb.label}
+        {/if}
+      </button>
+    {/each}
+  </nav>
+
+  {#if !podRunning}
+    <p class="px-5 py-12 text-center text-sm text-muted-foreground">
+      Start the VM to browse its files.
+    </p>
+  {:else if listError}
+    <div class="px-5 py-4">
+      <div
+        class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+      >
+        <AlertCircle class="mt-0.5 size-4 shrink-0" />
+        <span>{listError}</span>
       </div>
     </div>
-
-    <!-- Breadcrumb -->
-    <nav
-      class="flex flex-wrap items-center gap-0.5 rounded-md border border-border bg-muted/30 px-2 py-1.5 font-mono text-xs"
-    >
-      {#each breadcrumbs as crumb, i (crumb.path)}
-        {#if i > 0}
-          <ChevronRight class="size-3 text-muted-foreground" />
-        {/if}
-        <button
-          class="rounded px-1 py-0.5 hover:bg-accent disabled:cursor-default"
-          onclick={() => loadDir(crumb.path)}
-          disabled={crumb.path === cwd}
-        >
-          {crumb.label}
-        </button>
-      {/each}
-    </nav>
-
-    {#if !podRunning}
-      <p class="py-6 text-center text-sm text-muted-foreground">
-        Start the VM to browse its files.
-      </p>
-    {:else if listError}
-      <div
-        class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-      >
-        {listError}
-      </div>
-    {:else if listing && entries.length === 0}
-      <div class="py-6 text-center text-sm text-muted-foreground">Loading…</div>
-    {:else}
-      <ul class="divide-y divide-border rounded-md border border-border">
+  {:else if listing && entries.length === 0}
+    <p class="px-5 py-12 text-center text-sm text-muted-foreground">Loading…</p>
+  {:else}
+    <!-- Scrollable list — capped so heavy directories can't grow the card unbounded. -->
+    <div class="max-h-[20rem] overflow-y-auto">
+      <ul class="divide-y divide-border/60">
         {#if cwd !== '/'}
           <li>
             <button
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent"
+              class="flex w-full items-center gap-2.5 px-5 py-2 text-left text-sm transition-colors hover:bg-muted/50"
               onclick={navigateUp}
             >
-              <ChevronRight class="size-4 -rotate-90 text-muted-foreground" />
+              <CornerLeftUp class="size-4 text-muted-foreground" />
               <span class="font-mono">..</span>
               <span class="text-xs text-muted-foreground">Up one level</span>
             </button>
           </li>
         {/if}
         {#each entries as entry (entry.name)}
-          <li class="flex items-center gap-2 px-3 py-1.5">
+          <li class="group flex items-center gap-2.5 px-5 py-2 transition-colors hover:bg-muted/50">
             <button
-              class="flex flex-1 items-center gap-2 text-left text-sm hover:text-primary"
+              class="flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm"
               onclick={() => (entry.is_dir ? navigate(entry.name) : pickForDownload(entry))}
               title={entry.is_dir ? `Open ${entry.name}` : `Select ${entry.name} for download`}
             >
               {#if entry.is_dir}
-                <Folder class="size-4 text-primary" />
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Folder class="size-3.5" />
+                </span>
               {:else}
-                <FileIcon class="size-4 text-muted-foreground" />
+                <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <FileIcon class="size-3.5" />
+                </span>
               {/if}
-              <span class="truncate font-mono">{entry.name}</span>
-              {#if entry.is_dir}
-                <span class="text-xs text-muted-foreground">/</span>
-              {/if}
+              <span class="truncate font-mono transition-colors group-hover:text-primary">
+                {entry.name}{entry.is_dir ? '/' : ''}
+              </span>
             </button>
-            <span class="hidden text-right font-mono text-xs text-muted-foreground sm:inline">
+            <span class="shrink-0 font-mono text-xs text-muted-foreground">
               {entry.is_dir ? '' : formatBytes(entry.size)}
             </span>
           </li>
         {:else}
-          <li class="px-3 py-6 text-center text-xs text-muted-foreground">
+          <li class="px-5 py-12 text-center text-xs text-muted-foreground">
             Empty directory.
           </li>
         {/each}
       </ul>
-      <p class="text-xs text-muted-foreground">
-        Click a folder to open it, a file to select it for download. Uploads go to the
-        current path.
-      </p>
-    {/if}
-  </CardContent>
+    </div>
+    <div class="border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
+      Click a folder to open it, a file to select it for download. Uploads go to the current path.
+    </div>
+  {/if}
 </Card>
 
 <div class="grid gap-4 lg:grid-cols-2">
   <!-- Upload -->
-  <Card>
-    <CardContent class="space-y-4 pt-6">
+  <Card class="overflow-hidden">
+    <div class="flex items-center gap-2.5 px-5 pb-3 pt-5">
+      <span class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Upload class="size-4" />
+      </span>
       <div>
-        <h3 class="flex items-center gap-2 text-sm font-semibold">
-          <Upload class="size-4 text-primary" /> Upload to VM
-        </h3>
-        <p class="mt-1 text-xs text-muted-foreground">
-          Files are pushed via SCP using the VM's SSH credentials. Uploads default
-          to <code class="rounded bg-muted px-1 py-0.5 font-mono">/root</code> (the
-          SSH home directory), or pick another directory with the browser above.
-          <span class="font-medium text-foreground">
-            All paths inside the VM are ephemeral in this build — they're wiped
-            when the VM terminates.
-          </span>
-          Persistent <code class="rounded bg-muted px-1 py-0.5 font-mono">/workspace</code>
-          across sessions is on the roadmap (SRS FR-HC-28).
-        </p>
+        <h3 class="text-sm font-semibold">Upload to VM</h3>
+        <p class="text-xs text-muted-foreground">Pushed over SCP to the destination below.</p>
       </div>
+    </div>
 
-      <div>
+    <div class="space-y-4 border-t border-border/60 px-5 py-5">
+      <div class="space-y-1.5">
         <Label for="dest-path">Destination directory</Label>
         <Input
           id="dest-path"
@@ -330,9 +342,9 @@
           aria-describedby={destErr ? 'dest-err' : undefined}
         />
         {#if destErr}
-          <p id="dest-err" class="mt-1 text-xs text-destructive">{destErr}</p>
+          <p id="dest-err" class="text-xs text-destructive">{destErr}</p>
         {:else}
-          <p class="mt-1 text-xs text-muted-foreground">
+          <p class="text-xs text-muted-foreground">
             Existing directory inside the VM, e.g. <code class="font-mono">/root</code>
             or <code class="font-mono">/workspace</code>.
           </p>
@@ -340,7 +352,7 @@
       </div>
 
       <label
-        class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors {dragOver
+        class="group flex cursor-pointer flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed p-7 text-center transition-all {dragOver
           ? 'border-primary bg-primary/5'
           : 'border-border hover:border-primary/50 hover:bg-muted/30'}"
         ondragover={(e) => {
@@ -351,13 +363,19 @@
         ondrop={handleDrop}
       >
         {#if uploading}
-          <Loader2 class="size-6 animate-spin text-primary" />
-          <span class="text-sm text-muted-foreground">Uploading…</span>
+          <span class="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Spinner class="size-5" />
+          </span>
+          <span class="text-sm font-medium text-muted-foreground">Uploading…</span>
         {:else}
-          <FolderOpen class="size-6 text-muted-foreground" />
-          <span class="text-sm font-medium">Drop a file or click to browse</span>
+          <span class="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform group-hover:scale-105">
+            <Upload class="size-5" />
+          </span>
+          <span class="text-sm font-medium">
+            Drop a file or <span class="text-primary">click to browse</span>
+          </span>
           <span class="text-xs text-muted-foreground">
-            Single file uploads. Max upload size depends on your gateway config.
+            Single file. Max size depends on your gateway config.
           </span>
         {/if}
         <input
@@ -367,22 +385,34 @@
           onchange={handleFileInput}
         />
       </label>
-    </CardContent>
+
+      <div
+        class="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-xs text-muted-foreground"
+      >
+        <AlertCircle class="mt-0.5 size-3.5 shrink-0 text-warning" />
+        <span>
+          Paths inside the VM are <span class="font-medium text-foreground">ephemeral</span> —
+          wiped when the VM terminates. Persistent
+          <code class="rounded bg-muted px-1 py-0.5 font-mono">/workspace</code> is on the roadmap.
+        </span>
+      </div>
+    </div>
   </Card>
 
   <!-- Download -->
-  <Card>
-    <CardContent class="space-y-4 pt-6">
+  <Card class="overflow-hidden">
+    <div class="flex items-center gap-2.5 px-5 pb-3 pt-5">
+      <span class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Download class="size-4" />
+      </span>
       <div>
-        <h3 class="flex items-center gap-2 text-sm font-semibold">
-          <Download class="size-4 text-primary" /> Download from VM
-        </h3>
-        <p class="mt-1 text-xs text-muted-foreground">
-          Click a file in the browser above to pre-fill the path, or paste an absolute
-          path (e.g. <code class="font-mono">/root/output.txt</code>).
-        </p>
+        <h3 class="text-sm font-semibold">Download from VM</h3>
+        <p class="text-xs text-muted-foreground">Pick a file above, or paste an absolute path.</p>
       </div>
-      <div>
+    </div>
+
+    <div class="space-y-4 border-t border-border/60 px-5 py-5">
+      <div class="space-y-1.5">
         <Label for="dl-path">File path</Label>
         <Input
           id="dl-path"
@@ -393,7 +423,7 @@
           aria-describedby={dlErr ? 'dl-err' : undefined}
         />
         {#if dlErr}
-          <p id="dl-err" class="mt-1 text-xs text-destructive">{dlErr}</p>
+          <p id="dl-err" class="text-xs text-destructive">{dlErr}</p>
         {/if}
       </div>
       <Button
@@ -402,32 +432,41 @@
         class="w-full"
       >
         {#if downloading}
-          <Loader2 class="size-4 animate-spin" /> Downloading…
+          <Spinner class="size-4" /> Downloading…
         {:else}
           <Download class="size-4" /> Download
         {/if}
       </Button>
-    </CardContent>
+    </div>
   </Card>
 </div>
 
 {#if recent.length > 0}
-  <Card class="mt-4">
-    <CardContent class="pt-6">
-      <h3 class="mb-3 text-sm font-semibold">Recent uploads (this session)</h3>
-      <Separator />
-      <ul class="divide-y divide-border">
+  <Card class="mt-4 overflow-hidden">
+    <div class="flex items-center gap-2.5 px-5 pb-3 pt-5">
+      <span class="flex size-8 items-center justify-center rounded-lg bg-success/10 text-success">
+        <Upload class="size-4" />
+      </span>
+      <h3 class="text-sm font-semibold">Recent uploads</h3>
+      <span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        this session
+      </span>
+    </div>
+    <div class="max-h-[16rem] overflow-y-auto border-t border-border/60">
+      <ul class="divide-y divide-border/60">
         {#each recent as item (item.at.toISOString() + item.name)}
-          <li class="flex items-center gap-3 py-3">
-            <FileIcon class="size-4 text-muted-foreground" />
+          <li class="group flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted/40">
+            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <FileIcon class="size-4" />
+            </span>
             <div class="min-w-0 flex-1">
               <div class="truncate font-mono text-sm">{item.name}</div>
-              <div class="text-xs text-muted-foreground">
+              <div class="truncate text-xs text-muted-foreground">
                 {formatBytes(item.size)} · {item.dest} · {relTime(item.at)}
               </div>
             </div>
             <button
-              class="rounded-md p-1 text-muted-foreground hover:bg-accent"
+              class="rounded-md p-1.5 text-muted-foreground opacity-60 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
               onclick={() => clearRecent(item)}
               aria-label="Remove from list"
             >
@@ -436,6 +475,6 @@
           </li>
         {/each}
       </ul>
-    </CardContent>
+    </div>
   </Card>
 {/if}

@@ -34,3 +34,18 @@ export function copyToClipboard(text: string): Promise<void> {
   if (navigator?.clipboard?.writeText) return navigator.clipboard.writeText(text);
   return Promise.reject(new Error('Clipboard not available'));
 }
+
+/**
+ * Resolve a CSS design token (e.g. "primary", "border") to a concrete
+ * `hsl(...)` string. Chart.js renders to <canvas>, which cannot read CSS
+ * custom properties — so we read the computed value at runtime instead.
+ * Re-reads on every call so charts pick up the active light/dark theme.
+ */
+export function chartColor(token: string, alpha = 1): string {
+  if (typeof window === 'undefined') return 'hsl(0 0% 50%)';
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--${token}`)
+    .trim();
+  if (!raw) return 'hsl(0 0% 50%)';
+  return alpha === 1 ? `hsl(${raw})` : `hsl(${raw} / ${alpha})`;
+}
