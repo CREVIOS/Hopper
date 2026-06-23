@@ -1,16 +1,21 @@
 <script lang="ts">
   import {
-    Sparkles,
     Server,
     Cpu,
     KeyRound,
     Github,
     ShieldCheck,
     ArrowRight,
-    AlertCircle
+    AlertCircle,
+    TerminalSquare,
+    Coins,
+    Layers,
+    Check
   } from 'lucide-svelte';
   import { page } from '$app/state';
-  import { Button, Card, CardContent } from '$lib/ui';
+  import { dev } from '$app/environment';
+  import { Button } from '$lib/ui';
+  import HopperLogo from '$lib/brand/HopperLogo.svelte';
 
   let signing = $state(false);
 
@@ -38,7 +43,7 @@
     {
       icon: Server,
       title: 'Spin up VMs in seconds',
-      desc: 'Pre-built images for ML, C++, Java and bare Ubuntu — one click.'
+      desc: 'Pre-built images for ML, C++, Java and bare Ubuntu, one click.'
     },
     {
       icon: Cpu,
@@ -51,148 +56,180 @@
       desc: 'Forward keys, connect via SSH, or open VS Code right here.'
     }
   ];
+
+  // Small modest accent colors for the "what you'll get" chips — purely visual.
+  const perks = [
+    { icon: TerminalSquare, label: 'Browser terminal + VS Code', tint: 'text-primary bg-primary/10' },
+    { icon: Coins, label: 'Per-minute credit billing', tint: 'text-success bg-success/10' },
+    { icon: Layers, label: 'Up to 3 concurrent VMs', tint: 'text-info bg-info/10' }
+  ];
 </script>
 
-<div class="grid min-h-screen bg-background lg:grid-cols-2">
-  <!-- Brand panel -->
-  <div
-    class="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary via-primary to-info p-10 text-primary-foreground lg:flex"
-  >
-    <!-- decorative blobs -->
+<div class="grid min-h-[100dvh] bg-background lg:grid-cols-[1.1fr_1fr]">
+  <!-- Brand panel: a fixed deep-indigo surface in both themes (split-login
+       convention), textured with a faint dot grid instead of floating blobs. -->
+  <aside class="brand-panel relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-12">
+    <div class="dot-grid pointer-events-none absolute inset-0 opacity-[0.4]"></div>
     <div
-      class="pointer-events-none absolute -top-40 -left-32 size-[28rem] rounded-full bg-white/15 blur-3xl"
+      class="pointer-events-none absolute inset-0"
+      style="background:radial-gradient(80% 60% at 12% 8%, hsl(252 90% 70% / 0.20), transparent 60%);"
     ></div>
-    <div
-      class="pointer-events-none absolute -bottom-32 -right-32 size-[26rem] rounded-full bg-info/40 blur-3xl"
-    ></div>
-    <div
-      class="pointer-events-none absolute inset-0 opacity-[0.07]"
-      style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 24px 24px;"
-    ></div>
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/40 to-transparent"></div>
 
-    <div class="relative">
-      <div class="flex items-center gap-2.5">
-        <div class="flex size-9 items-center justify-center rounded-xl bg-white/20 backdrop-blur">
-          <Sparkles class="size-5" />
-        </div>
-        <span class="text-xl font-bold tracking-tight">Hopper</span>
-      </div>
+    <!-- Wordmark lockup — the animated Hopper mark. -->
+    <div class="animate-fade-up relative flex items-center gap-3">
+      <HopperLogo size={40} idle />
+      <span class="text-lg font-semibold tracking-tight">Hopper</span>
     </div>
 
-    <div class="relative max-w-md space-y-6">
-      <h1 class="text-4xl font-bold leading-tight tracking-tight">
-        University compute, <br />
-        <span class="text-white/85">on demand.</span>
+    <div class="relative max-w-lg">
+      <p
+        class="animate-fade-up mb-5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-white/45"
+        style="animation-delay: 40ms"
+      >
+        Self-hosted, built for campus
+      </p>
+      <h1
+        class="animate-fade-up text-[2.75rem] font-bold leading-[1.05] tracking-tight xl:text-6xl"
+        style="animation-delay: 80ms; text-wrap: balance"
+      >
+        University compute,
+        <span class="text-white/55">on demand.</span>
       </h1>
-      <p class="text-lg text-white/80">
-        A self-hosted VM cloud for students and researchers — slice bare-metal
-        compute into isolated containers, billed per minute.
+      <p
+        class="animate-fade-up mt-5 max-w-md text-[15px] leading-relaxed text-white/65"
+        style="animation-delay: 120ms"
+      >
+        A self-hosted VM cloud for students and researchers. Slice bare-metal
+        compute into isolated containers, billed by the minute.
       </p>
 
-      <ul class="mt-6 space-y-4">
-        {#each features as f}
-          <li class="flex gap-3">
-            <div
-              class="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15 backdrop-blur"
-            >
-              <f.icon class="size-4" />
-            </div>
-            <div>
-              <div class="font-semibold">{f.title}</div>
-              <div class="text-sm text-white/75">{f.desc}</div>
+      <ul class="mt-10 divide-y divide-white/10 border-y border-white/10">
+        {#each features as f, i}
+          <li
+            class="feature-row animate-fade-up flex items-start gap-4 py-4 transition-colors hover:bg-white/[0.04]"
+            style="animation-delay: {160 + i * 70}ms"
+          >
+            <span class="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.06] ring-1 ring-inset ring-white/10">
+              <f.icon class="size-[1.05rem]" strokeWidth={1.75} />
+            </span>
+            <div class="min-w-0">
+              <div class="font-medium leading-tight">{f.title}</div>
+              <div class="mt-1 text-sm leading-snug text-white/55">{f.desc}</div>
             </div>
           </li>
         {/each}
       </ul>
     </div>
 
-    <div class="relative flex items-center gap-2 text-xs text-white/70">
-      <ShieldCheck class="size-4" />
-      <span>Secured by Keycloak OIDC · K8s + NATS · Open source</span>
+    <div
+      class="animate-fade-up relative flex items-center gap-2 text-xs text-white/45"
+      style="animation-delay: 420ms"
+    >
+      <ShieldCheck class="size-4" strokeWidth={1.75} />
+      <span>Secured by Keycloak OIDC. Open source, K8s + NATS.</span>
     </div>
-  </div>
+  </aside>
 
   <!-- Sign-in panel -->
-  <div class="flex items-center justify-center px-6 py-12 sm:px-10">
-    <div class="w-full max-w-sm space-y-8">
-      <div class="space-y-2 text-center lg:text-left">
-        <div
-          class="mx-auto flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-primary-foreground shadow-lg lg:mx-0"
-        >
-          <Sparkles class="size-5" />
-        </div>
-        <h2 class="text-2xl font-bold tracking-tight">Welcome back</h2>
-        <p class="text-sm text-muted-foreground">
+  <main class="relative flex items-center justify-center px-6 py-10 sm:px-10">
+    <div class="relative w-full max-w-sm">
+      <div class="animate-fade-up mb-8 text-center lg:text-left">
+        <h2 class="text-[1.7rem] font-bold leading-tight tracking-tight">Welcome back</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
           Sign in with your university account to continue.
         </p>
       </div>
 
       {#if errorMessage}
-        <div class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+        <div
+          class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+        >
           <AlertCircle class="mt-0.5 size-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       {/if}
 
-      <Card class="overflow-hidden border-border/60">
-        <CardContent class="p-6 pt-6">
-          <Button
-            onclick={handleLogin}
-            disabled={signing}
-            size="lg"
-            class="w-full justify-between"
+      <Button
+        onclick={handleLogin}
+        disabled={signing}
+        size="lg"
+        class="group animate-fade-up h-12 w-full justify-between text-[15px] shadow-sm"
+        style="animation-delay: 60ms"
+      >
+        <span class="flex items-center gap-2.5">
+          <ShieldCheck class="size-4" />
+          {signing ? 'Redirecting…' : 'Continue with University SSO'}
+        </span>
+        <ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />
+      </Button>
+
+      {#if dev}
+        <!-- Dev-only: the real SSO flow can't complete on localhost (backend
+             returns the Keycloak callback to the deployed host). These mint a
+             token directly and set the session cookies. Never ship — the
+             /dev-login endpoint 404s outside `vite dev`. -->
+        <div class="animate-fade-up mt-2.5 grid grid-cols-2 gap-2.5" style="animation-delay: 90ms">
+          <a
+            href="/dev-login?as=admin"
+            data-sveltekit-reload
+            class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
           >
-            <span class="flex items-center gap-2">
-              <ShieldCheck class="size-4" />
-              {signing ? 'Redirecting…' : 'Continue with University SSO'}
-            </span>
-            <ArrowRight class="size-4" />
-          </Button>
+            <KeyRound class="size-4" /> Dev: admin
+          </a>
+          <a
+            href="/dev-login?as=user"
+            data-sveltekit-reload
+            class="flex items-center justify-center gap-2 rounded-md border border-dashed border-warning/50 bg-warning/5 px-3 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning/10"
+          >
+            <KeyRound class="size-4" /> Dev: user
+          </a>
+        </div>
+      {/if}
 
-          <div class="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-            <div class="h-px flex-1 bg-border"></div>
-            <span>What you'll get</span>
-            <div class="h-px flex-1 bg-border"></div>
-          </div>
-
-          <ul class="space-y-2 text-sm text-muted-foreground">
-            <li class="flex items-center gap-2">
-              <span class="size-1.5 rounded-full bg-success"></span>
-              Browser terminal + VS Code
+      <!-- What you'll get -->
+      <div class="animate-fade-up mt-8" style="animation-delay: 130ms">
+        <p class="mb-3 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          What you'll get
+        </p>
+        <ul class="space-y-px">
+          {#each perks as p}
+            <li class="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50">
+              <span class="grid size-7 shrink-0 place-items-center rounded-md {p.tint}">
+                <p.icon class="size-4" strokeWidth={1.75} />
+              </span>
+              <span class="min-w-0 text-sm font-medium text-foreground">{p.label}</span>
+              <Check class="ml-auto size-4 shrink-0 text-success/70" />
             </li>
-            <li class="flex items-center gap-2">
-              <span class="size-1.5 rounded-full bg-success"></span>
-              Per-minute credit billing
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="size-1.5 rounded-full bg-success"></span>
-              Up to 3 concurrent VMs
-            </li>
-          </ul>
-        </CardContent>
-      </Card>
+          {/each}
+        </ul>
+      </div>
 
       <div
-        class="rounded-md border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground"
+        class="animate-fade-up mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground"
+        style="animation-delay: 170ms"
       >
-        <p class="font-medium text-foreground">No sign-up form here — by design.</p>
-        <p class="mt-1">
+        <p class="font-medium text-foreground">No sign-up form here, by design.</p>
+        <p class="mt-1.5">
           Accounts are provisioned automatically through your university's single
           sign-on. There's nothing to register, and there is no password for Hopper
-          to forget — if you can't log in, reset your <em>university</em> password
+          to forget. If you can't log in, reset your <em>university</em> password
           through your institution's IdP, then come back and click
           <span class="font-medium text-foreground">Continue with University SSO</span>.
         </p>
         <p class="mt-2">
           New student and not in the system yet? Email
-          <a class="font-medium text-foreground underline" href="mailto:hopper-admin@cs.du.ac.bd">
+          <a class="font-medium text-foreground underline underline-offset-2" href="mailto:hopper-admin@cs.du.ac.bd">
             hopper-admin@cs.du.ac.bd
           </a>
           to be added.
         </p>
       </div>
 
-      <p class="text-center text-xs text-muted-foreground">
+      <p
+        class="animate-fade-up mt-5 text-center text-xs text-muted-foreground lg:text-left"
+        style="animation-delay: 210ms"
+      >
         Trouble signing in?
         <a
           href="https://github.com/anthropics/hopper"
@@ -204,5 +241,29 @@
         </a>
       </p>
     </div>
-  </div>
+  </main>
 </div>
+
+<style>
+  /* Fixed deep-indigo brand surface, consistent across light & dark themes. */
+  .brand-panel {
+    background:
+      linear-gradient(160deg, hsl(250 47% 10%) 0%, hsl(255 48% 13%) 55%, hsl(258 50% 16%) 100%);
+  }
+  /* Faint dot grid — sits still, no GPU-thrashing drift. */
+  .dot-grid {
+    background-image: radial-gradient(hsl(0 0% 100% / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .feature-row:hover :global(svg) {
+    transform: scale(1.06);
+  }
+  .feature-row :global(svg) {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .feature-row:hover :global(svg) {
+      transform: none;
+    }
+  }
+</style>

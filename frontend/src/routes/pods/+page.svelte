@@ -37,14 +37,25 @@
     Badge,
     Separator,
     Tabs,
+    Pagination,
     DropdownMenu,
     Dialog
   } from '$lib/ui';
   import PodCard from '$lib/components/PodCard.svelte';
+  import PageTitle from '$lib/components/PageTitle.svelte';
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
   let { data }: { data: { pods: Pod[]; nodeIp: string; balance: number } } = $props();
+
+  // Modest, vibrant per-image accent — visual only, used on the small icon tile.
+  // Kept as static class strings so Tailwind's JIT can detect them.
+  const templateAccent: Record<string, string> = {
+    orange: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
+    yellow: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    blue: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+    red: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+  };
 
   let selectedPlan = $state<VmPlan>('small');
   let selectedTemplate = $state<VmTemplate>('ubuntu');
@@ -53,6 +64,16 @@
   // List filters
   let query = $state('');
   let stateFilter = $state<'all' | 'active' | 'past'>('active');
+
+  const PER_PAGE = 12;
+  let page = $state(1);
+
+  // Reset to the first page whenever the filtered set changes.
+  $effect(() => {
+    query;
+    stateFilter;
+    page = 1;
+  });
 
   let sshDialogOpen = $state(false);
   let sshDialogPod = $state<Pod | null>(null);
@@ -82,6 +103,10 @@
     }
     return list;
   });
+
+  const pagedPods = $derived(
+    filteredPods.slice((page - 1) * PER_PAGE, page * PER_PAGE)
+  );
 
   const counts = $derived({
     active: data.pods.filter((p) =>
@@ -173,20 +198,23 @@
   }
 </script>
 
-<div class="space-y-8">
+<div class="space-y-6">
   <!-- Header -->
-  <div class="flex flex-col gap-1">
-    <h1 class="text-3xl font-bold tracking-tight">Virtual Machines</h1>
-    <p class="text-sm text-muted-foreground">
-      Launch new VMs and manage your existing instances.
-    </p>
-  </div>
+  <PageTitle
+    title="Virtual Machines"
+    description="Launch new VMs and manage your existing instances."
+  />
 
   <!-- Launch panel -->
-  <Card>
+  <Card class="animate-fade-up surface-glow overflow-hidden">
     <CardHeader>
       <CardTitle class="flex items-center gap-2">
-        <Plus class="size-4 text-primary" /> Launch a new VM
+        <span
+          class="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-info text-primary-foreground shadow-sm"
+        >
+          <Plus class="size-4" />
+        </span>
+        Launch a new VM
       </CardTitle>
       <CardDescription>
         Pick a resource plan and a base image. Billing is per minute, charged
@@ -203,54 +231,57 @@
             <button
               type="button"
               class={cn(
-                'group relative rounded-xl border p-4 text-left transition-all',
+                'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all',
                 'hover:border-primary/50 hover:shadow-sm',
                 selectedPlan === plan
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                  ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
               onclick={() => (selectedPlan = plan as VmPlan)}
             >
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="text-base font-semibold capitalize">{plan}</div>
-                  <div class="mt-0.5 text-xs text-muted-foreground">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold capitalize">{plan}</div>
+                  <p class="mt-0.5 text-xs leading-snug text-muted-foreground">
                     {info.description}
-                  </div>
+                  </p>
                 </div>
                 <div
                   class={cn(
-                    'flex size-5 items-center justify-center rounded-full border transition-colors',
+                    'flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
                     selectedPlan === plan
                       ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border bg-card'
+                      : 'border-border bg-card group-hover:border-primary/40'
                   )}
                 >
                   {#if selectedPlan === plan}<Check class="size-3" />{/if}
                 </div>
               </div>
-              <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <Cpu class="size-3" /> CPU
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.cpu}</div>
-                </div>
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <MemoryStick class="size-3" /> RAM
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.memory}</div>
-                </div>
-                <div class="rounded-md bg-muted/50 p-2">
-                  <div class="flex items-center gap-1 text-muted-foreground">
-                    <HardDrive class="size-3" /> Disk
-                  </div>
-                  <div class="mt-0.5 font-mono font-semibold">{info.disk}</div>
-                </div>
+
+              <div
+                class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-medium"
+              >
+                <span class="inline-flex items-center gap-1.5">
+                  <Cpu class="size-3.5 text-primary" />
+                  {info.cpu}
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <MemoryStick class="size-3.5 text-info" />
+                  {info.memory}
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <HardDrive class="size-3.5 text-success" />
+                  {info.disk}
+                </span>
               </div>
-              <div class="mt-3 flex items-center gap-1.5 text-sm font-semibold text-primary">
-                <Coins class="size-3.5" /> {info.rate} credit{info.rate === 1 ? '' : 's'}/hr
+
+              <div
+                class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
+              >
+                <Coins class="size-3.5" />
+                {info.rate} credit{info.rate === 1 ? '' : 's'}<span
+                  class="font-normal text-muted-foreground">/hr</span
+                >
               </div>
             </button>
           {/each}
@@ -265,26 +296,37 @@
             <button
               type="button"
               class={cn(
-                'rounded-xl border p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm',
+                'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
                 selectedTemplate === key
-                  ? 'border-primary bg-primary/5 ring-2 ring-primary/30'
+                  ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
               onclick={() => (selectedTemplate = key as VmTemplate)}
             >
-              <div class="flex items-center gap-2">
+              {#if selectedTemplate === key}
                 <div
-                  class="flex size-8 items-center justify-center rounded-md bg-muted text-sm font-bold uppercase"
+                  class="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                >
+                  <Check class="size-3" />
+                </div>
+              {/if}
+              <div class="flex items-center gap-2.5">
+                <div
+                  class={cn(
+                    'flex size-9 shrink-0 items-center justify-center rounded-lg text-base font-bold uppercase transition-transform group-hover:scale-105',
+                    templateAccent[info.accent] ?? 'bg-muted text-foreground'
+                  )}
                 >
                   {info.name.slice(0, 1)}
                 </div>
-                <div class="font-semibold">{info.name}</div>
-                {#if selectedTemplate === key}
-                  <Check class="ml-auto size-4 text-primary" />
-                {/if}
+                <div class="min-w-0 pr-5">
+                  <div class="truncate text-sm font-semibold">{info.name}</div>
+                  <p class="truncate text-[11px] text-muted-foreground">
+                    {info.tagline}
+                  </p>
+                </div>
               </div>
-              <p class="mt-2 text-xs text-muted-foreground">{info.tagline}</p>
-              <p class="mt-1 text-[11px] text-muted-foreground/80">
+              <p class="mt-2.5 text-[11px] leading-snug text-muted-foreground">
                 {info.description}
               </p>
             </button>
@@ -329,10 +371,17 @@
   </Card>
 
   <!-- Pods list -->
-  <section>
+  <section class="animate-fade-up" style="animation-delay: 60ms">
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-2">
-        <h2 class="text-lg font-semibold tracking-tight">Your VMs</h2>
+        <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <span
+            class="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary"
+          >
+            <Server class="size-3.5" />
+          </span>
+          Your VMs
+        </h2>
         <Badge variant="muted">{counts.all} total</Badge>
       </div>
       <div class="flex items-center gap-2">
@@ -391,54 +440,67 @@
     </Card>
   {:else}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {#each filteredPods as pod (pod.id)}
-        <div class="relative">
-          <PodCard {pod} href="/pods/{pod.id}" />
-          <div class="absolute right-3 top-3">
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <button
-                    {...props}
-                    onclick={(e) => e.preventDefault()}
-                    class="flex size-7 items-center justify-center rounded-md border border-border bg-card/80 backdrop-blur transition-colors hover:bg-accent"
-                    aria-label="More actions"
-                  >
-                    <MoreVertical class="size-4" />
-                  </button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content>
-                <DropdownMenu.Item onclick={() => goto(`/pods/${pod.id}`)}>
-                  <ExternalLink class="size-4" /> Open
-                </DropdownMenu.Item>
-                {#if pod.state === 'running' && pod.ssh_port}
-                  <DropdownMenu.Item onclick={() => copySsh(pod)}>
-                    <Terminal class="size-4" /> Copy SSH command
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item onclick={() => openSshInfo(pod)}>
-                    <Terminal class="size-4" /> Show SSH info
-                  </DropdownMenu.Item>
-                  {#if pod.vscode_port}
-                    <DropdownMenu.Item
-                      onclick={() => window.open(vscodeUrl(pod), '_blank')}
+      {#each pagedPods as pod, i (pod.id)}
+        <div
+          class="animate-fade-up"
+          style="animation-delay: {Math.min(i * 40, 320)}ms"
+        >
+          <PodCard {pod} href="/pods/{pod.id}">
+            {#snippet actions()}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  {#snippet child({ props })}
+                    <button
+                      {...props}
+                      onclick={(e) => e.preventDefault()}
+                      class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label="More actions"
                     >
-                      <Code2 class="size-4" /> Open VS Code
+                      <MoreVertical class="size-4" />
+                    </button>
+                  {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content>
+                  <DropdownMenu.Item onclick={() => goto(`/pods/${pod.id}`)}>
+                    <ExternalLink class="size-4" /> Open
+                  </DropdownMenu.Item>
+                  {#if pod.state === 'running' && pod.ssh_port}
+                    <DropdownMenu.Item onclick={() => copySsh(pod)}>
+                      <Terminal class="size-4" /> Copy SSH command
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => openSshInfo(pod)}>
+                      <Terminal class="size-4" /> Show SSH info
+                    </DropdownMenu.Item>
+                    {#if pod.vscode_port}
+                      <DropdownMenu.Item
+                        onclick={() => window.open(vscodeUrl(pod), '_blank')}
+                      >
+                        <Code2 class="size-4" /> Open VS Code
+                      </DropdownMenu.Item>
+                    {/if}
+                    <DropdownMenu.Separator />
+                  {/if}
+                  {#if !['terminated', 'failed'].includes(pod.state)}
+                    <DropdownMenu.Item danger onclick={() => terminatePod(pod)}>
+                      <Square class="size-4" /> Terminate
                     </DropdownMenu.Item>
                   {/if}
-                  <DropdownMenu.Separator />
-                {/if}
-                {#if !['terminated', 'failed'].includes(pod.state)}
-                  <DropdownMenu.Item danger onclick={() => terminatePod(pod)}>
-                    <Square class="size-4" /> Terminate
-                  </DropdownMenu.Item>
-                {/if}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </div>
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+            {/snippet}
+          </PodCard>
         </div>
       {/each}
     </div>
+    {#if filteredPods.length > PER_PAGE}
+      <Pagination
+        class="mt-6"
+        count={filteredPods.length}
+        perPage={PER_PAGE}
+        bind:page
+        itemLabel="VM"
+      />
+    {/if}
   {/if}
 {/snippet}
 

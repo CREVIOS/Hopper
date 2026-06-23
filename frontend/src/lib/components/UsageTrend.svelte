@@ -66,15 +66,19 @@
     </div>
 
     {#if loading && !series}
-      <Skeleton class="h-60 w-full" />
+      <Skeleton class="h-44 w-full" />
     {:else if series && series.data.length > 0}
-      <UsageChart points={series.data} {metric} />
+      <UsageChart points={series.data} {metric} height={200} />
     {:else}
       <div
-        class="flex h-60 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 text-sm text-muted-foreground"
+        class="flex h-44 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 text-sm text-muted-foreground"
       >
-        <Activity class="size-6 opacity-50" />
-        <p class="mt-2">No usage data yet for this window.</p>
+        <div
+          class="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"
+        >
+          <Activity class="size-5" />
+        </div>
+        <p class="mt-2 font-medium text-foreground">No usage data yet</p>
         <p class="mt-0.5 text-xs">
           Metrics begin recording a few minutes after your first VM starts.
         </p>

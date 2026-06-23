@@ -4,55 +4,57 @@
 
 /* ---------- design tokens (light) ---------- */
 :root {
-  --background: 220 30% 98%;
-  --foreground: 224 47% 9%;
+  /* Light theme — intentionally calmer/lower-saturation than dark so colors
+     read as modest accents on a near-white surface, not loud blocks. */
+  --background: 220 24% 97%;
+  --foreground: 224 44% 11%;
 
   --card: 0 0% 100%;
-  --card-foreground: 224 47% 9%;
+  --card-foreground: 224 44% 11%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 224 47% 9%;
+  --popover-foreground: 224 44% 11%;
 
-  --primary: 252 83% 60%;
+  --primary: 252 67% 58%;
   --primary-foreground: 210 20% 98%;
 
   --secondary: 220 14% 96%;
-  --secondary-foreground: 224 47% 9%;
+  --secondary-foreground: 224 44% 11%;
 
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 8% 46%;
+  --muted: 220 16% 95%;
+  --muted-foreground: 220 9% 46%;
 
-  --accent: 252 100% 96%;
-  --accent-foreground: 252 83% 40%;
+  --accent: 252 58% 94%;
+  --accent-foreground: 252 53% 40%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 61% 51%;
   --destructive-foreground: 0 0% 98%;
 
-  --success: 142 71% 45%;
+  --success: 142 41% 38%;
   --success-foreground: 0 0% 98%;
 
-  --warning: 38 92% 50%;
-  --warning-foreground: 224 47% 9%;
+  --warning: 36 73% 44%;
+  --warning-foreground: 224 44% 11%;
 
-  --info: 217 91% 60%;
+  --info: 217 67% 52%;
   --info-foreground: 0 0% 98%;
 
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 252 83% 60%;
+  --border: 220 14% 90%;
+  --input: 220 14% 90%;
+  --ring: 252 67% 58%;
 
   --radius: 0.625rem;
 
   --sidebar-background: 0 0% 100%;
-  --sidebar-foreground: 224 47% 9%;
-  --sidebar-muted: 220 14% 96%;
-  --sidebar-border: 220 13% 91%;
+  --sidebar-foreground: 224 44% 11%;
+  --sidebar-muted: 220 16% 95%;
+  --sidebar-border: 220 14% 90%;
 
-  --chart-1: 252 83% 60%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 38 92% 50%;
-  --chart-4: 0 84% 60%;
-  --chart-5: 217 91% 60%;
+  --chart-1: 252 67% 58%;
+  --chart-2: 142 41% 40%;
+  --chart-3: 36 73% 46%;
+  --chart-4: 0 61% 53%;
+  --chart-5: 217 67% 54%;
 }
 
 .dark {
@@ -226,6 +228,59 @@
     backdrop-filter: saturate(180%) blur(12px);
     -webkit-backdrop-filter: saturate(180%) blur(12px);
   }
+  /* entrance motion — soft, modest, respects reduced-motion */
+  .animate-fade-up {
+    animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .animate-scale-in {
+    animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-up,
+    .animate-scale-in,
+    .animate-in,
+    .animate-out {
+      animation: none !important;
+    }
+  }
+  /* a soft, theme-tinted radial wash for hero / panel headers */
+  .surface-glow {
+    background-image: radial-gradient(
+      120% 120% at 100% 0%,
+      hsl(var(--primary) / 0.06) 0%,
+      transparent 55%
+    );
+  }
+  /* lift-on-hover used by interactive cards */
+  .card-lift {
+    transition:
+      transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+  }
   .text-gradient {
     background: linear-gradient(
       135deg,
@@ -241,5 +296,25 @@
     box-shadow:
       0 0 0 1px hsl(var(--border)),
       0 8px 32px -12px hsl(var(--primary) / 0.25);
+  }
+  /* live status indicator — a calm, slow ping (Tailwind's default is too aggressive) */
+  .animate-ping-slow {
+    animation: ping-slow 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes ping-slow {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-ping-slow {
+      animation: none;
+    }
   }
 }
