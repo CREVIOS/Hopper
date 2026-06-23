@@ -6,7 +6,6 @@
     Activity,
     Coins,
     Search,
-    Loader2,
     ShieldAlert,
     HardDrive,
     Cpu,
@@ -19,6 +18,7 @@
     ChevronDown,
     Check
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import type { SvelteComponent } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -346,7 +346,7 @@
     <RoleIcon class="size-3.5 shrink-0" />
     {role}
     {#if pending}
-      <Loader2 class="size-3 shrink-0 animate-spin opacity-70" />
+      <Spinner class="size-3 shrink-0 opacity-70" />
     {:else if interactive}
       <ChevronDown class="size-3 shrink-0 opacity-60" />
     {/if}
@@ -1075,7 +1075,7 @@
     <Button variant="outline" onclick={() => (allocOpen = false)}>Cancel</Button>
     <Button onclick={allocate} disabled={allocating}>
       {#if allocating}
-        <Loader2 class="size-4 animate-spin" /> Allocating…
+        <Spinner class="size-4" /> Allocating…
       {:else}
         <Coins class="size-4" /> Allocate
       {/if}

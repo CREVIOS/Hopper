@@ -13,7 +13,6 @@
     EyeOff,
     Copy,
     ExternalLink,
-    Loader2,
     Code2,
     MessageSquareWarning,
     Cpu,
@@ -26,6 +25,7 @@
     Boxes,
     HardDrive
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import GpuMetrics from '$lib/components/GpuMetrics.svelte';
@@ -208,7 +208,7 @@
         {#snippet badge()}
           <Badge variant={cfg.variant}>
             {#if cfg.pulse}
-              <Loader2 class="size-3 animate-spin" />
+              <Spinner class="size-3" />
             {/if}
             {cfg.label}
           </Badge>
@@ -624,7 +624,7 @@
       <Button variant="outline" onclick={() => (issueOpen = false)}>Cancel</Button>
       <Button onclick={submitIssue} disabled={issueSubmitting || issueText.trim().length < 5}>
         {#if issueSubmitting}
-          <Loader2 class="size-4 animate-spin" /> Sending…
+          <Spinner class="size-4" /> Sending…
         {:else}
           Send report
         {/if}

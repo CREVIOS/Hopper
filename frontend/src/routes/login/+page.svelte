@@ -15,6 +15,7 @@
   import { page } from '$app/state';
   import { dev } from '$app/environment';
   import { Button } from '$lib/ui';
+  import HopperLogo from '$lib/brand/HopperLogo.svelte';
 
   let signing = $state(false);
 
@@ -75,9 +76,9 @@
     ></div>
     <div class="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/40 to-transparent"></div>
 
-    <!-- Wordmark lockup — a real monogram, not a generic sparkle. -->
+    <!-- Wordmark lockup — the animated Hopper mark. -->
     <div class="animate-fade-up relative flex items-center gap-3">
-      <span class="grid size-10 place-items-center rounded-xl bg-white/[0.08] font-mono text-lg font-bold ring-1 ring-inset ring-white/15">H</span>
+      <HopperLogo size={40} idle />
       <span class="text-lg font-semibold tracking-tight">Hopper</span>
     </div>
 

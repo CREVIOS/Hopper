@@ -5,11 +5,11 @@
     Trash2,
     Copy,
     Fingerprint,
-    Loader2,
     ShieldCheck,
     Terminal,
     Check
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import { invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import {
@@ -349,7 +349,7 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
     </Button>
     <Button onclick={addKey} disabled={saving}>
       {#if saving}
-        <Loader2 class="size-4 animate-spin" /> Saving…
+        <Spinner class="size-4" /> Saving…
       {:else}
         <Plus class="size-4" /> Add key
       {/if}

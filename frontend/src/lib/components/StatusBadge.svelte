@@ -25,21 +25,28 @@
 </script>
 
 <script lang="ts">
-  import { Loader2 } from 'lucide-svelte';
   import { Badge } from '$lib/ui';
+  import Spinner from '$lib/icons/Spinner.svelte';
 
   let { state, class: className }: { state: PodState; class?: string } = $props();
 
   const cfg = $derived(POD_STATE_CONFIG[state] ?? POD_STATE_CONFIG.terminated);
+  // A steady "running" pod gets a live, breathing indicator; transitional
+  // states (creating/pending/stopping) spin; terminal states sit still.
+  const live = $derived(cfg.variant === 'success' && !cfg.pulse);
 </script>
 
 <Badge variant={cfg.variant} class={className}>
   {#if cfg.pulse}
-    <Loader2 class="size-3 animate-spin" />
+    <Spinner class="size-3" />
+  {:else if live}
+    <span class="relative flex size-1.5">
+      <span class="absolute inline-flex size-full animate-ping-slow rounded-full bg-success"></span>
+      <span class="relative inline-flex size-1.5 rounded-full bg-success"></span>
+    </span>
   {:else}
     <span
       class="size-1.5 rounded-full"
-      class:bg-success={cfg.variant === 'success'}
       class:bg-muted-foreground={cfg.variant === 'muted'}
       class:bg-destructive={cfg.variant === 'destructive'}
     ></span>

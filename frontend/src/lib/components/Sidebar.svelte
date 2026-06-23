@@ -5,13 +5,13 @@
     CreditCard,
     KeyRound,
     Shield,
-    Sparkles,
     PanelLeftClose,
     PanelLeftOpen
   } from 'lucide-svelte';
   import { page } from '$app/state';
   import type { User } from '$lib/types';
   import { cn } from '$lib/utils';
+  import HopperLogo from '$lib/brand/HopperLogo.svelte';
 
   let {
     user,
@@ -70,22 +70,14 @@
         aria-label="Expand sidebar"
         class="group relative flex size-9 items-center justify-center rounded-lg transition-colors hover:bg-sidebar-muted"
       >
-        <div
-          class="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-info text-primary-foreground shadow-md transition-opacity group-hover:opacity-0"
-        >
-          <Sparkles class="size-4" />
-        </div>
+        <HopperLogo size={28} class="transition-opacity group-hover:opacity-0" />
         <PanelLeftOpen
           class="absolute size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         />
       </button>
     {:else}
-      <a href="/dashboard" class="flex min-w-0 items-center gap-2" onclick={onNavigate}>
-        <div
-          class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-info text-primary-foreground shadow-md"
-        >
-          <Sparkles class="size-4" />
-        </div>
+      <a href="/dashboard" class="group/brand flex min-w-0 items-center gap-2" onclick={onNavigate}>
+        <HopperLogo size={28} />
         <span class="truncate text-lg font-bold tracking-tight">Hopper</span>
       </a>
       {#if onToggleCollapse}
@@ -126,7 +118,12 @@
                   : 'text-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
               )}
             >
-              <item.icon class="size-4 shrink-0" />
+              <item.icon
+                class={cn(
+                  'size-4 shrink-0 transition-transform duration-200 group-hover:scale-110',
+                  isActive(item.href) && 'scale-110'
+                )}
+              />
               {#if !collapsed}<span class="truncate">{item.label}</span>{/if}
             </a>
           </li>
@@ -158,7 +155,12 @@
                     : 'text-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
                 )}
               >
-                <item.icon class="size-4 shrink-0" />
+                <item.icon
+                class={cn(
+                  'size-4 shrink-0 transition-transform duration-200 group-hover:scale-110',
+                  isActive(item.href) && 'scale-110'
+                )}
+              />
                 {#if !collapsed}<span class="truncate">{item.label}</span>{/if}
               </a>
             </li>

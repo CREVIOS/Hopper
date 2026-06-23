@@ -8,6 +8,7 @@
   import { page } from '$app/state';
   import { Toaster, Button } from '$lib/ui';
   import Sidebar from '$lib/components/Sidebar.svelte';
+  import HopperLogo from '$lib/brand/HopperLogo.svelte';
   import UserMenu from '$lib/components/UserMenu.svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
@@ -115,9 +116,10 @@
               <Menu class="size-4" />
             {/if}
           </Button>
-          <div class="text-sm font-medium text-muted-foreground">
-            <a href="/dashboard" class="lg:hidden font-bold text-foreground">Hopper</a>
-          </div>
+          <a href="/dashboard" class="flex items-center gap-2 lg:hidden">
+            <HopperLogo size={24} />
+            <span class="font-bold text-foreground">Hopper</span>
+          </a>
         </div>
         <div class="flex items-center gap-2 sm:gap-3">
           {#if typeof data.balance === 'number'}

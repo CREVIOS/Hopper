@@ -5,7 +5,6 @@
     File as FileIcon,
     Folder,
     FolderOpen,
-    Loader2,
     Trash2,
     ChevronRight,
     RefreshCw,
@@ -13,6 +12,7 @@
     AlertCircle,
     CornerLeftUp
   } from 'lucide-svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
   import { toast } from 'svelte-sonner';
   import { Button, Card, Input, Label } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
@@ -364,7 +364,7 @@
       >
         {#if uploading}
           <span class="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Loader2 class="size-5 animate-spin" />
+            <Spinner class="size-5" />
           </span>
           <span class="text-sm font-medium text-muted-foreground">Uploading…</span>
         {:else}
@@ -432,7 +432,7 @@
         class="w-full"
       >
         {#if downloading}
-          <Loader2 class="size-4 animate-spin" /> Downloading…
+          <Spinner class="size-4" /> Downloading…
         {:else}
           <Download class="size-4" /> Download
         {/if}
