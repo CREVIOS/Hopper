@@ -40,7 +40,13 @@ func StartMetricsPublisher(
 						continue
 					}
 
-					_ = Publish(nc, fmt.Sprintf("metrics.%s", p.ID), map[string]interface{}{
+					// Subject MUST key on PodName (the "vm-<unix_nano>" k8s name), not
+					// p.ID. The gateway SSE endpoint subscribes to metrics.<pod_name>,
+					// and when the orchestrator rebuilds its in-memory map from existing
+					// pods after a restart (watcher path), p.ID is the app UUID while
+					// PodName is the vm-name — so publishing on p.ID silently breaks the
+					// metrics stream until the next CreatePod. Always use PodName.
+					_ = Publish(nc, fmt.Sprintf("metrics.%s", p.PodName), map[string]interface{}{
 						"pod_id":             p.ID,
 						"cpu_percent":        float64(metrics.CPUNanoCores) / 1e9 * 100,
 						"memory_used_bytes":  metrics.MemoryBytes,
