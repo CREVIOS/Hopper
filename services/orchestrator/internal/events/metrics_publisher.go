@@ -48,6 +48,7 @@ func StartMetricsPublisher(
 					// metrics stream until the next CreatePod. Always use PodName.
 					_ = Publish(nc, fmt.Sprintf("metrics.%s", p.PodName), map[string]interface{}{
 						"pod_id":             p.ID,
+						"user_id":            p.UserID,
 						"cpu_percent":        float64(metrics.CPUNanoCores) / 1e9 * 100,
 						"memory_used_bytes":  metrics.MemoryBytes,
 						"memory_limit_bytes": metrics.MemoryLimitBytes,
