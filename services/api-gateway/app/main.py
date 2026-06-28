@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting billing consumer...", flush=True)
     from app.services.billing_consumer import start_billing_consumer
     await start_billing_consumer()
+    print(">>> Startup: starting metrics consumer...", flush=True)
+    from app.services.metrics_consumer import start_metrics_consumer
+    await start_metrics_consumer()
     print(">>> Startup: complete.", flush=True)
     yield
     await nats_client.disconnect()
