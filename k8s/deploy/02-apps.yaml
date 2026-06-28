@@ -34,7 +34,11 @@ spec:
             - "app.main:app"
             - "--host=0.0.0.0"
             - "--port=8000"
-            - "--workers=4"
+            # 2 workers fit comfortably in the 1Gi limit alongside terminal/SSH
+            # sessions (each ~100MB + a kubectl port-forward subprocess). 4
+            # workers idled near the old 512Mi cap and got OOM/liveness-killed
+            # the moment a terminal opened.
+            - "--workers=2"
             - "--proxy-headers"
             - "--forwarded-allow-ips=*"
           ports:
@@ -87,10 +91,10 @@ spec:
           resources:
             requests:
               cpu: "250m"
-              memory: "256Mi"
+              memory: "512Mi"
             limits:
               cpu: "1"
-              memory: "512Mi"
+              memory: "1Gi"
 ---
 apiVersion: v1
 kind: Service
