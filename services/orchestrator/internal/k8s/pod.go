@@ -77,6 +77,20 @@ type PodPorts struct {
 	CodeServerPassword string
 }
 
+// cpuRequestFor returns the scheduling CPU request for a VM: a quarter of the
+// plan's CPU limit, floored at 100m. VMs spend almost all their time idle, so
+// reserving the full limit wastes node capacity and blocks new VMs from
+// scheduling; a fractional request lets them bin-pack while CPU limits still
+// cap bursts.
+func cpuRequestFor(cpuLimit string) resource.Quantity {
+	q := resource.MustParse(cpuLimit)
+	m := q.MilliValue() / 4
+	if m < 100 {
+		m = 100
+	}
+	return *resource.NewMilliQuantity(m, resource.DecimalSI)
+}
+
 // CreatePod creates a K8s Pod with resource limits and a NodePort Service for SSH.
 // Returns the assigned SSH NodePort and the per-pod root password.
 func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
@@ -238,8 +252,12 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
 					},
 					Resources: corev1.ResourceRequirements{
+						// CPU request is a fraction of the limit so near-idle VMs
+						// bin-pack onto the node while still bursting to the full
+						// plan CPU. Memory is far less elastic (OOM-kills, no
+						// reclaim), so its request stays pinned to the limit.
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse(opts.CPU),
+							corev1.ResourceCPU:    cpuRequestFor(opts.CPU),
 							corev1.ResourceMemory: resource.MustParse(opts.Memory),
 						},
 						Limits: corev1.ResourceList{
