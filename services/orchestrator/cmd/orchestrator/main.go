@@ -59,6 +59,16 @@ func main() {
 		logger.Fatal("failed to subscribe to NATS events", zap.Error(err))
 	}
 
+	// Rebuild in-memory pod state from existing K8s pods, then keep it synced via
+	// a continuous watch. Without this the in-memory pod map starts empty on every
+	// restart, so live metrics and per-pod billing silently stop for all
+	// pre-existing VMs until each one is recreated.
+	watcher := k8s.NewPodWatcher(clientset, cfg.KubeNamespace, logger, func(subject string, data any) error {
+		return events.Publish(nc, subject, data)
+	})
+	watcher.Reconcile(ctx, srv.PodManager(), srv.Ticker())
+	go watcher.Watch(ctx, srv.PodManager(), srv.Ticker())
+
 	// Start background metrics publisher (publishes to NATS every 5s for all running pods)
 	events.StartMetricsPublisher(ctx, nc, logger, srv.PodManager(), k8sPods)
 
