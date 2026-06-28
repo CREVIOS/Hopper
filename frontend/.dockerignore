@@ -1,0 +1,12 @@
+# The Docker build pins pnpm 9 (see Dockerfile), which rejects a
+# pnpm-workspace.yaml that lacks a `packages:` field. The workspace file here
+# only carries `allowBuilds:` for local pnpm 10/11 hosts and is not needed in
+# the image build, so keep it out of the build context.
+pnpm-workspace.yaml
+
+# Standard hygiene: never ship host build artifacts into the image context.
+node_modules
+build
+.svelte-kit
+.env
+.env.*
