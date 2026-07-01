@@ -21,7 +21,7 @@ spec:
       labels:
         app: api-gateway
     spec:
-      serviceAccountName: orchestrator
+      serviceAccountName: api-gateway
       containers:
         - name: api-gateway
           image: hopper/api-gateway:latest
@@ -69,7 +69,7 @@ spec:
             - name: HOPPER_CALLBACK_URL
               value: "https://hopper.farefin.com/api/auth/callback"
             - name: HOPPER_DEBUG
-              value: "true"
+              value: "false"
             - name: HOPPER_NODE_IP
               valueFrom:
                 fieldRef:
@@ -109,6 +109,39 @@ spec:
       targetPort: 8000
 
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-gateway
+  namespace: hopper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api-gateway-role
+  namespace: hopper
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api-gateway-binding
+  namespace: hopper
+subjects:
+  - kind: ServiceAccount
+    name: api-gateway
+    namespace: hopper
+roleRef:
+  kind: Role
+  name: api-gateway-role
+  apiGroup: rbac.authorization.k8s.io
+---
 ##############################################################################
 # Orchestrator (Go + gRPC) — Manages pod lifecycle on Kubernetes
 #
@@ -143,6 +176,9 @@ rules:
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "delete"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update"]

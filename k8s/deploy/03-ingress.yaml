@@ -5,7 +5,7 @@
 #   Browser → https://hopper.farefin.com/                    → frontend:3000
 #   Browser → https://hopper.farefin.com/api/pods            → api-gateway:8000/pods
 #   Browser → https://hopper.farefin.com/realms/...          → keycloak:8080/realms/...
-#   Browser → https://hopper.farefin.com/admin/...           → keycloak:8080/admin/...
+#   Browser → https://hopper.farefin.com/admin/...           → not public; use kubectl port-forward
 #   Browser → https://hopper.farefin.com/<uid>/code/<pid>/.. → api-gateway:8000/pods/<pid>/vscode/...
 #
 # TLS: cert-manager + Let's Encrypt (HTTP-01 via this nginx ingress).
@@ -67,6 +67,51 @@ spec:
                 name: keycloak
                 port:
                   number: 8080
+
+---
+# Keycloak Admin Guard — shadows Keycloak's master/admin console paths if an
+# older broad /admin ingress is still present in the cluster. The frontend
+# returns the normal app 404/login flow; the important part is that these paths
+# do not route to Keycloak.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-keycloak-admin-guard
+  namespace: hopper
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hopper.farefin.com
+      secretName: hopper-farefin-tls
+  rules:
+    - host: hopper.farefin.com
+      http:
+        paths:
+          - path: /admin/master
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+          - path: /admin/realms
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
 
 ---
 # API Ingress — strips /api prefix before forwarding to the gateway.

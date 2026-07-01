@@ -240,7 +240,7 @@ spec:
         - protocol: TCP
           port: 443
 
-
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
