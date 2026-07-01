@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -24,13 +24,13 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
 from app.services import port_forward
-from app.services.k8s_pod_lookup import resolve_vm_ssh_socket, resolve_vm_vscode_http_base
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,6 +56,62 @@ def _session_to_response(s: PodSession) -> PodResponse:
         ssh_password=s.ssh_password if is_live else None,
         created_at=s.started_at,
         updated_at=s.updated_at,
+    )
+
+
+async def _install_user_ssh_keys(session: PodSession, public_keys: list[str]) -> None:
+    """Best-effort install of registered public keys into a newly-created VM."""
+    keys = [k.strip() for k in public_keys if k and k.strip()]
+    if not keys or not session.ssh_password or not session.pod_name:
+        return
+
+    host = "127.0.0.1"
+    port = port_forward.get_local_port(session.pod_name, 22)
+    if not port:
+        try:
+            port = await port_forward.start(session.pod_name, session.namespace, 22)
+        except Exception as pf_err:
+            logger.warning(
+                "ssh-key install port-forward unavailable for %s: %s",
+                session.pod_name,
+                pf_err,
+            )
+            if not session.ssh_port:
+                return
+            host = settings.node_ip
+            port = session.ssh_port
+
+    authorized_keys = ("\n".join(keys) + "\n").encode()
+    remote_cmd = (
+        "mkdir -p /root/.ssh && chmod 700 /root/.ssh && "
+        "cat > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys"
+    )
+
+    for attempt in range(1, 7):
+        proc = await asyncio.create_subprocess_exec(
+            "sshpass", "-p", session.ssh_password,
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ConnectTimeout=5",
+            "-p", str(port),
+            f"root@{host}",
+            remote_cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate(authorized_keys)
+        if proc.returncode == 0:
+            logger.info("installed %d SSH key(s) for pod %s", len(keys), session.id)
+            return
+        if attempt < 6:
+            await asyncio.sleep(2)
+
+    logger.warning(
+        "failed to install SSH keys for pod %s: %s",
+        session.id,
+        stderr.decode(errors="replace").strip(),
     )
 
 
@@ -161,6 +217,15 @@ async def create_pod(
         session.ssh_password = resp.ssh_password or None
         await db.commit()
         await db.refresh(session)
+        keys_result = await db.execute(
+            select(SSHKey.public_key)
+            .where(SSHKey.user_id == current_user.sub)
+            .order_by(SSHKey.created_at.desc())
+        )
+        try:
+            await _install_user_ssh_keys(session, list(keys_result.scalars()))
+        except Exception:
+            logger.exception("SSH key installation failed for pod %s", session.id)
     except Exception as e:
         logger.error("Orchestrator CreatePod failed: %s", e)
         session.state = "failed"
