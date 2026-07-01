@@ -14,16 +14,17 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-// SshPasswordAnnotation stores the per-pod root SSH password on the K8s Pod
-// object so it can be recovered on orchestrator restart (reconciliation) without
-// a separate secret store.
+// SshPasswordAnnotation is kept only for recovering old pods created before
+// passwords moved to per-pod Kubernetes Secrets.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
 
-// CodeServerPasswordAnnotation stores the per-pod code-server password.
-// code-server reads $PASSWORD at start-up, so the same value is also injected
-// as a container env var. The annotation lets the gateway recover it for
-// auto-fill on the proxy redirect without exec-ing into the pod.
+// CodeServerPasswordAnnotation is kept only for backward compatibility.
 const CodeServerPasswordAnnotation = "hopper.dev/code-server-password"
+
+const (
+	SshPasswordSecretKey        = "ssh-password"
+	CodeServerPasswordSecretKey = "code-server-password"
+)
 
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
 // of entropy). Used for both the SSH root password and code-server's auth.
@@ -68,13 +69,15 @@ type CreatePodOpts struct {
 	StorageClass string
 }
 
-
-
 type PodPorts struct {
 	SSHPort            int32
 	VSCodePort         int32
 	SSHPassword        string
 	CodeServerPassword string
+}
+
+func credentialsSecretName(podName string) string {
+	return fmt.Sprintf("vm-credentials-%s", podName)
 }
 
 // cpuRequestFor returns the scheduling CPU request for a VM: a quarter of the
@@ -95,11 +98,11 @@ func cpuRequestFor(cpuLimit string) resource.Quantity {
 // Returns the assigned SSH NodePort and the per-pod root password.
 func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
 	labels := map[string]string{
-		"app":                   "hopper-vm",
-		"role":                  "user-vm",
-		"hopper.dev/pod-id":     opts.PodID,
-		"hopper.dev/user-id":    opts.UserID,
-		"hopper.dev/plan":       opts.Plan,
+		"app":                "hopper-vm",
+		"role":               "user-vm",
+		"hopper.dev/pod-id":  opts.PodID,
+		"hopper.dev/user-id": opts.UserID,
+		"hopper.dev/plan":    opts.Plan,
 	}
 
 	sshPassword, err := generateRandomPassword()
@@ -144,6 +147,26 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
 			return PodPorts{}, fmt.Errorf("creating workspace pvc: %w", err)
 		}
+	}
+
+	secretName := credentialsSecretName(opts.PodName)
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: pm.namespace,
+			Labels:    labels,
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			SshPasswordSecretKey:        sshPassword,
+			CodeServerPasswordSecretKey: codePassword,
+		},
+	}
+	if _, err := pm.client.CoreV1().Secrets(pm.namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		if opts.DiskGiB > 0 {
+			_ = pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Delete(ctx, pvcName, metav1.DeleteOptions{})
+		}
+		return PodPorts{}, fmt.Errorf("creating credentials secret: %w", err)
 	}
 
 	lxcfsFiles := []string{"meminfo", "cpuinfo", "stat", "uptime", "diskstats", "swaps", "loadavg"}
@@ -195,15 +218,9 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	gracePeriod := int64(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        opts.PodName,
-			Namespace:   pm.namespace,
-			Labels:      labels,
-			// Stored on the Pod so reconciliation after orchestrator restart can
-			// recover the password without an extra Secret.
-			Annotations: map[string]string{
-				SshPasswordAnnotation:        sshPassword,
-				CodeServerPasswordAnnotation: codePassword,
-			},
+			Name:      opts.PodName,
+			Namespace: pm.namespace,
+			Labels:    labels,
 		},
 		Spec: corev1.PodSpec{
 			TerminationGracePeriodSeconds: &gracePeriod,
@@ -246,10 +263,26 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						// code-server picks this up so asset URLs are relative to the proxy path.
 						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
 						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
-						{Name: "ROOT_PASSWORD", Value: sshPassword},
+						{
+							Name: "ROOT_PASSWORD",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  SshPasswordSecretKey,
+								},
+							},
+						},
 						// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
 						// to set $PASSWORD for code-server; never set in shell history.
-						{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
+						{
+							Name: "CODE_SERVER_PASSWORD",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+									Key:                  CodeServerPasswordSecretKey,
+								},
+							},
+						},
 					},
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs
@@ -305,6 +338,10 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 
 	_, err = pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
+		_ = pm.client.CoreV1().Secrets(pm.namespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+		if opts.DiskGiB > 0 {
+			_ = pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Delete(ctx, pvcName, metav1.DeleteOptions{})
+		}
 		return PodPorts{}, fmt.Errorf("creating pod %s: %w", opts.PodName, err)
 	}
 
@@ -340,12 +377,16 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	if err != nil {
 		// Clean up the pod if service creation fails
 		_ = pm.client.CoreV1().Pods(pm.namespace).Delete(ctx, opts.PodName, metav1.DeleteOptions{})
+		_ = pm.client.CoreV1().Secrets(pm.namespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+		if opts.DiskGiB > 0 {
+			_ = pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Delete(ctx, pvcName, metav1.DeleteOptions{})
+		}
 		return PodPorts{}, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
 	}
 
 	ports := PodPorts{SSHPassword: sshPassword, CodeServerPassword: codePassword}
-	for _, p := range createdSvc.Spec.Ports{
-		switch p.Name{
+	for _, p := range createdSvc.Spec.Ports {
+		switch p.Name {
 		case "ssh":
 			ports.SSHPort = p.NodePort
 		case "vscode":
@@ -380,6 +421,7 @@ func (pm *PodManager) DeletePod(ctx context.Context, podName string) error {
 
 	pvcName := fmt.Sprintf("ws-%s", podName)
 	_ = pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Delete(ctx, pvcName, metav1.DeleteOptions{})
+	_ = pm.client.CoreV1().Secrets(pm.namespace).Delete(ctx, credentialsSecretName(podName), metav1.DeleteOptions{})
 	return nil
 }
 
