@@ -66,6 +66,14 @@ jobs:
         working-directory: services/api-gateway
         run: poetry run python -c "from app.main import app; print('app.main OK')"
 
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kubernetes YAML duplicate-key guard
+        run: python3 scripts/ci/validate-k8s-yaml.py
+
   orchestrator:
     runs-on: ubuntu-latest
     steps:

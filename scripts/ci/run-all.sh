@@ -32,6 +32,10 @@ pnpm check
 pnpm exec vitest run --passWithNoTests
 pnpm build
 
+echo "==> Kubernetes manifests: duplicate top-level key guard"
+cd "$ROOT"
+python3 scripts/ci/validate-k8s-yaml.py
+
 echo "==> API gateway: import smoke (run 'make lint' for Ruff)"
 cd "$ROOT/services/api-gateway"
 poetry install --no-interaction
