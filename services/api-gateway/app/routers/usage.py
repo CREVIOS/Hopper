@@ -2,11 +2,12 @@
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
+from app.models.session import PodSession
 from app.schemas.user import TokenPayload
 
 router = APIRouter()
@@ -31,8 +32,13 @@ async def get_pod_usage(
     Uses TimescaleDB time_bucket for efficient aggregation.
     Falls back to simple GROUP BY if TimescaleDB is not available.
     """
+    session = await db.scalar(select(PodSession).where(PodSession.id == pod_id))
+    if session is None or session.user_id != current_user.sub:
+        raise HTTPException(status_code=404, detail="VM not found")
+
     delta = RANGE_MAP.get(range, timedelta(hours=1))
     since = datetime.utcnow() - delta
+    metrics_pod_name = session.pod_name or pod_id
 
     # Determine bucket size based on range
     if delta <= timedelta(hours=1):
@@ -52,11 +58,16 @@ async def get_pod_usage(
                        avg(memory_used_bytes) as avg_memory,
                        max(memory_limit_bytes) as memory_limit
                 FROM metrics_samples
-                WHERE pod_id = :pod_id AND time > :since
+                WHERE pod_id IN (:pod_id, :metrics_pod_name) AND time > :since
                 GROUP BY bucket
                 ORDER BY bucket
             """),
-            {"bucket": bucket, "pod_id": pod_id, "since": since},
+            {
+                "bucket": bucket,
+                "pod_id": pod_id,
+                "metrics_pod_name": metrics_pod_name,
+                "since": since,
+            },
         )
     except Exception:
         # Fallback without time_bucket (vanilla Postgres)
@@ -67,11 +78,11 @@ async def get_pod_usage(
                        avg(memory_used_bytes) as avg_memory,
                        max(memory_limit_bytes) as memory_limit
                 FROM metrics_samples
-                WHERE pod_id = :pod_id AND time > :since
+                WHERE pod_id IN (:pod_id, :metrics_pod_name) AND time > :since
                 GROUP BY bucket
                 ORDER BY bucket
             """),
-            {"pod_id": pod_id, "since": since},
+            {"pod_id": pod_id, "metrics_pod_name": metrics_pod_name, "since": since},
         )
 
     rows = result.fetchall()
