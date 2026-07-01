@@ -30,7 +30,7 @@ const makeConfigure = (origin: string) => (proxy: any) => {
 export default defineConfig(({ mode }) => {
   // Load every env var (empty prefix = include non-VITE_ vars too) so the dev
   // proxy can be pointed at a backend without editing this file.
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, new URL('.', import.meta.url).pathname, '');
 
   // Where to forward /api/* during `vite dev`.
   //  - Local api-gateway (default): http://127.0.0.1:8000

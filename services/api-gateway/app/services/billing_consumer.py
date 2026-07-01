@@ -5,47 +5,49 @@ Subscribes to:
   - billing.exhausted → mark the pod as terminated in the DB
 
 Publishes:
-  - billing.exhausted → when a deduction fails due to insufficient credits
+  - billing.exhausted → after the credit grace period expires
 
 Idempotency: each message carries a `tx_id` (orchestrator-supplied,
 deterministic per (pod_id, tick_seq)). The credit_service writes a row
 keyed on tx_id with a UNIQUE constraint, so a redelivery is a noop.
 
 Error handling:
-  - ValueError: insufficient credits → publish billing.exhausted, ACK message
-  - sqlalchemy OperationalError / asyncpg transient: NAK so JetStream redelivers
+  - ValueError: insufficient credits → start grace period, ACK message
+  - sqlalchemy OperationalError / asyncpg transient: NAK when supported
   - Any other: log + ACK (don't redeliver garbage forever)
 """
 
 import json
 import logging
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.core import nats as nats_client
 from app.core.database import async_session
-from app.models.session import PodSession
-from app.services.credit_service import deduct_credits
+from app.services.credit_alerts import (
+    get_billing_session,
+    maybe_create_credit_warning,
+    publish_billing_exhausted,
+    start_credit_grace,
+)
+from app.services.credit_service import deduct_credits, get_balance
+from app.services.notification_service import create_notification_safely
 
 logger = logging.getLogger(__name__)
 
 
-async def _safe_ack(msg) -> None:
-    """Core NATS subscriptions are not JetStream — ack() raises NotJSMessageError."""
+async def _ack(msg) -> None:
     try:
         await msg.ack()
-    except NotJSMessageError:
+    except Exception:
         pass
 
 
-async def _safe_nak(msg, *, delay: int = 0) -> None:
+async def _nak(msg, *, delay: int = 10) -> None:
     try:
         await msg.nak(delay=delay)
-    except NotJSMessageError:
-        logger.warning(
-            "Cannot NAK non-JetStream billing message — DB retry will not redeliver"
-        )
+    except Exception:
+        logger.warning("Cannot NAK non-JetStream billing message")
 
 
 async def _handle_billing_deducted(msg):
@@ -59,8 +61,7 @@ async def _handle_billing_deducted(msg):
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("Malformed billing.deducted message: %s", e)
         # Bad message — ack so it doesn't redeliver forever.
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
         return
 
     if not tx_id:
@@ -73,36 +74,39 @@ async def _handle_billing_deducted(msg):
                 description=f"vm_usage:{pod_id}",
                 tx_id=tx_id,
             )
+            session = await get_billing_session(db, pod_id)
+            if session and session.expires_at is not None:
+                session.expires_at = None
+                await db.commit()
+            if session:
+                balance = await get_balance(db, user_id)
+                await maybe_create_credit_warning(db, session=session, balance=balance)
             logger.debug(
                 "Deducted %.4f credits user=%s pod=%s tx=%s",
                 amount, user_id, pod_id, tx_id,
             )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
     except IntegrityError:
         # Duplicate tx_id — already applied. Safe to ack.
         logger.info("billing tx %s already applied — idempotent skip", tx_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
     except ValueError:
         logger.warning("Credits exhausted for user %s, pod %s", user_id, pod_id)
-        nc = nats_client.get_nc()
-        await nc.publish(
-            "billing.exhausted",
-            json.dumps({"pod_id": pod_id, "user_id": user_id}).encode(),
-        )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        async with async_session() as db:
+            session = await get_billing_session(db, pod_id)
+            if session and session.state not in ("terminated", "failed"):
+                await start_credit_grace(db, session=session)
+            else:
+                await publish_billing_exhausted(pod_id, user_id)
+        await _ack(msg)
     except OperationalError:
         # Transient DB blip — let JetStream redeliver after backoff.
         logger.exception("Transient DB error on billing tick pod=%s — NAK", pod_id)
-        if hasattr(msg, "nak"):
-            await msg.nak(delay=10)
+        await _nak(msg)
     except Exception:
         # Unknown failure — log loudly and ack so the queue doesn't pile up.
         logger.exception("Failed to deduct credits for pod %s — ack and skip", pod_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
 
 
 async def _handle_billing_exhausted(msg):
@@ -116,13 +120,22 @@ async def _handle_billing_exhausted(msg):
 
     try:
         async with async_session() as db:
-            result = await db.execute(
-                select(PodSession).where(PodSession.id == pod_id)
-            )
-            session = result.scalar_one_or_none()
+            session = await get_billing_session(db, pod_id)
             if session and session.state not in ("terminated", "failed"):
                 session.state = "terminated"
+                session.expires_at = None
                 await db.commit()
+                await create_notification_safely(
+                    db,
+                    user_id=session.user_id,
+                    type="vm_terminated",
+                    severity="warning",
+                    title="VM terminated",
+                    body="Your VM was stopped because credits ran out.",
+                    action_url="/credits",
+                    dedupe_key=f"vm-terminated-credit:{session.id}",
+                    metadata={"pod_id": session.id, "reason": "credits_exhausted"},
+                )
                 logger.info("Pod %s terminated due to credit exhaustion", pod_id)
     except Exception:
         logger.exception("Failed to handle billing.exhausted for pod %s", pod_id)

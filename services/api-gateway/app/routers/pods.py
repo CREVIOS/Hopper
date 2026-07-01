@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -28,9 +28,9 @@ from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
+from app.services.notification_service import create_notification_safely
 from app.services.orchestrator_client import orchestrator_client
 from app.services import port_forward
-from app.services.k8s_pod_lookup import resolve_vm_ssh_socket, resolve_vm_vscode_http_base
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -161,11 +161,33 @@ async def create_pod(
         session.ssh_password = resp.ssh_password or None
         await db.commit()
         await db.refresh(session)
+        await create_notification_safely(
+            db,
+            user_id=current_user.sub,
+            type="vm_ready",
+            severity="success",
+            title="VM is ready",
+            body="Your VM is ready. Open VS Code or the terminal to start working.",
+            action_url=f"/pods/{session.id}",
+            dedupe_key=f"vm-ready:{session.id}",
+            metadata={"pod_id": session.id},
+        )
     except Exception as e:
         logger.error("Orchestrator CreatePod failed: %s", e)
         session.state = "failed"
         await db.commit()
         await db.refresh(session)
+        await create_notification_safely(
+            db,
+            user_id=current_user.sub,
+            type="vm_failed",
+            severity="error",
+            title="VM failed to create",
+            body="Try again or contact an administrator if the problem continues.",
+            action_url="/pods",
+            dedupe_key=f"vm-failed:{session.id}",
+            metadata={"pod_id": session.id, "error": str(e)},
+        )
 
     return _session_to_response(session)
 
@@ -216,6 +238,17 @@ async def terminate_pod(
 
     session.state = "terminated"
     await db.commit()
+    await create_notification_safely(
+        db,
+        user_id=current_user.sub,
+        type="vm_terminated",
+        severity="info",
+        title="VM terminated",
+        body="Your workspace was stopped.",
+        action_url="/pods",
+        dedupe_key=f"vm-terminated:{session.id}",
+        metadata={"pod_id": session.id},
+    )
     return {"message": "terminated", "pod_id": pod_id}
 
 

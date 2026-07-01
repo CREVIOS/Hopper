@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 
@@ -10,8 +11,9 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin, files, issues, ssh_keys, usage
+from app.routers import auth, pods, credits, admin, files, issues, ssh_keys, usage, notifications
 from app.routers import settings as settings_router
+from app.services.credit_alerts import run_credit_grace_monitor, stop_credit_grace_monitor
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    grace_task: asyncio.Task | None = None
     print(">>> Startup: connecting to orchestrator...", flush=True)
     await orchestrator_client.connect()
     print(">>> Startup: connecting to NATS...", flush=True)
@@ -32,11 +35,16 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting metrics consumer...", flush=True)
     from app.services.metrics_consumer import start_metrics_consumer
     await start_metrics_consumer()
+    print(">>> Startup: starting credit grace monitor...", flush=True)
+    grace_task = asyncio.create_task(run_credit_grace_monitor())
     print(">>> Startup: complete.", flush=True)
-    yield
-    await nats_client.disconnect()
-    await orchestrator_client.close()
-    await engine.dispose()
+    try:
+        yield
+    finally:
+        await stop_credit_grace_monitor(grace_task)
+        await nats_client.disconnect()
+        await orchestrator_client.close()
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -87,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix="/files", tags=["files"])
     app.include_router(issues.router, prefix="/issues", tags=["issues"])
     app.include_router(usage.router, prefix="/usage", tags=["usage"])
+    app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
     # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
     # to the GET handler — load balancers and uptime probes that issue HEAD
     # would see 405 without this. Same body, same status, no payload.

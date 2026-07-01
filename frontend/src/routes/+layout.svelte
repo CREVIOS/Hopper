@@ -13,6 +13,7 @@
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import ConfirmHost from '$lib/components/ConfirmHost.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
 
   let {
     data,
@@ -125,6 +126,7 @@
           {#if typeof data.balance === 'number'}
             <CreditBadge balance={data.balance} class="hidden sm:inline-flex" />
           {/if}
+          <NotificationBell />
           <ThemeToggle />
           {#if data.user}
             <UserMenu user={data.user} />

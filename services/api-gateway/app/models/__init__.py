@@ -2,6 +2,7 @@ from app.models.audit import AuditLog
 from app.models.credit_ledger import Account, LedgerEntry, Transfer
 from app.models.issue_report import IssueReport
 from app.models.metrics import MetricsSample
+from app.models.notification import Notification
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
 from app.models.user import User
@@ -12,6 +13,7 @@ __all__ = [
     "IssueReport",
     "LedgerEntry",
     "MetricsSample",
+    "Notification",
     "PodSession",
     "SSHKey",
     "Transfer",

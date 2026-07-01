@@ -142,8 +142,9 @@ async def deduct_credits(
     # Idempotency: bail out early if this tx already exists.
     if tx_id:
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
-        if existing.scalar_one_or_none() is not None:
-            return existing.scalar_one()
+        existing_transfer = existing.scalar_one_or_none()
+        if existing_transfer is not None:
+            return existing_transfer
 
     balance = await get_balance(db, user_id)
     if balance < amount:

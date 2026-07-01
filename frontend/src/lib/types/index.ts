@@ -135,3 +135,30 @@ export interface SshKey {
   fingerprint: string;
   created_at: string;
 }
+
+export type NotificationSeverity = 'success' | 'warning' | 'error' | 'info';
+
+export type NotificationType =
+  | 'credit_warning'
+  | 'credit_grace'
+  | 'credits_received'
+  | 'vm_ready'
+  | 'vm_terminated'
+  | 'vm_failed';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  severity: NotificationSeverity;
+  title: string;
+  body: string;
+  action_url?: string | null;
+  metadata: Record<string, unknown>;
+  read_at?: string | null;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: AppNotification[];
+  unread_count: number;
+}

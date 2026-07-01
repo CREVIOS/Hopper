@@ -8,6 +8,7 @@ from app.models.credit_ledger import LedgerEntry, Transfer
 from app.schemas.credit import CreditBalanceResponse, CreditHistoryResponse
 from app.schemas.user import TokenPayload
 from app.services.credit_service import get_balance, get_or_create_account, add_credits
+from app.services.notification_service import create_notification_safely
 
 router = APIRouter()
 
@@ -81,4 +82,20 @@ async def allocate_credits(
         )
 
     transfer = await add_credits(db, request.user_id, request.amount, request.description)
+    source_name = current_user.name or current_user.email
+    await create_notification_safely(
+        db,
+        user_id=request.user_id,
+        type="credits_received",
+        severity="success",
+        title="Credits received",
+        body=f"{request.amount:g} credits from {source_name}",
+        action_url="/credits",
+        dedupe_key=f"credits-received:{transfer.id}",
+        metadata={
+            "transfer_id": transfer.id,
+            "amount": request.amount,
+            "source_user_id": current_user.sub,
+        },
+    )
     return {"message": "allocated", "transfer_id": transfer.id}
