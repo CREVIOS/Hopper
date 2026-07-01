@@ -3,12 +3,13 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"go.uber.org/zap"
 
 	"github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/pod"
@@ -81,8 +82,17 @@ func (w *PodWatcher) Reconcile(ctx context.Context, podMgr *pod.Manager, ticker 
 			podMgr.SetPorts(mgdPod.ID, sshPort, vscodePort)
 		}
 
-		// Recover the per-pod root password stashed at create time.
-		if pw := p.Annotations[SshPasswordAnnotation]; pw != "" {
+		// Recover the per-pod root password. New pods store it in a Secret;
+		// annotation fallback exists only for pods created before that change.
+		if secret, err := w.client.CoreV1().Secrets(w.namespace).Get(
+			ctx,
+			credentialsSecretName(p.Name),
+			metav1.GetOptions{},
+		); err == nil {
+			if pw := string(secret.Data[SshPasswordSecretKey]); pw != "" {
+				podMgr.SetSshPassword(mgdPod.ID, pw)
+			}
+		} else if pw := p.Annotations[SshPasswordAnnotation]; pw != "" {
 			podMgr.SetSshPassword(mgdPod.ID, pw)
 		}
 
@@ -158,7 +168,16 @@ func (w *PodWatcher) watchOnce(ctx context.Context, podMgr *pod.Manager, ticker 
 				)
 
 				if targetState == pod.StateFailed || targetState == pod.StateTerminated {
-					ticker.Stop(podID)
+					if ev, ok := ticker.StopAndProrate(podID, time.Now()); ok && ev.Amount > 0 {
+						_ = w.publish("billing.deducted", map[string]interface{}{
+							"pod_id":  ev.PodID,
+							"amount":  ev.Amount,
+							"user_id": mgdPod.UserID,
+							"tx_id":   ev.TxID,
+							"seq":     ev.Seq,
+							"final":   true,
+						})
+					}
 					_ = w.publish("pod.stopped", map[string]string{
 						"pod_id": podID, "reason": "k8s_" + string(p.Status.Phase),
 					})
@@ -166,7 +185,21 @@ func (w *PodWatcher) watchOnce(ctx context.Context, podMgr *pod.Manager, ticker 
 			}
 
 		case watch.Deleted:
-			ticker.Stop(podID)
+			mgdPod, exists := podMgr.Get(podID)
+			if ev, ok := ticker.StopAndProrate(podID, time.Now()); ok && ev.Amount > 0 {
+				userID := ""
+				if exists {
+					userID = mgdPod.UserID
+				}
+				_ = w.publish("billing.deducted", map[string]interface{}{
+					"pod_id":  ev.PodID,
+					"amount":  ev.Amount,
+					"user_id": userID,
+					"tx_id":   ev.TxID,
+					"seq":     ev.Seq,
+					"final":   true,
+				})
+			}
 			podMgr.SetState(podID, pod.StateTerminated)
 			_ = w.publish("pod.stopped", map[string]string{
 				"pod_id": podID, "reason": "deleted",
@@ -190,4 +223,3 @@ func k8sPhaseToState(phase corev1.PodPhase) pod.State {
 		return pod.StatePending
 	}
 }
-

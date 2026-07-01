@@ -179,7 +179,16 @@ func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.Po
 	}
 
 	// Stop billing
-	s.server.ticker.Stop(req.Id)
+	if ev, ok := s.server.ticker.StopAndProrate(req.Id, time.Now()); ok && ev.Amount > 0 {
+		_ = events.Publish(s.server.nc, events.SubjectBillDeduct, map[string]interface{}{
+			"pod_id":  ev.PodID,
+			"amount":  ev.Amount,
+			"user_id": p.UserID,
+			"tx_id":   ev.TxID,
+			"seq":     ev.Seq,
+			"final":   true,
+		})
+	}
 
 	// Delete the actual K8s pod + service
 	if err := s.server.k8sPods.DeletePod(ctx, p.PodName); err != nil {
