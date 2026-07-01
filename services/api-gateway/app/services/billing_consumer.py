@@ -31,21 +31,18 @@ from app.services.credit_service import deduct_credits
 logger = logging.getLogger(__name__)
 
 
-async def _safe_ack(msg) -> None:
-    """Core NATS subscriptions are not JetStream — ack() raises NotJSMessageError."""
+async def _ack(msg) -> None:
     try:
         await msg.ack()
-    except NotJSMessageError:
-        pass
+    except Exception:
+        logger.exception("Failed to ack billing message")
 
 
-async def _safe_nak(msg, *, delay: int = 0) -> None:
+async def _nak(msg, *, delay: int = 10) -> None:
     try:
         await msg.nak(delay=delay)
-    except NotJSMessageError:
-        logger.warning(
-            "Cannot NAK non-JetStream billing message — DB retry will not redeliver"
-        )
+    except Exception:
+        logger.exception("Failed to nak billing message")
 
 
 async def _handle_billing_deducted(msg):
@@ -59,8 +56,7 @@ async def _handle_billing_deducted(msg):
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("Malformed billing.deducted message: %s", e)
         # Bad message — ack so it doesn't redeliver forever.
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
         return
 
     if not tx_id:
@@ -77,32 +73,26 @@ async def _handle_billing_deducted(msg):
                 "Deducted %.4f credits user=%s pod=%s tx=%s",
                 amount, user_id, pod_id, tx_id,
             )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
     except IntegrityError:
         # Duplicate tx_id — already applied. Safe to ack.
         logger.info("billing tx %s already applied — idempotent skip", tx_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
     except ValueError:
         logger.warning("Credits exhausted for user %s, pod %s", user_id, pod_id)
-        nc = nats_client.get_nc()
-        await nc.publish(
+        await nats_client.publish_billing_event(
             "billing.exhausted",
-            json.dumps({"pod_id": pod_id, "user_id": user_id}).encode(),
+            {"pod_id": pod_id, "user_id": user_id},
         )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
     except OperationalError:
         # Transient DB blip — let JetStream redeliver after backoff.
         logger.exception("Transient DB error on billing tick pod=%s — NAK", pod_id)
-        if hasattr(msg, "nak"):
-            await msg.nak(delay=10)
+        await _nak(msg)
     except Exception:
         # Unknown failure — log loudly and ack so the queue doesn't pile up.
         logger.exception("Failed to deduct credits for pod %s — ack and skip", pod_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _ack(msg)
 
 
 async def _handle_billing_exhausted(msg):
@@ -112,6 +102,7 @@ async def _handle_billing_exhausted(msg):
         pod_id = data["pod_id"]
     except (json.JSONDecodeError, KeyError) as e:
         logger.error("Malformed billing.exhausted message: %s", e)
+        await _ack(msg)
         return
 
     try:
@@ -124,8 +115,10 @@ async def _handle_billing_exhausted(msg):
                 session.state = "terminated"
                 await db.commit()
                 logger.info("Pod %s terminated due to credit exhaustion", pod_id)
+        await _ack(msg)
     except Exception:
         logger.exception("Failed to handle billing.exhausted for pod %s", pod_id)
+        await _nak(msg)
 
 
 async def start_billing_consumer():
@@ -136,11 +129,25 @@ async def start_billing_consumer():
     Without the queue group every worker handles every message, which is
     why users saw 4 identical debit rows per minute on the credits page.
     """
-    nc = nats_client.get_nc()
-    await nc.subscribe(
-        "billing.deducted", queue="billing-workers", cb=_handle_billing_deducted
+    js = await nats_client.ensure_billing_stream()
+    await js.subscribe(
+        "billing.deducted",
+        stream=nats_client.BILLING_STREAM,
+        durable="api-billing-deducted",
+        queue="billing-workers",
+        manual_ack=True,
+        cb=_handle_billing_deducted,
     )
-    await nc.subscribe(
-        "billing.exhausted", queue="billing-workers", cb=_handle_billing_exhausted
+    await js.subscribe(
+        "billing.exhausted",
+        stream=nats_client.BILLING_STREAM,
+        durable="api-billing-exhausted",
+        queue="billing-workers",
+        manual_ack=True,
+        cb=_handle_billing_exhausted,
     )
-    logger.info("Billing consumer started — billing.deducted, billing.exhausted (queue=billing-workers)")
+    logger.info(
+        "Billing JetStream consumers started — billing.deducted, billing.exhausted "
+        "(stream=%s queue=billing-workers)",
+        nats_client.BILLING_STREAM,
+    )

@@ -137,13 +137,17 @@ async def deduct_credits(
     """
     user_account = await get_or_create_account(db, user_id)
 
-    await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{user_account.id}'))"))
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:account_id))"),
+        {"account_id": user_account.id},
+    )
 
     # Idempotency: bail out early if this tx already exists.
     if tx_id:
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
-        if existing.scalar_one_or_none() is not None:
-            return existing.scalar_one()
+        existing_transfer = existing.scalar_one_or_none()
+        if existing_transfer is not None:
+            return existing_transfer
 
     balance = await get_balance(db, user_id)
     if balance < amount:
