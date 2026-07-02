@@ -365,12 +365,19 @@ async def vscode_proxy(
     for attempt in range(2):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
+                # Redirects must pass through to the browser, not be resolved
+                # here: code-server's login success is a 302 whose Set-Cookie
+                # carries the session. Following it server-side swallows the
+                # cookie, so the browser never authenticates and every request
+                # after login 401s. code-server's Locations are relative, so
+                # they resolve correctly against the browser's
+                # /{userId}/code/{podId}/ URL.
                 resp = await client.request(
                     method=request.method,
                     url=target_url,
                     headers=forwarded_headers,
                     content=body,
-                    follow_redirects=True,
+                    follow_redirects=False,
                 )
             break
         except httpx.ConnectError as e:
@@ -389,14 +396,19 @@ async def vscode_proxy(
     # Strip headers that would break the browser when served from a different origin.
     # content-encoding must be removed because httpx decompresses the body transparently —
     # forwarding the original gzip header with a decoded body causes ERR_CONTENT_DECODING_FAILED.
-    excluded_resp_headers = {"transfer-encoding", "connection", "keep-alive", "content-encoding"}
+    excluded_resp_headers = {"transfer-encoding", "connection", "keep-alive", "content-encoding", "set-cookie"}
     headers = {k: v for k, v in resp.headers.items() if k.lower() not in excluded_resp_headers}
 
-    return Response(
+    out = Response(
         content=resp.content,
         status_code=resp.status_code,
         headers=headers,
     )
+    # Set-Cookie needs raw multi-header passthrough: a dict collapses repeats,
+    # and httpx's items() joins them with ", " — which corrupts cookie values.
+    for cookie_header in resp.headers.get_list("set-cookie"):
+        out.headers.append("set-cookie", cookie_header)
+    return out
 
 
 @router.websocket("/{pod_id}/vscode/{path:path}")
@@ -448,9 +460,16 @@ async def vscode_ws_proxy(
     await websocket.accept()
 
     try:
+        # Forward the browser's cookies: code-server authenticates its
+        # WebSocket with the same code-server-session cookie as HTTP requests,
+        # so without this the editor 401s right after login.
+        upstream_headers = {"Host": f"127.0.0.1:{local_port}"}
+        browser_cookies = websocket.headers.get("cookie")
+        if browser_cookies:
+            upstream_headers["Cookie"] = browser_cookies
         async with websockets.connect(
             target_url,
-            additional_headers={"Host": f"127.0.0.1:{local_port}"},
+            additional_headers=upstream_headers,
             ping_interval=20,
             ping_timeout=20,
         ) as ws_upstream:
