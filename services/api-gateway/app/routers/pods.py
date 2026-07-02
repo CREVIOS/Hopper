@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -30,7 +30,6 @@ from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
 from app.services import port_forward
-from app.services.k8s_pod_lookup import resolve_vm_ssh_socket, resolve_vm_vscode_http_base
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
