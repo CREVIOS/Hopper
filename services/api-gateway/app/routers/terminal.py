@@ -13,7 +13,6 @@ import signal
 import struct
 import subprocess
 import termios
-import threading
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select as sa_select
@@ -91,7 +90,6 @@ async def terminal_ws(websocket: WebSocket, pod_id: str):
     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-    loop = asyncio.get_event_loop()
     closed = asyncio.Event()
 
     async def pty_to_ws():
