@@ -24,7 +24,13 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # pnpm 9 rejects frontend/pnpm-workspace.yaml ("packages field
+          # missing or empty") — that file exists for pnpm 10+ hosts (build
+          # allowlist, added in #63) and has broken this job on every push
+          # since. pnpm 10 accepts it and matches local development. The
+          # Docker image build keeps its own pnpm 9 pin and excludes the
+          # file via frontend/.dockerignore.
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
