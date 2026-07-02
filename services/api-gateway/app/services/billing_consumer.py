@@ -20,6 +20,7 @@ Error handling:
 import json
 import logging
 
+from nats.errors import NotJSMessageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
