@@ -16,7 +16,8 @@
     GraduationCap,
     User,
     ChevronDown,
-    Check
+    Check,
+    X
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import type { SvelteComponent } from 'svelte';
@@ -98,8 +99,38 @@
       users: AdminUser[];
       activeVms: ActiveVm[];
       auditLogs: AuditLog[];
+      teacherRequests: { id: string; email: string; name: string; created_at: string | null }[];
     };
   } = $props();
+
+  // Teacher-approval actions (admin only).
+  let processingReq = $state<string | null>(null);
+  async function approveTeacher(r: { id: string; email: string }) {
+    processingReq = r.id;
+    const tid = toast.loading(`Approving ${r.email}…`);
+    try {
+      await api.post(`/admin/teacher-requests/${r.id}/approve`);
+      toast.success(`${r.email} is now a teacher`, { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not approve', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      processingReq = null;
+    }
+  }
+  async function rejectTeacher(r: { id: string; email: string }) {
+    processingReq = r.id;
+    const tid = toast.loading(`Rejecting ${r.email}…`);
+    try {
+      await api.post(`/admin/teacher-requests/${r.id}/reject`);
+      toast.success('Request rejected', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not reject', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      processingReq = null;
+    }
+  }
 
   let tab = $state('overview');
   let userQuery = $state('');
@@ -405,6 +436,16 @@
     >
       <Tabs.Trigger value="overview"><Activity /> Overview</Tabs.Trigger>
       <Tabs.Trigger value="users"><Users /> Users</Tabs.Trigger>
+      {#if data.currentUserRole === 'admin'}
+        <Tabs.Trigger value="requests">
+          <GraduationCap /> Requests
+          {#if data.teacherRequests.length}
+            <span class="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-warning/15 px-1.5 text-[11px] font-semibold text-warning">
+              {data.teacherRequests.length}
+            </span>
+          {/if}
+        </Tabs.Trigger>
+      {/if}
       <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
@@ -718,6 +759,68 @@
         </Card>
       </div>
     </Tabs.Content>
+
+    <!-- Teacher requests -->
+    {#if data.currentUserRole === 'admin'}
+      <Tabs.Content value="requests" class="mt-5">
+        <div class="animate-fade-up space-y-3">
+          <SectionHeader title="Teacher requests" icon={GraduationCap}>
+            {#snippet badge()}
+              <Badge variant="muted">{data.teacherRequests.length} pending</Badge>
+            {/snippet}
+          </SectionHeader>
+          <Card class="overflow-hidden">
+            <Table.Root class="table-fixed">
+              <Table.Header class="bg-muted/40">
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Head>User</Table.Head>
+                  <Table.Head class="hidden w-56 md:table-cell">Email</Table.Head>
+                  <Table.Head class="hidden w-28 sm:table-cell">Requested</Table.Head>
+                  <Table.Head class="w-44 text-right">Decision</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each data.teacherRequests as r (r.id)}
+                  <Table.Row class="group">
+                    <Table.Cell>
+                      <div class="flex items-center gap-2.5">
+                        <Avatar name={r.name || r.email} class="size-8 shrink-0 ring-1 ring-border/60" />
+                        <div class="min-w-0">
+                          <div class="truncate font-medium">{r.name || '—'}</div>
+                          <div class="truncate text-xs text-muted-foreground md:hidden">{r.email}</div>
+                        </div>
+                      </div>
+                    </Table.Cell>
+                    <Table.Cell class="hidden w-56 truncate text-muted-foreground md:table-cell">{r.email}</Table.Cell>
+                    <Table.Cell class="hidden w-28 text-muted-foreground sm:table-cell">
+                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}
+                    </Table.Cell>
+                    <Table.Cell class="w-44 text-right">
+                      <div class="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" disabled={processingReq === r.id} onclick={() => rejectTeacher(r)}>
+                          <X class="size-3.5" /> Reject
+                        </Button>
+                        <Button size="sm" disabled={processingReq === r.id} onclick={() => approveTeacher(r)}>
+                          {#if processingReq === r.id}<Spinner class="size-3.5" />{:else}<Check class="size-3.5" />{/if} Approve
+                        </Button>
+                      </div>
+                    </Table.Cell>
+                  </Table.Row>
+                {/each}
+                {#if data.teacherRequests.length === 0}
+                  <Table.Row class="hover:bg-transparent">
+                    <Table.Cell colspan={4} class="py-12 text-center text-sm text-muted-foreground">
+                      <GraduationCap class="mx-auto mb-2 size-5 opacity-50" />
+                      No pending teacher requests.
+                    </Table.Cell>
+                  </Table.Row>
+                {/if}
+              </Table.Body>
+            </Table.Root>
+          </Card>
+        </div>
+      </Tabs.Content>
+    {/if}
 
     <!-- Active VMs -->
     <Tabs.Content value="vms" class="mt-5">
