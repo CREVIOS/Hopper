@@ -204,11 +204,14 @@ async def deduct_credits(
 
     await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{user_account.id}'))"))
 
-    # Idempotency: bail out early if this tx already exists.
+    # Idempotency: bail out early if this tx already exists. Read the row once —
+    # scalar_one_or_none() consumes the Result, so re-reading it with
+    # scalar_one() would raise ResourceClosedError ("result object is closed").
     if tx_id:
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
-        if existing.scalar_one_or_none() is not None:
-            return existing.scalar_one()
+        existing_transfer = existing.scalar_one_or_none()
+        if existing_transfer is not None:
+            return existing_transfer
 
     balance = await get_balance(db, user_id)
     if balance < amount:
