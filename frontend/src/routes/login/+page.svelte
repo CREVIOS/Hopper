@@ -209,10 +209,14 @@
       >
         <span class="flex items-center gap-2.5">
           <ShieldCheck class="size-4" />
-          {signing ? 'Redirecting…' : 'Continue with University SSO'}
+          {signing ? 'Redirecting…' : 'Sign in as admin'}
         </span>
         <ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />
       </Button>
+
+      <p class="animate-fade-up mt-2 text-center text-xs text-muted-foreground" style="animation-delay: 65ms">
+        Administrators sign in through University SSO.
+      </p>
 
       {#if dev}
         <!-- Dev-only: the real SSO flow can't complete on localhost (backend
@@ -261,9 +265,10 @@
       >
         <p class="font-medium text-foreground">Students and teachers welcome.</p>
         <p class="mt-1.5">
-          Create an account with your <em>@cs.du.ac.bd</em> email, or use University
-          SSO. Teacher accounts are reviewed by an admin before they can allocate
-          credits. Trouble? Email
+          Create an account with your <em>@cs.du.ac.bd</em> email and sign in
+          above. Teacher accounts are reviewed by an admin before they can
+          allocate credits. Administrators sign in with University SSO. Trouble?
+          Email
           <a class="font-medium text-foreground underline underline-offset-2" href="mailto:hopper-admin@cs.du.ac.bd">
             hopper-admin@cs.du.ac.bd
           </a>.

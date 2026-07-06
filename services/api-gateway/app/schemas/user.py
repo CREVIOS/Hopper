@@ -29,6 +29,9 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
+    # True while a teacher signup is awaiting admin approval (role stays
+    # "student" until then). Surfaced so the UI can show the pending state.
+    pending_teacher: bool = False
 
 
 class ChangeRoleRequest(BaseModel):
