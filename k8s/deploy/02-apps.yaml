@@ -60,6 +60,12 @@ spec:
               value: "hopper"
             - name: HOPPER_KEYCLOAK_CLIENT_ID
               value: "hopper-api"
+            # Secret for the confidential `hopper-admin` service-account client
+            # (signup / role changes / forced logout). Sourced from the
+            # hopper-keycloak-admin Secret — see 00-secrets.yaml.
+            - name: HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: hopper-keycloak-admin, key: client-secret }
             - name: HOPPER_CORS_ORIGINS
               value: '["https://hopper.farefin.com"]'
             - name: HOPPER_ORCHESTRATOR_URL
