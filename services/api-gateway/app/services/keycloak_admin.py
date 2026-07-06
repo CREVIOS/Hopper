@@ -130,6 +130,73 @@ class KeycloakAdminClient:
                 if resp.status_code not in (204, 200):
                     raise KeycloakAdminError(f"add new role failed: {resp.text}")
 
+    async def create_user(
+        self,
+        *,
+        email: str,
+        name: str,
+        password: str,
+        role: str = "student",
+        email_verified: bool = True,
+    ) -> str:
+        """Create a Keycloak user with a password credential and app role.
+
+        Returns the new user's id. Raises KeycloakAdminError("user exists") on
+        a 409 so the caller can surface a clean 409 to the client. `name` is
+        stored as firstName (Keycloak has no single "name" field).
+        """
+        # Keycloak's default user profile requires BOTH first and last name;
+        # a missing lastName leaves the account "not fully set up" and blocks
+        # the direct-grant login. Split the single display name into the two.
+        parts = name.strip().split()
+        first_name = parts[0] if parts else name.strip()
+        last_name = " ".join(parts[1:]) if len(parts) > 1 else first_name
+        payload = {
+            "username": email,
+            "email": email,
+            "firstName": first_name,
+            "lastName": last_name,
+            "enabled": True,
+            "emailVerified": email_verified,
+            # No pending required actions (e.g. realm-default "Verify Email" /
+            # "Update Password") — otherwise the immediate password-grant login
+            # after signup fails with "Account is not fully set up".
+            "requiredActions": [],
+            "credentials": [
+                {"type": "password", "value": password, "temporary": False}
+            ],
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                await self._admin_url("/users"),
+                headers={**(await self._headers()), "Content-Type": "application/json"},
+                json=payload,
+            )
+        if resp.status_code == 409:
+            raise KeycloakAdminError("user exists")
+        if resp.status_code not in (201, 204):
+            raise KeycloakAdminError(f"create user failed: {resp.text}")
+
+        # Keycloak returns the new user's id in the Location header.
+        location = resp.headers.get("location") or resp.headers.get("Location") or ""
+        user_id = location.rstrip("/").rsplit("/", 1)[-1]
+        if not user_id:
+            # Fallback: look it up by exact username.
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                lookup = await client.get(
+                    await self._admin_url("/users"),
+                    headers=await self._headers(),
+                    params={"username": email, "exact": "true"},
+                )
+            rows = lookup.json() if lookup.status_code == 200 else []
+            if not rows:
+                raise KeycloakAdminError("created user but could not resolve id")
+            user_id = rows[0]["id"]
+
+        # Assign the app realm role (reuses the existing role-mapping logic).
+        await self.set_user_role(user_id, role)
+        return user_id
+
     async def logout_user(self, user_id: str) -> None:
         """Force-revoke all of the user's Keycloak sessions and refresh tokens."""
         async with httpx.AsyncClient(timeout=10.0) as client:
