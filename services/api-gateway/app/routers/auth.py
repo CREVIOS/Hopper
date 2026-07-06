@@ -6,12 +6,11 @@ matches the access token's `exp` so a stolen cookie expires sooner than the
 refresh token. Logout is RP-initiated against Keycloak so SSO sessions and
 refresh tokens are actually revoked, not just deleted client-side.
 """
-from __future__ import annotations
-
 import base64
 import hashlib
 import logging
 import os
+import uuid
 from urllib.parse import urlencode
 
 import httpx
@@ -24,9 +23,11 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
+from app.models.audit import AuditLog
 from app.models.user import User
-from app.schemas.user import TokenPayload, UserResponse
+from app.schemas.user import LoginRequest, SignupRequest, TokenPayload, UserResponse
 from app.services.credit_service import get_or_create_account
+from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -137,6 +138,124 @@ async def login(request: Request):
         httponly=True, secure=True, samesite="lax", path="/", max_age=600,
     )
     return resp
+
+
+async def _password_grant(email: str, password: str) -> dict:
+    """Resource-owner password grant against the public hopper-api client.
+
+    Powers the themed in-app login/signup (no redirect to Keycloak's hosted
+    page). The client must have Direct Access Grants enabled. Raises 401 on bad
+    credentials so the caller returns a clean error to the browser.
+    """
+    data = {
+        "grant_type": "password",
+        "client_id": settings.keycloak_client_id,
+        "scope": "openid email profile",
+        "username": email,
+        "password": password,
+    }
+    if settings.keycloak_client_secret:
+        data["client_secret"] = settings.keycloak_client_secret
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(KEYCLOAK_TOKEN_URL, data=data)
+    if resp.status_code == 401:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if resp.status_code != 200:
+        logger.warning("password grant failed: %s", resp.text)
+        raise HTTPException(status_code=401, detail="Login failed")
+    return resp.json()
+
+
+def _issue_session(body: dict, tokens: dict) -> JSONResponse:
+    """Return a JSON response carrying the auth cookies (same shape as callback)."""
+    refresh_ttl = int(tokens.get("refresh_expires_in", 1800))
+    resp = JSONResponse(body)
+    _set_session_cookies(
+        resp,
+        access_token=tokens["access_token"],
+        access_ttl=int(tokens.get("expires_in", 300)),
+        refresh_token=tokens.get("refresh_token"),
+        refresh_ttl=refresh_ttl,
+    )
+    if "id_token" in tokens:
+        resp.set_cookie(
+            "id_token", tokens["id_token"],
+            httponly=True, secure=True, samesite="lax", path="/", max_age=refresh_ttl,
+        )
+    return resp
+
+
+async def _upsert_user_row(db: AsyncSession, payload: TokenPayload) -> None:
+    result = await db.execute(select(User).where(User.id == payload.sub))
+    user = result.scalar_one_or_none()
+    if user:
+        user.email = payload.email
+        user.name = payload.name
+        user.role = payload.role
+    else:
+        db.add(User(id=payload.sub, email=payload.email, name=payload.name, role=payload.role))
+    await db.commit()
+    await get_or_create_account(db, payload.sub)
+
+
+@router.post("/signup")
+@limiter.limit("5/minute")
+async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depends(get_db)):
+    """Self-service signup. Students activate immediately; teachers are created
+    as students with pending_teacher=true, awaiting admin approval."""
+    email = (body.email or "").lower().strip()
+    if body.role not in ("student", "teacher"):
+        raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
+    if "@" not in email or not _domain_allowed(email):
+        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign up.")
+
+    try:
+        user_id = await keycloak_admin.create_user(
+            email=email, name=body.name, password=body.password,
+            role="student", email_verified=True,
+        )
+    except KeycloakAdminError as e:
+        if "exists" in str(e):
+            raise HTTPException(status_code=409, detail="An account with this email already exists.")
+        logger.error("signup: keycloak create_user failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not create the account. Try again later.")
+
+    pending = body.role == "teacher"
+    db.add(User(id=user_id, email=email, name=body.name, role="student", pending_teacher=pending))
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), user_id=user_id, action="signup",
+        resource_type="user", resource_id=user_id,
+        ip_address=request.client.host if request.client else "-", status_code=201,
+    ))
+    await db.commit()
+    await get_or_create_account(db, user_id)
+
+    tokens = await _password_grant(email, body.password)
+    return _issue_session(
+        {"id": user_id, "email": email, "name": body.name, "role": "student", "pending_teacher": pending},
+        tokens,
+    )
+
+
+@router.post("/login")
+@limiter.limit("10/minute")
+async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Themed email + password login (direct grant). The GET /login above keeps
+    the OIDC redirect flow for SSO."""
+    email = (body.email or "").lower().strip()
+    tokens = await _password_grant(email, body.password)
+    payload = await verify_token(tokens["access_token"])
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if not _domain_allowed(payload.email):
+        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign in.")
+    if settings.require_email_verified and not payload.email_verified:
+        raise HTTPException(status_code=403, detail="Please verify your email, then sign in.")
+    await _upsert_user_row(db, payload)
+    return _issue_session(
+        {"id": payload.sub, "email": payload.email, "name": payload.name, "role": payload.role},
+        tokens,
+    )
 
 
 @router.get("/callback")
