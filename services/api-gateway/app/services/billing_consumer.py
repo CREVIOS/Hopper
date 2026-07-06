@@ -60,8 +60,7 @@ async def _handle_billing_deducted(msg):
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("Malformed billing.deducted message: %s", e)
         # Bad message — ack so it doesn't redeliver forever.
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _safe_ack(msg)
         return
 
     if not tx_id:
@@ -78,13 +77,11 @@ async def _handle_billing_deducted(msg):
                 "Deducted %.4f credits user=%s pod=%s tx=%s",
                 amount, user_id, pod_id, tx_id,
             )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _safe_ack(msg)
     except IntegrityError:
         # Duplicate tx_id — already applied. Safe to ack.
         logger.info("billing tx %s already applied — idempotent skip", tx_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _safe_ack(msg)
     except ValueError:
         logger.warning("Credits exhausted for user %s, pod %s", user_id, pod_id)
         nc = nats_client.get_nc()
@@ -92,18 +89,15 @@ async def _handle_billing_deducted(msg):
             "billing.exhausted",
             json.dumps({"pod_id": pod_id, "user_id": user_id}).encode(),
         )
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _safe_ack(msg)
     except OperationalError:
         # Transient DB blip — let JetStream redeliver after backoff.
         logger.exception("Transient DB error on billing tick pod=%s — NAK", pod_id)
-        if hasattr(msg, "nak"):
-            await msg.nak(delay=10)
+        await _safe_nak(msg, delay=10)
     except Exception:
         # Unknown failure — log loudly and ack so the queue doesn't pile up.
         logger.exception("Failed to deduct credits for pod %s — ack and skip", pod_id)
-        if hasattr(msg, "ack"):
-            await msg.ack()
+        await _safe_ack(msg)
 
 
 async def _handle_billing_exhausted(msg):
