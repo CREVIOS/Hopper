@@ -406,12 +406,22 @@ async def refresh(request: Request):
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: TokenPayload = Depends(get_current_user)):
+async def me(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Role is canonical in Keycloak (cached on the token); the pending_teacher
+    # approval flag lives only on our users row. A teacher signup is a student
+    # with pending_teacher=true until an admin approves, so read it back here
+    # to let the UI reflect the "awaiting approval" state.
+    result = await db.execute(select(User).where(User.id == current_user.sub))
+    user = result.scalar_one_or_none()
     return UserResponse(
         id=current_user.sub,
         email=current_user.email,
         name=current_user.name,
         role=current_user.role,
+        pending_teacher=bool(user.pending_teacher) if user else False,
     )
 
 

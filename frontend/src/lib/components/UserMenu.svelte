@@ -8,6 +8,14 @@
 
   const isAdmin = $derived(user.role === 'admin' || user.role === 'professor');
 
+  // Human-friendly role label. A "teacher" signup stays role=student until an
+  // admin approves, so show the pending state instead of a bare "student".
+  const roleLabel = $derived.by(() => {
+    if (user.pending_teacher) return 'Teacher · pending approval';
+    if (user.role === 'professor') return 'Teacher';
+    return user.role.charAt(0).toUpperCase() + user.role.slice(1);
+  });
+
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     window.location.href = '/login';
@@ -24,8 +32,10 @@
         <Avatar name={user.name || user.email} />
         <span class="hidden text-left sm:block">
           <span class="block text-sm font-medium leading-tight">{user.name}</span>
-          <span class="block text-xs text-muted-foreground leading-tight"
-            >{user.role}</span
+          <span
+            class="block text-xs leading-tight {user.pending_teacher
+              ? 'text-warning'
+              : 'text-muted-foreground'}">{roleLabel}</span
           >
         </span>
         <ChevronDown class="size-4 text-muted-foreground hidden sm:block" />

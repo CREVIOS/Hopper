@@ -42,6 +42,8 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  // True while a teacher signup awaits admin approval (role stays 'student').
+  pending_teacher?: boolean;
 }
 
 export interface Pod {
