@@ -22,6 +22,17 @@ spec:
         app: api-gateway
     spec:
       serviceAccountName: orchestrator
+      # Pods on this cluster cannot egress to external SMTP ports (25/465/587
+      # time out; only the node can reach them). Verification / reset emails are
+      # therefore relayed through the node: a systemd `hopper-smtp-relay` unit
+      # (see k8s/deploy/node/hopper-smtp-relay.service) runs
+      #   socat TCP-LISTEN:2525,fork TCP:smtp.gmail.com:587
+      # on the node (10.0.0.6). This hostAlias makes the pod resolve
+      # smtp.gmail.com to the node so STARTTLS still validates Gmail's cert
+      # end-to-end, while HOPPER_SMTP_PORT below points at the relay's 2525.
+      hostAliases:
+        - ip: "10.0.0.6"
+          hostnames: ["smtp.gmail.com"]
       containers:
         - name: api-gateway
           image: hopper/api-gateway:latest
@@ -82,8 +93,11 @@ spec:
             - name: HOPPER_SMTP_FROM
               valueFrom:
                 secretKeyRef: { name: hopper-smtp, key: smtp-from, optional: true }
+            # 2525 = the node SMTP relay (see hostAliases above), not Gmail's
+            # 587 directly — pods can't egress to SMTP ports. STARTTLS still
+            # runs end-to-end to real Gmail through the relay.
             - name: HOPPER_SMTP_PORT
-              value: "587"
+              value: "2525"
             - name: HOPPER_SMTP_STARTTLS
               value: "true"
             - name: HOPPER_CORS_ORIGINS
