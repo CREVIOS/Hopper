@@ -60,12 +60,12 @@
       </h1>
       <p class="animate-fade-up mt-5 max-w-md text-[15px] leading-relaxed text-white/65" style="animation-delay: 120ms">
         Students launch VMs with credits allocated by their teachers. Teachers
-        manage a credit budget for their class. Sign up with your university email.
+        manage a credit budget for their class. Sign up with your email.
       </p>
     </div>
     <div class="animate-fade-up relative flex items-center gap-2 text-xs text-white/45" style="animation-delay: 420ms">
       <ShieldCheck class="size-4" strokeWidth={1.75} />
-      <span>Secured by Keycloak. Only @cs.du.ac.bd accounts.</span>
+      <span>Secured by Keycloak.</span>
     </div>
   </aside>
 
@@ -115,8 +115,8 @@
           <Input id="su-name" bind:value={name} required autocomplete="name" placeholder="Jane Doe" class="mt-1" />
         </div>
         <div>
-          <Label for="su-email">University email</Label>
-          <Input id="su-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@cs.du.ac.bd" class="mt-1" />
+          <Label for="su-email">Email</Label>
+          <Input id="su-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@example.com" class="mt-1" />
         </div>
         <div>
           <Label for="su-password">Password</Label>

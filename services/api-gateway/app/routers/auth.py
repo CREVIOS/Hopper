@@ -207,7 +207,7 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     if body.role not in ("student", "teacher"):
         raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
     if "@" not in email or not _domain_allowed(email):
-        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign up.")
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign up.")
 
     try:
         user_id = await keycloak_admin.create_user(
@@ -248,7 +248,7 @@ async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = 
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid token")
     if not _domain_allowed(payload.email):
-        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign in.")
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign in.")
     if settings.require_email_verified and not payload.email_verified:
         raise HTTPException(status_code=403, detail="Please verify your email, then sign in.")
     await _upsert_user_row(db, payload)

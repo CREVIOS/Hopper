@@ -45,7 +45,7 @@
   const errorMessage = $derived.by(() => {
     switch (errorParam) {
       case 'domain':
-        return 'Only @cs.du.ac.bd accounts may sign in. Contact your department admin if you need access.';
+        return 'This account is not permitted to sign in. Contact your department admin if you need access.';
       case 'email_unverified':
         return 'Verify your email address (check your inbox), then sign in again.';
       case 'oidc':
@@ -174,8 +174,8 @@
       <!-- Themed email + password sign-in -->
       <form onsubmit={handlePasswordLogin} class="animate-fade-up space-y-3.5" style="animation-delay: 40ms">
         <div>
-          <Label for="li-email">University email</Label>
-          <Input id="li-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@cs.du.ac.bd" class="mt-1" />
+          <Label for="li-email">Email</Label>
+          <Input id="li-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@example.com" class="mt-1" />
         </div>
         <div>
           <Label for="li-password">Password</Label>
@@ -265,7 +265,7 @@
       >
         <p class="font-medium text-foreground">Students and teachers welcome.</p>
         <p class="mt-1.5">
-          Create an account with your <em>@cs.du.ac.bd</em> email and sign in
+          Create an account with your email and sign in
           above. Teacher accounts are reviewed by an admin before they can
           allocate credits. Administrators sign in with University SSO. Trouble?
           Email

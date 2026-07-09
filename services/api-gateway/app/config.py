@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     debug: bool = False
     node_ip: str = "127.0.0.1"
 
-    # Self-registration is gated to these email domains. Use lowercase, no @.
-    # Empty list = allow any (dev only).
-    allowed_email_domains: list[str] = ["cs.du.ac.bd"]
+    # Self-registration email-domain allowlist. Use lowercase, no @.
+    # Empty list = allow any valid email (the default). Set a non-empty list
+    # (e.g. via HOPPER_ALLOWED_EMAIL_DOMAINS) to restrict signup/login to
+    # specific domains.
+    allowed_email_domains: list[str] = []
     # If true, /auth/callback rejects users whose Keycloak `email_verified`
     # claim is false. Keycloak should also enforce verification at signup.
     require_email_verified: bool = True
