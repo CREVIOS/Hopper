@@ -56,3 +56,9 @@ def test_settings_allows_empty_domain_list_for_dev_mode(monkeypatch):
     settings = Settings(_env_file=None)
 
     assert settings.allowed_email_domains == []
+
+
+def test_settings_model_config_uses_expected_env_settings():
+    assert Settings.model_config["env_prefix"] == "HOPPER_"
+    assert Settings.model_config["env_file"] == ".env"
+    assert Settings.model_config["env_file_encoding"] == "utf-8"
