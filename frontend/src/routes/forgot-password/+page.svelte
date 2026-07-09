@@ -32,8 +32,8 @@
   async function reset(e: SubmitEvent) {
     e.preventDefault();
     error = null;
-    if (password.length < 8) {
-      error = 'Password must be at least 8 characters.';
+    if (password.length < 12) {
+      error = 'Password must be at least 12 characters.';
       return;
     }
     submitting = true;
@@ -102,7 +102,7 @@
         </div>
         <div>
           <Label for="fp-password">New password</Label>
-          <Input id="fp-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="At least 8 characters" class="mt-1" />
+          <Input id="fp-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="At least 12 characters" class="mt-1" />
         </div>
         <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
           <span class="flex items-center gap-2.5">
