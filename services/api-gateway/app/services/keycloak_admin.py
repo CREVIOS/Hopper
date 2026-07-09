@@ -197,6 +197,41 @@ class KeycloakAdminClient:
         await self.set_user_role(user_id, role)
         return user_id
 
+    async def get_user_by_email(self, email: str) -> dict | None:
+        """Return the Keycloak user dict for an exact email, or None."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                await self._admin_url("/users"),
+                headers=await self._headers(),
+                params={"email": email, "exact": "true"},
+            )
+        if resp.status_code != 200:
+            raise KeycloakAdminError(f"user lookup failed: {resp.text}")
+        rows = resp.json() or []
+        return rows[0] if rows else None
+
+    async def set_email_verified(self, user_id: str, verified: bool = True) -> None:
+        """Flip a user's emailVerified flag."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.put(
+                await self._admin_url(f"/users/{user_id}"),
+                headers={**(await self._headers()), "Content-Type": "application/json"},
+                json={"emailVerified": verified},
+            )
+        if resp.status_code not in (204, 200):
+            raise KeycloakAdminError(f"set email verified failed: {resp.text}")
+
+    async def reset_password(self, user_id: str, new_password: str) -> None:
+        """Set a permanent (non-temporary) password for a user."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.put(
+                await self._admin_url(f"/users/{user_id}/reset-password"),
+                headers={**(await self._headers()), "Content-Type": "application/json"},
+                json={"type": "password", "value": new_password, "temporary": False},
+            )
+        if resp.status_code not in (204, 200):
+            raise KeycloakAdminError(f"reset password failed: {resp.text}")
+
     async def logout_user(self, user_id: str) -> None:
         """Force-revoke all of the user's Keycloak sessions and refresh tokens."""
         async with httpx.AsyncClient(timeout=10.0) as client:
