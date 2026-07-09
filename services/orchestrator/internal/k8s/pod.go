@@ -19,14 +19,10 @@ import (
 // a separate secret store.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
 
-// CodeServerPasswordAnnotation stores the per-pod code-server password.
-// code-server reads $PASSWORD at start-up, so the same value is also injected
-// as a container env var. The annotation lets the gateway recover it for
-// auto-fill on the proxy redirect without exec-ing into the pod.
-const CodeServerPasswordAnnotation = "hopper.dev/code-server-password"
-
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
-// of entropy). Used for both the SSH root password and code-server's auth.
+// of entropy). Used for the per-pod SSH root password. (code-server runs with
+// auth disabled — the platform gates VS Code access, so no code-server
+// password is generated; see images/hopper-vm/config/code-server-config.yaml.)
 func generateRandomPassword() (string, error) {
 	buf := make([]byte, 18)
 	if _, err := rand.Read(buf); err != nil {
@@ -68,13 +64,10 @@ type CreatePodOpts struct {
 	StorageClass string
 }
 
-
-
 type PodPorts struct {
-	SSHPort            int32
-	VSCodePort         int32
-	SSHPassword        string
-	CodeServerPassword string
+	SSHPort     int32
+	VSCodePort  int32
+	SSHPassword string
 }
 
 // cpuRequestFor returns the scheduling CPU request for a VM: a quarter of the
@@ -95,20 +88,16 @@ func cpuRequestFor(cpuLimit string) resource.Quantity {
 // Returns the assigned SSH NodePort and the per-pod root password.
 func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
 	labels := map[string]string{
-		"app":                   "hopper-vm",
-		"role":                  "user-vm",
-		"hopper.dev/pod-id":     opts.PodID,
-		"hopper.dev/user-id":    opts.UserID,
-		"hopper.dev/plan":       opts.Plan,
+		"app":                "hopper-vm",
+		"role":               "user-vm",
+		"hopper.dev/pod-id":  opts.PodID,
+		"hopper.dev/user-id": opts.UserID,
+		"hopper.dev/plan":    opts.Plan,
 	}
 
 	sshPassword, err := generateRandomPassword()
 	if err != nil {
 		return PodPorts{}, fmt.Errorf("generating ssh password: %w", err)
-	}
-	codePassword, err := generateRandomPassword()
-	if err != nil {
-		return PodPorts{}, fmt.Errorf("generating code-server password: %w", err)
 	}
 
 	// LXCFS bind-mounts: make /proc/{meminfo,cpuinfo,...} reflect the pod's
@@ -195,14 +184,13 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	gracePeriod := int64(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        opts.PodName,
-			Namespace:   pm.namespace,
-			Labels:      labels,
+			Name:      opts.PodName,
+			Namespace: pm.namespace,
+			Labels:    labels,
 			// Stored on the Pod so reconciliation after orchestrator restart can
-			// recover the password without an extra Secret.
+			// recover the SSH password without an extra Secret.
 			Annotations: map[string]string{
-				SshPasswordAnnotation:        sshPassword,
-				CodeServerPasswordAnnotation: codePassword,
+				SshPasswordAnnotation: sshPassword,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -231,6 +219,14 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				{
 					Name:  "vm",
 					Image: opts.Image,
+					// VM images (hopper/vm-*:22.04) are built locally and imported
+					// into the node's containerd (`make vm-images-load`); they are
+					// NOT in a pullable registry. IfNotPresent uses the local copy
+					// and never reaches out to Docker Hub (which would fail with
+					// ErrImagePull). If the image is ever evicted from the node,
+					// rebuild+reimport it — a missing image is the one thing that
+					// makes a "created" VM never actually run.
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					// Override the image CMD so we can set a unique root password
 					// from $ROOT_PASSWORD before sshd comes up. exec replaces the
 					// shell so signals reach supervisord normally.
@@ -247,9 +243,6 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
 						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
 						{Name: "ROOT_PASSWORD", Value: sshPassword},
-						// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
-						// to set $PASSWORD for code-server; never set in shell history.
-						{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
 					},
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs
@@ -343,9 +336,9 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		return PodPorts{}, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
 	}
 
-	ports := PodPorts{SSHPassword: sshPassword, CodeServerPassword: codePassword}
-	for _, p := range createdSvc.Spec.Ports{
-		switch p.Name{
+	ports := PodPorts{SSHPassword: sshPassword}
+	for _, p := range createdSvc.Spec.Ports {
+		switch p.Name {
 		case "ssh":
 			ports.SSHPort = p.NodePort
 		case "vscode":
