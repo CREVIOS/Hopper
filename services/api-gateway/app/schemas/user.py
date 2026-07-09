@@ -15,6 +15,27 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=128)
 
 
+class VerifyEmailRequest(BaseModel):
+    email: str = Field(max_length=254)
+    code: str = Field(min_length=4, max_length=12)
+
+
+class ResendCodeRequest(BaseModel):
+    email: str = Field(max_length=254)
+    # "verify_email" (default) or "password_reset".
+    purpose: str = Field(default="verify_email")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(max_length=254)
+    code: str = Field(min_length=4, max_length=12)
+    password: str = Field(min_length=8, max_length=128)
+
+
 class TokenPayload(BaseModel):
     sub: str
     email: str

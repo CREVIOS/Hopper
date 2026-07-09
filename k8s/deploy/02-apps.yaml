@@ -66,6 +66,26 @@ spec:
             - name: HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: { name: hopper-keycloak-admin, key: client-secret }
+            # SMTP for signup verification + password-reset emails. Sourced from
+            # the hopper-smtp Secret; refs are optional so a missing/empty Secret
+            # degrades to DEV mode (codes logged, not sent) instead of breaking
+            # the pod. See 00-secrets.yaml.
+            - name: HOPPER_SMTP_HOST
+              valueFrom:
+                secretKeyRef: { name: hopper-smtp, key: smtp-host, optional: true }
+            - name: HOPPER_SMTP_USER
+              valueFrom:
+                secretKeyRef: { name: hopper-smtp, key: smtp-user, optional: true }
+            - name: HOPPER_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: hopper-smtp, key: smtp-password, optional: true }
+            - name: HOPPER_SMTP_FROM
+              valueFrom:
+                secretKeyRef: { name: hopper-smtp, key: smtp-from, optional: true }
+            - name: HOPPER_SMTP_PORT
+              value: "587"
+            - name: HOPPER_SMTP_STARTTLS
+              value: "true"
             - name: HOPPER_CORS_ORIGINS
               value: '["https://hopper.farefin.com"]'
             - name: HOPPER_ORCHESTRATOR_URL
