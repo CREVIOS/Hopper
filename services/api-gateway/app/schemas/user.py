@@ -3,7 +3,9 @@ from pydantic import BaseModel, Field
 
 class SignupRequest(BaseModel):
     email: str = Field(max_length=254)
-    password: str = Field(min_length=8, max_length=128)
+    # Min length 12 matches the Keycloak `hopper` realm password policy; a
+    # shorter password would pass here but fail create_user in Keycloak.
+    password: str = Field(min_length=12, max_length=128)
     name: str = Field(min_length=1, max_length=120)
     # "student" (active immediately) or "teacher" (created as student, pending
     # admin approval). Anything else is rejected by the router.
@@ -33,7 +35,8 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     email: str = Field(max_length=254)
     code: str = Field(min_length=4, max_length=12)
-    password: str = Field(min_length=8, max_length=128)
+    # Matches the Keycloak realm password policy (min length 12).
+    password: str = Field(min_length=12, max_length=128)
 
 
 class TokenPayload(BaseModel):
