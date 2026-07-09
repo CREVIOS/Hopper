@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     code_url_signing_secret: str = "change-me-in-production-32bytes-or-more"
     code_url_ttl_seconds: int = 600
 
+    # SMTP for email verification + password reset. If smtp_host is empty the
+    # email layer runs in DEV mode: codes are written to the app log instead of
+    # being sent (so the flow is testable without a mail server). In prod these
+    # come from the `hopper-smtp` Secret / env.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "Hopper <no-reply@localhost>"
+    smtp_starttls: bool = True  # True=STARTTLS on 587; False+465 = implicit TLS
+    # Verification / reset one-time codes.
+    email_code_ttl_seconds: int = 600  # 10 min
+    email_code_length: int = 6
+    email_code_max_attempts: int = 5
+
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 
