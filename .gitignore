@@ -75,3 +75,6 @@ docs/*.blg
 docs/*.bcf
 docs/*.run.xml
 .gstack/
+
+# Local operational scratch (helper scripts, may contain creds) — never commit
+scratchpad/
