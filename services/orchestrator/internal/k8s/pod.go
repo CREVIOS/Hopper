@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,6 +30,23 @@ func generateRandomPassword() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// containerStartupArgs is the `/bin/sh -c` script the VM container runs on
+// boot: set the per-pod root password, then — only if the launching user
+// registered SSH keys — materialise them into /root/.ssh/authorized_keys
+// before sshd starts, and finally exec supervisord (sshd + code-server).
+//
+// $AUTHORIZED_KEYS (newline-joined public keys) is quoted everywhere so its
+// contents are never interpreted by the shell. The `[ -z ] ||` guard makes the
+// key step a no-op for password-only VMs, preserving prior behaviour. `exec`
+// replaces the shell so SIGTERM reaches supervisord for graceful shutdown.
+func containerStartupArgs() string {
+	return `echo "root:$ROOT_PASSWORD" | chpasswd && ` +
+		`{ [ -z "$AUTHORIZED_KEYS" ] || { mkdir -p /root/.ssh && ` +
+		`printf '%s\n' "$AUTHORIZED_KEYS" > /root/.ssh/authorized_keys && ` +
+		`chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys; }; } && ` +
+		`exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf`
 }
 
 type PodManager struct {
@@ -62,6 +80,11 @@ type CreatePodOpts struct {
 	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
 	// uses the cluster default.
 	StorageClass string
+	// AuthorizedKeys are the launching user's OpenSSH public keys. When
+	// non-empty they are written to /root/.ssh/authorized_keys in the VM so
+	// key-based SSH works. Public keys are not secret; they are passed as a
+	// pod env var and materialised by the container's startup command.
+	AuthorizedKeys []string
 }
 
 type PodPorts struct {
@@ -231,9 +254,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 					// from $ROOT_PASSWORD before sshd comes up. exec replaces the
 					// shell so signals reach supervisord normally.
 					Command: []string{"/bin/sh", "-c"},
-					Args: []string{
-						`echo "root:$ROOT_PASSWORD" | chpasswd && exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf`,
-					},
+					Args:    []string{containerStartupArgs()},
 					Ports: []corev1.ContainerPort{
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
 						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
@@ -243,6 +264,8 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
 						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
 						{Name: "ROOT_PASSWORD", Value: sshPassword},
+						// Newline-joined OpenSSH public keys (empty ⇒ no key injection).
+						{Name: "AUTHORIZED_KEYS", Value: strings.Join(opts.AuthorizedKeys, "\n")},
 					},
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs

@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from app.proto.hopper.pod.v1 import pod_pb2 as hopper_dot_pod_dot_v1_dot_pod__pb2
+from app.proto.hopper.pod.v1 import pod_pb2 as app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in hopper/pod/v1/pod_pb2_grpc.py depends on'
+        + ' but the generated code in app/proto/hopper/pod/v1/pod_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,33 +36,33 @@ class PodOrchestratorStub(object):
         """
         self.CreatePod = channel.unary_unary(
                 '/hopper.pod.v1.PodOrchestrator/CreatePod',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
                 _registered_method=True)
         self.TerminatePod = channel.unary_unary(
                 '/hopper.pod.v1.PodOrchestrator/TerminatePod',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.FromString,
                 _registered_method=True)
         self.GetPodStatus = channel.unary_unary(
                 '/hopper.pod.v1.PodOrchestrator/GetPodStatus',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
                 _registered_method=True)
         self.StreamMetrics = channel.unary_stream(
                 '/hopper.pod.v1.PodOrchestrator/StreamMetrics',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.FromString,
                 _registered_method=True)
         self.WatchPodStatus = channel.unary_stream(
                 '/hopper.pod.v1.PodOrchestrator/WatchPodStatus',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
                 _registered_method=True)
         self.ListNodes = channel.unary_unary(
                 '/hopper.pod.v1.PodOrchestrator/ListNodes',
-                request_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.SerializeToString,
-                response_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.FromString,
+                request_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.SerializeToString,
+                response_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.FromString,
                 _registered_method=True)
 
 
@@ -110,33 +110,33 @@ def add_PodOrchestratorServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'CreatePod': grpc.unary_unary_rpc_method_handler(
                     servicer.CreatePod,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
             ),
             'TerminatePod': grpc.unary_unary_rpc_method_handler(
                     servicer.TerminatePod,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.SerializeToString,
             ),
             'GetPodStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.GetPodStatus,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
             ),
             'StreamMetrics': grpc.unary_stream_rpc_method_handler(
                     servicer.StreamMetrics,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.SerializeToString,
             ),
             'WatchPodStatus': grpc.unary_stream_rpc_method_handler(
                     servicer.WatchPodStatus,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.SerializeToString,
             ),
             'ListNodes': grpc.unary_unary_rpc_method_handler(
                     servicer.ListNodes,
-                    request_deserializer=hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.FromString,
-                    response_serializer=hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.SerializeToString,
+                    request_deserializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.FromString,
+                    response_serializer=app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -164,8 +164,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/CreatePod',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.CreatePodRequest.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -191,8 +191,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/TerminatePod',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.TerminateResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -218,8 +218,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/GetPodStatus',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -245,8 +245,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/StreamMetrics',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.VmMetrics.FromString,
             options,
             channel_credentials,
             insecure,
@@ -272,8 +272,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/WatchPodStatus',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodId.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.PodStatus.FromString,
             options,
             channel_credentials,
             insecure,
@@ -299,8 +299,8 @@ class PodOrchestrator(object):
             request,
             target,
             '/hopper.pod.v1.PodOrchestrator/ListNodes',
-            hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.SerializeToString,
-            hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.FromString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesRequest.SerializeToString,
+            app_dot_proto_dot_hopper_dot_pod_dot_v1_dot_pod__pb2.ListNodesResponse.FromString,
             options,
             channel_credentials,
             insecure,

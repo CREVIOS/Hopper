@@ -102,13 +102,14 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		apiPodID = podName
 	}
 	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
-		PodName: podName,
-		PodID:   apiPodID,
-		UserID:  req.UserId,
-		Plan:    req.Plan,
-		Image:   req.Image,
-		CPU:     req.Cpu,
-		Memory:  req.Memory,
+		PodName:        podName,
+		PodID:          apiPodID,
+		UserID:         req.UserId,
+		Plan:           req.Plan,
+		Image:          req.Image,
+		CPU:            req.Cpu,
+		Memory:         req.Memory,
+		AuthorizedKeys: req.AuthorizedKeys,
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)

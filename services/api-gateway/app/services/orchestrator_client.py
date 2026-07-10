@@ -76,7 +76,8 @@ class OrchestratorClient:
             await self._channel.close()
 
     async def create_pod(
-        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "", pod_id: str = ""
+        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
+        pod_id: str = "", authorized_keys: list[str] | None = None,
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -91,6 +92,7 @@ class OrchestratorClient:
             memory=memory,
             disk=disk,
             pod_id=pod_id,
+            authorized_keys=authorized_keys or [],
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(

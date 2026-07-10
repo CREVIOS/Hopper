@@ -86,6 +86,53 @@ async def test_create_pod_maps_response(monkeypatch):
     assert response.ssh_password == "secret"
 
 
+async def test_create_pod_forwards_authorized_keys(monkeypatch):
+    captured = {}
+
+    class FakeStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        async def CreatePod(self, req, timeout):
+            captured["request"] = req
+            return types.SimpleNamespace(
+                id="vm-1", state=3, ssh_port=1, vscode_port=2, message="running", ssh_password="",
+            )
+
+    _install_fake_proto_modules(monkeypatch, FakeStub)
+
+    client = orchestrator_module.OrchestratorClient()
+    client._channel = object()
+
+    keys = ["ssh-ed25519 AAA a@b", "ssh-rsa BBB c@d"]
+    await client.create_pod("user-1", "small", "image", "1", "2Gi", pod_id="pod-1", authorized_keys=keys)
+
+    assert captured["request"].authorized_keys == keys
+
+
+async def test_create_pod_defaults_authorized_keys_to_empty(monkeypatch):
+    captured = {}
+
+    class FakeStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        async def CreatePod(self, req, timeout):
+            captured["request"] = req
+            return types.SimpleNamespace(
+                id="vm-1", state=3, ssh_port=1, vscode_port=2, message="running", ssh_password="",
+            )
+
+    _install_fake_proto_modules(monkeypatch, FakeStub)
+
+    client = orchestrator_module.OrchestratorClient()
+    client._channel = object()
+
+    await client.create_pod("user-1", "small", "image", "1", "2Gi", pod_id="pod-1")
+
+    assert captured["request"].authorized_keys == []
+
+
 async def test_terminate_pod_returns_success(monkeypatch):
     class FakeStub:
         def __init__(self, channel):

@@ -24,6 +24,7 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
@@ -143,6 +144,14 @@ async def create_pod(
     await db.commit()
     await db.refresh(session)
 
+    # Fetch the user's registered SSH public keys so the orchestrator can inject
+    # them into the VM's authorized_keys (the key CRUD stored keys that never
+    # reached the VM until now — the UI already promised passwordless SSH).
+    keys_result = await db.execute(
+        select(SSHKey.public_key).where(SSHKey.user_id == current_user.sub)
+    )
+    authorized_keys = list(keys_result.scalars().all())
+
     # Call orchestrator to create the actual K8s pod
     try:
         resp = await orchestrator_client.create_pod(
@@ -152,6 +161,7 @@ async def create_pod(
             cpu=resources["cpu"],
             memory=resources["memory"],
             pod_id=pod_id,
+            authorized_keys=authorized_keys,
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator

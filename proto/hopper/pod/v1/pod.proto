@@ -31,6 +31,11 @@ message CreatePodRequest {
   // code-server's --base-path so that external URLs (path-based code access)
   // match the same identifier the API and frontend use.
   string pod_id = 8;
+  // OpenSSH-format public keys the launching user has registered. Injected
+  // into the VM's /root/.ssh/authorized_keys so key-based SSH works (the
+  // key CRUD previously stored keys that never reached the VM). Public keys
+  // are not secret, so passing them in the request (vs a Secret) is fine.
+  repeated string authorized_keys = 9;
 }
 
 message PodStatus {
