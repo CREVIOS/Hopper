@@ -5,6 +5,20 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
+def to_async_database_url(database_url: str) -> str:
+    """Normalize PostgreSQL URLs to the asyncpg driver used by the API gateway."""
+    if database_url.startswith("postgresql+psycopg2://"):
+        return database_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    return database_url
+
+
 @pytest.fixture(scope="session")
 def postgres_container():
     """Start a PostgreSQL + TimescaleDB container for integration tests."""
@@ -33,7 +47,7 @@ def nats_container():
 @pytest_asyncio.fixture
 async def db_session(postgres_container) -> AsyncSession:
     """Create a database session for testing."""
-    url = postgres_container.get_connection_url().replace("postgresql://", "postgresql+asyncpg://")
+    url = to_async_database_url(postgres_container.get_connection_url())
     engine = create_async_engine(url)
 
     # Run migrations
