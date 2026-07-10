@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     debug: bool = False
     node_ip: str = "127.0.0.1"
 
-    # Self-registration is gated to these email domains. Use lowercase, no @.
-    # Empty list = allow any (dev only).
-    allowed_email_domains: list[str] = ["cs.du.ac.bd"]
+    # Self-registration email-domain allowlist. Use lowercase, no @.
+    # Empty list = allow any valid email (the default). Set a non-empty list
+    # (e.g. via HOPPER_ALLOWED_EMAIL_DOMAINS) to restrict signup/login to
+    # specific domains.
+    allowed_email_domains: list[str] = []
     # If true, /auth/callback rejects users whose Keycloak `email_verified`
     # claim is false. Keycloak should also enforce verification at signup.
     require_email_verified: bool = True
@@ -46,6 +48,21 @@ class Settings(BaseSettings):
     cluster_reserve_storage: str = "10Gi"
     # How often the background admission loop re-checks the queue, in seconds.
     scheduler_tick_seconds: int = 5
+
+    # SMTP for email verification + password reset. If smtp_host is empty the
+    # email layer runs in DEV mode: codes are written to the app log instead of
+    # being sent (so the flow is testable without a mail server). In prod these
+    # come from the `hopper-smtp` Secret / env.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "Hopper <no-reply@localhost>"
+    smtp_starttls: bool = True  # True=STARTTLS on 587; False+465 = implicit TLS
+    # Verification / reset one-time codes.
+    email_code_ttl_seconds: int = 600  # 10 min
+    email_code_length: int = 6
+    email_code_max_attempts: int = 5
 
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 

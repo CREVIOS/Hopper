@@ -6,16 +6,15 @@ matches the access token's `exp` so a stolen cookie expires sooner than the
 refresh token. Logout is RP-initiated against Keycloak so SSO sessions and
 refresh tokens are actually revoked, not just deleted client-side.
 """
-from __future__ import annotations
-
 import base64
 import hashlib
 import logging
 import os
+import uuid
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +23,22 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
+from app.models.audit import AuditLog
 from app.models.user import User
-from app.schemas.user import TokenPayload, UserResponse
+from app.schemas.user import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResendCodeRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+    TokenPayload,
+    UserResponse,
+    VerifyEmailRequest,
+)
+from app.services import verification
 from app.services.credit_service import get_or_create_account
+from app.services.email import send_code_email
+from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -137,6 +149,225 @@ async def login(request: Request):
         httponly=True, secure=True, samesite="lax", path="/", max_age=600,
     )
     return resp
+
+
+async def _password_grant(email: str, password: str) -> dict:
+    """Resource-owner password grant against the public hopper-api client.
+
+    Powers the themed in-app login/signup (no redirect to Keycloak's hosted
+    page). The client must have Direct Access Grants enabled. Raises 401 on bad
+    credentials so the caller returns a clean error to the browser.
+    """
+    data = {
+        "grant_type": "password",
+        "client_id": settings.keycloak_client_id,
+        "scope": "openid email profile",
+        "username": email,
+        "password": password,
+    }
+    if settings.keycloak_client_secret:
+        data["client_secret"] = settings.keycloak_client_secret
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(KEYCLOAK_TOKEN_URL, data=data)
+    if resp.status_code == 401:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if resp.status_code != 200:
+        logger.warning("password grant failed: %s", resp.text)
+        raise HTTPException(status_code=401, detail="Login failed")
+    return resp.json()
+
+
+def _issue_session(
+    body: dict,
+    tokens: dict,
+    *,
+    status_code: int = 200,
+) -> JSONResponse:
+    """Return a JSON response carrying the auth cookies (same shape as callback)."""
+    refresh_ttl = int(tokens.get("refresh_expires_in", 1800))
+    resp = JSONResponse(body, status_code=status_code)
+    _set_session_cookies(
+        resp,
+        access_token=tokens["access_token"],
+        access_ttl=int(tokens.get("expires_in", 300)),
+        refresh_token=tokens.get("refresh_token"),
+        refresh_ttl=refresh_ttl,
+    )
+    if "id_token" in tokens:
+        resp.set_cookie(
+            "id_token", tokens["id_token"],
+            httponly=True, secure=True, samesite="lax", path="/", max_age=refresh_ttl,
+        )
+    return resp
+
+
+async def _upsert_user_row(db: AsyncSession, payload: TokenPayload) -> None:
+    result = await db.execute(select(User).where(User.id == payload.sub))
+    user = result.scalar_one_or_none()
+    if user:
+        user.email = payload.email
+        user.name = payload.name
+        user.role = payload.role
+    else:
+        db.add(User(id=payload.sub, email=payload.email, name=payload.name, role=payload.role))
+    await db.commit()
+    await get_or_create_account(db, payload.sub)
+
+
+@router.post(
+    "/signup",
+    responses={
+        202: {"description": "Teacher signup accepted and pending admin approval"},
+    },
+)
+@limiter.limit("5/minute")
+async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depends(get_db)):
+    """Self-service signup. Students activate immediately; teachers are created
+    as students with pending_teacher=true, awaiting admin approval."""
+    email = (body.email or "").lower().strip()
+    if body.role not in ("student", "teacher"):
+        raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
+    if "@" not in email or not _domain_allowed(email):
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign up.")
+
+    try:
+        # Created unverified — the user must confirm the emailed code before a
+        # session is issued (login enforces require_email_verified).
+        user_id = await keycloak_admin.create_user(
+            email=email, name=body.name, password=body.password,
+            role="student", email_verified=False,
+        )
+    except KeycloakAdminError as e:
+        if "exists" in str(e):
+            raise HTTPException(status_code=409, detail="An account with this email already exists.")
+        logger.error("signup: keycloak create_user failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not create the account. Try again later.")
+
+    pending = body.role == "teacher"
+    db.add(User(id=user_id, email=email, name=body.name, role="student", pending_teacher=pending))
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), user_id=user_id, action="signup",
+        resource_type="user", resource_id=user_id,
+        ip_address=request.client.host if request.client else "-", status_code=201,
+    ))
+    code = await verification.issue_code(db, email, verification.VERIFY_EMAIL)
+    await db.commit()
+    await get_or_create_account(db, user_id)
+    await send_code_email(email, verification.VERIFY_EMAIL, code)
+
+    tokens = await _password_grant(email, body.password)
+    return _issue_session(
+        {"id": user_id, "email": email, "name": body.name, "role": "student", "pending_teacher": pending},
+        tokens,
+        status_code=status.HTTP_202_ACCEPTED if pending else status.HTTP_200_OK,
+    )
+
+
+@router.post("/verify-email")
+@limiter.limit("10/minute")
+async def verify_email(request: Request, body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
+    """Confirm a signup verification code and mark the account email-verified.
+    On success the client logs in normally (POST /auth/login)."""
+    email = (body.email or "").lower().strip()
+    ok = await verification.verify_code(db, email, verification.VERIFY_EMAIL, body.code)
+    if not ok:
+        await db.commit()  # persist the incremented attempt counter
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        await db.commit()
+        raise HTTPException(status_code=404, detail="Account not found.")
+    try:
+        await keycloak_admin.set_email_verified(user.id, True)
+    except KeycloakAdminError as e:
+        logger.error("verify-email: set_email_verified failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not verify the account. Try again later.")
+    await db.commit()
+    return JSONResponse({"status": "verified", "email": email})
+
+
+@router.post("/resend-code")
+@limiter.limit("3/minute")
+async def resend_code(request: Request, body: ResendCodeRequest, db: AsyncSession = Depends(get_db)):
+    """Re-send a verification code for a not-yet-verified signup. Always returns
+    200 (never reveals whether the account exists / is already verified)."""
+    email = (body.email or "").lower().strip()
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku and not ku.get("emailVerified", False):
+            code = await verification.issue_code(db, email, verification.VERIFY_EMAIL)
+            await db.commit()
+            await send_code_email(email, verification.VERIFY_EMAIL, code)
+    except KeycloakAdminError as e:
+        logger.error("resend-code failed for %s: %s", email, e)
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+async def forgot_password(request: Request, body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Begin a password reset. Always returns 200 so the response can't be used
+    to enumerate which emails have accounts."""
+    email = (body.email or "").lower().strip()
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku:
+            code = await verification.issue_code(db, email, verification.PASSWORD_RESET)
+            await db.commit()
+            await send_code_email(email, verification.PASSWORD_RESET, code)
+    except KeycloakAdminError as e:
+        logger.error("forgot-password failed for %s: %s", email, e)
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/reset-password")
+@limiter.limit("10/minute")
+async def reset_password(request: Request, body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Complete a password reset with the emailed code, then set the new
+    password in Keycloak. The client logs in afterwards."""
+    email = (body.email or "").lower().strip()
+    ok = await verification.verify_code(db, email, verification.PASSWORD_RESET, body.code)
+    if not ok:
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku is None:
+            await db.commit()
+            raise HTTPException(status_code=404, detail="Account not found.")
+        await keycloak_admin.reset_password(ku["id"], body.password)
+        # A reset also confirms control of the mailbox — mark verified.
+        if not ku.get("emailVerified", False):
+            await keycloak_admin.set_email_verified(ku["id"], True)
+    except KeycloakAdminError as e:
+        logger.error("reset-password failed for %s: %s", email, e)
+        raise HTTPException(status_code=502, detail="Could not reset the password. Try again later.")
+    await db.commit()
+    return JSONResponse({"status": "reset", "email": email})
+
+
+@router.post("/login")
+@limiter.limit("10/minute")
+async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Themed email + password login (direct grant). The GET /login above keeps
+    the OIDC redirect flow for SSO."""
+    email = (body.email or "").lower().strip()
+    tokens = await _password_grant(email, body.password)
+    payload = await verify_token(tokens["access_token"])
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if not _domain_allowed(payload.email):
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign in.")
+    if settings.require_email_verified and not payload.email_verified:
+        raise HTTPException(status_code=403, detail="Please verify your email, then sign in.")
+    await _upsert_user_row(db, payload)
+    return _issue_session(
+        {"id": payload.sub, "email": payload.email, "name": payload.name, "role": payload.role},
+        tokens,
+    )
 
 
 @router.get("/callback")
@@ -287,12 +518,22 @@ async def refresh(request: Request):
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user: TokenPayload = Depends(get_current_user)):
+async def me(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Role is canonical in Keycloak (cached on the token); the pending_teacher
+    # approval flag lives only on our users row. A teacher signup is a student
+    # with pending_teacher=true until an admin approves, so read it back here
+    # to let the UI reflect the "awaiting approval" state.
+    result = await db.execute(select(User).where(User.id == current_user.sub))
+    user = result.scalar_one_or_none()
     return UserResponse(
         id=current_user.sub,
         email=current_user.email,
         name=current_user.name,
         role=current_user.role,
+        pending_teacher=bool(user.pending_teacher) if user else False,
     )
 
 

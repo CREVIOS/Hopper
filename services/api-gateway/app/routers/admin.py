@@ -51,11 +51,88 @@ async def list_users(
             "email": u.email,
             "name": u.name,
             "role": u.role,
+            "pending_teacher": u.pending_teacher,
             "university_id": u.university_id,
             "created_at": u.created_at.isoformat() if u.created_at else None,
         }
         for u in users
     ]
+
+
+@router.get("/teacher-requests")
+async def list_teacher_requests(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Users who signed up as a teacher and await approval (admin only)."""
+    _require_admin_only(current_user)
+    result = await db.execute(
+        select(User).where(User.pending_teacher.is_(True)).order_by(User.created_at.desc())
+    )
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in result.scalars().all()
+    ]
+
+
+@router.post("/teacher-requests/{user_id}/approve")
+async def approve_teacher(
+    user_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a pending teacher: promote to professor and clear the flag."""
+    _require_admin_only(current_user)
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    if not user.pending_teacher:
+        raise HTTPException(status_code=400, detail="no pending teacher request for this user")
+
+    try:
+        await keycloak_admin.set_user_role(user_id, "professor")
+    except KeycloakAdminError as e:
+        logger.error("approve_teacher: keycloak role change failed for %s: %s", user_id, e)
+        raise HTTPException(status_code=502, detail="failed to update role in Keycloak")
+
+    user.role = "professor"
+    user.pending_teacher = False
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), user_id=current_user.sub, action="approve_teacher",
+        resource_type="user", resource_id=user_id, ip_address="-", status_code=200,
+    ))
+    await db.commit()
+    # Force re-issue of the user's tokens so the new role takes effect promptly.
+    try:
+        await keycloak_admin.logout_user(user_id)
+    except Exception:
+        logger.warning("could not force-logout %s after teacher approval", user_id)
+    return {"status": "ok", "user_id": user_id, "role": "professor"}
+
+
+@router.post("/teacher-requests/{user_id}/reject")
+async def reject_teacher(
+    user_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a pending teacher: clear the flag, the user stays a student."""
+    _require_admin_only(current_user)
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    user.pending_teacher = False
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), user_id=current_user.sub, action="reject_teacher",
+        resource_type="user", resource_id=user_id, ip_address="-", status_code=200,
+    ))
+    await db.commit()
+    return {"status": "ok", "user_id": user_id, "role": "student"}
 
 
 @router.get("/courses")

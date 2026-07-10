@@ -1,5 +1,6 @@
 from app.models.audit import AuditLog
 from app.models.credit_ledger import Account, LedgerEntry, Transfer
+from app.models.email_code import EmailCode
 from app.models.issue_report import IssueReport
 from app.models.metrics import MetricsSample
 from app.models.scheduler_leader import SchedulerLeader
@@ -11,6 +12,7 @@ from app.models.vm_queue_entry import VmQueueEntry
 __all__ = [
     "Account",
     "AuditLog",
+    "EmailCode",
     "IssueReport",
     "LedgerEntry",
     "MetricsSample",

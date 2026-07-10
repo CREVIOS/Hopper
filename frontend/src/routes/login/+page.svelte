@@ -14,17 +14,44 @@
   } from 'lucide-svelte';
   import { page } from '$app/state';
   import { dev } from '$app/environment';
-  import { Button } from '$lib/ui';
+  import { Button, Input, Label } from '$lib/ui';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
+  import Spinner from '$lib/icons/Spinner.svelte';
+  import { api, ApiError } from '$lib/api/client';
 
   let signing = $state(false);
+
+  // Themed email + password login (direct grant). SSO button below still works.
+  let email = $state('');
+  let password = $state('');
+  let submitting = $state(false);
+  let formError = $state<string | null>(null);
+  // When login is blocked because the email isn't verified, offer a verify link.
+  let needsVerify = $state(false);
+
+  async function handlePasswordLogin(e: SubmitEvent) {
+    e.preventDefault();
+    formError = null;
+    needsVerify = false;
+    submitting = true;
+    try {
+      await api.post('/auth/login', { email, password });
+      window.location.href = '/dashboard';
+    } catch (err) {
+      if (err instanceof ApiError && /verify your email/i.test(err.message)) {
+        needsVerify = true;
+      }
+      formError = err instanceof ApiError ? err.message : 'Sign-in failed. Please try again.';
+      submitting = false;
+    }
+  }
 
   // Surface OAuth error redirects (?error=domain | email_unverified | oidc).
   const errorParam = $derived(page.url.searchParams.get('error'));
   const errorMessage = $derived.by(() => {
     switch (errorParam) {
       case 'domain':
-        return 'Only @cs.du.ac.bd accounts may sign in. Contact your department admin if you need access.';
+        return 'This account is not permitted to sign in. Contact your department admin if you need access.';
       case 'email_unverified':
         return 'Verify your email address (check your inbox), then sign in again.';
       case 'oidc':
@@ -33,10 +60,24 @@
         return null;
     }
   });
+  // Success redirects from the verify / reset flows.
+  const successMessage = $derived.by(() => {
+    if (page.url.searchParams.get('verified') === '1') return 'Email verified — you can now sign in.';
+    if (page.url.searchParams.get('reset') === '1') return 'Password reset — sign in with your new password.';
+    return null;
+  });
 
   function handleLogin() {
     signing = true;
     window.location.href = '/api/auth/login';
+  }
+
+  // Clicking "Sign in as admin" does a full-page nav to Keycloak. If the user
+  // hits browser Back, this page is restored from the bfcache with `signing`
+  // still true, leaving the button stuck on "Redirecting…". Reset it whenever
+  // the page is shown (pageshow fires on bfcache restores too).
+  function handlePageShow() {
+    signing = false;
   }
 
   const features = [
@@ -64,6 +105,8 @@
     { icon: Layers, label: 'Up to 3 concurrent VMs', tint: 'text-info bg-info/10' }
   ];
 </script>
+
+<svelte:window onpageshow={handlePageShow} />
 
 <div class="grid min-h-[100dvh] bg-background lg:grid-cols-[1.1fr_1fr]">
   <!-- Brand panel: a fixed deep-indigo surface in both themes (split-login
@@ -141,28 +184,77 @@
         </p>
       </div>
 
-      {#if errorMessage}
+      {#if errorMessage || formError}
         <div
           class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
         >
           <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>{errorMessage}</span>
+          <span>{formError ?? errorMessage}</span>
+        </div>
+      {:else if successMessage}
+        <div
+          class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-600 dark:text-emerald-400"
+        >
+          <Check class="mt-0.5 size-4 shrink-0" />
+          <span>{successMessage}</span>
         </div>
       {/if}
+
+      <!-- Themed email + password sign-in -->
+      <form onsubmit={handlePasswordLogin} class="animate-fade-up space-y-3.5" style="animation-delay: 40ms">
+        <div>
+          <Label for="li-email">Email</Label>
+          <Input id="li-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@example.com" class="mt-1" />
+        </div>
+        <div>
+          <div class="flex items-center justify-between">
+            <Label for="li-password">Password</Label>
+            <a href="/forgot-password" class="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Forgot password?</a>
+          </div>
+          <Input id="li-password" type="password" bind:value={password} required autocomplete="current-password" placeholder="Your password" class="mt-1" />
+        </div>
+        {#if needsVerify}
+          <p class="text-sm text-muted-foreground">
+            <a href={`/verify-email?email=${encodeURIComponent(email)}`} class="font-medium text-foreground underline underline-offset-2">Verify your email</a>
+            to finish setting up your account.
+          </p>
+        {/if}
+        <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
+          <span class="flex items-center gap-2.5">
+            {#if submitting}<Spinner class="size-4" /> Signing in…{:else}<KeyRound class="size-4" /> Sign in{/if}
+          </span>
+          {#if !submitting}<ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />{/if}
+        </Button>
+      </form>
+
+      <p class="animate-fade-up mt-3 text-center text-sm text-muted-foreground" style="animation-delay: 50ms">
+        New here?
+        <a href="/signup" data-sveltekit-reload class="font-medium text-foreground hover:underline">Create an account</a>
+      </p>
+
+      <!-- Divider -->
+      <div class="animate-fade-up my-5 flex items-center gap-3 text-xs text-muted-foreground" style="animation-delay: 55ms">
+        <span class="h-px flex-1 bg-border"></span> or <span class="h-px flex-1 bg-border"></span>
+      </div>
 
       <Button
         onclick={handleLogin}
         disabled={signing}
+        variant="outline"
         size="lg"
         class="group animate-fade-up h-12 w-full justify-between text-[15px] shadow-sm"
         style="animation-delay: 60ms"
       >
         <span class="flex items-center gap-2.5">
           <ShieldCheck class="size-4" />
-          {signing ? 'Redirecting…' : 'Continue with University SSO'}
+          {signing ? 'Redirecting…' : 'Sign in as admin'}
         </span>
         <ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />
       </Button>
+
+      <p class="animate-fade-up mt-2 text-center text-xs text-muted-foreground" style="animation-delay: 65ms">
+        Administrators sign in with their admin username and password.
+      </p>
 
       {#if dev}
         <!-- Dev-only: the real SSO flow can't complete on localhost (backend
@@ -209,20 +301,15 @@
         class="animate-fade-up mt-6 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground"
         style="animation-delay: 170ms"
       >
-        <p class="font-medium text-foreground">No sign-up form here, by design.</p>
+        <p class="font-medium text-foreground">Students and teachers welcome.</p>
         <p class="mt-1.5">
-          Accounts are provisioned automatically through your university's single
-          sign-on. There's nothing to register, and there is no password for Hopper
-          to forget. If you can't log in, reset your <em>university</em> password
-          through your institution's IdP, then come back and click
-          <span class="font-medium text-foreground">Continue with University SSO</span>.
-        </p>
-        <p class="mt-2">
-          New student and not in the system yet? Email
+          Create an account with your email and sign in
+          above. Teacher accounts are reviewed by an admin before they can
+          allocate credits. Administrators sign in with their admin username and
+          password. Trouble? Email
           <a class="font-medium text-foreground underline underline-offset-2" href="mailto:hopper-admin@cs.du.ac.bd">
             hopper-admin@cs.du.ac.bd
-          </a>
-          to be added.
+          </a>.
         </p>
       </div>
 

@@ -9,7 +9,12 @@ from app.models.credit_ledger import Account, Transfer, LedgerEntry
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000000"
 
 
-async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
+async def get_or_create_account(
+    db: AsyncSession,
+    user_id: str,
+    *,
+    persist: bool = False,
+) -> Account:
     """Find or create a credit account for a user."""
     result = await db.execute(
         select(Account).where(Account.owner_id == user_id, Account.owner_type == "user")
@@ -27,6 +32,9 @@ async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
     )
     db.add(account)
     await db.flush()
+    if persist:
+        await db.commit()
+        await db.refresh(account)
     return account
 
 
@@ -53,7 +61,7 @@ async def ensure_system_account(db: AsyncSession) -> Account:
 
 async def get_balance(db: AsyncSession, user_id: str) -> float:
     """Get the current credit balance for a user by reading last ledger entry."""
-    account = await get_or_create_account(db, user_id)
+    account = await get_or_create_account(db, user_id, persist=True)
 
     result = await db.execute(
         select(LedgerEntry.current_balance)
@@ -118,6 +126,71 @@ async def add_credits(
     return transfer
 
 
+async def allocate_between_users(
+    db: AsyncSession,
+    from_user_id: str,
+    to_user_id: str,
+    amount: float,
+    description: str = "teacher_allocation",
+) -> Transfer:
+    """Move credits from one user's account to another (teacher → student).
+
+    Balanced double-entry: source debited, destination credited. An advisory
+    xact lock on the SOURCE account serialises concurrent allocations from the
+    same teacher so two requests can't both pass the balance check and overdraw.
+    Raises ValueError if the source has insufficient balance.
+    """
+    if from_user_id == to_user_id:
+        raise ValueError("cannot allocate to yourself")
+
+    source = await get_or_create_account(db, from_user_id)
+    dest = await get_or_create_account(db, to_user_id)
+
+    # Lock the source account for the duration of the transaction (matches the
+    # deduct_credits pattern). id is a server-generated UUID, so interpolating
+    # it into hashtext() is safe from injection.
+    await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{source.id}'))"))
+
+    source_balance = await get_balance(db, from_user_id)
+    if source_balance < amount:
+        raise ValueError(f"Insufficient credits: have {source_balance}, need {amount}")
+    dest_balance = await get_balance(db, to_user_id)
+
+    now = datetime.utcnow()
+    transfer_id = str(uuid.uuid4())
+    transfer = Transfer(
+        id=transfer_id,
+        type=description,
+        metadata_={"from": from_user_id, "to": to_user_id, "description": description},
+        event_at=now,
+    )
+    db.add(transfer)
+    # Debit source
+    db.add(LedgerEntry(
+        id=str(uuid.uuid4()),
+        transfer_id=transfer_id,
+        account_id=source.id,
+        direction=1,
+        amount=amount,
+        previous_balance=source_balance,
+        current_balance=source_balance - amount,
+        event_at=now,
+    ))
+    # Credit destination
+    db.add(LedgerEntry(
+        id=str(uuid.uuid4()),
+        transfer_id=transfer_id,
+        account_id=dest.id,
+        direction=-1,
+        amount=amount,
+        previous_balance=dest_balance,
+        current_balance=dest_balance + amount,
+        event_at=now,
+    ))
+    await db.commit()
+    return transfer
+
+
 async def deduct_credits(
     db: AsyncSession, user_id: str, amount: float,
     description: str = "pod_usage",
@@ -139,11 +212,14 @@ async def deduct_credits(
 
     await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{user_account.id}'))"))
 
-    # Idempotency: bail out early if this tx already exists.
+    # Idempotency: bail out early if this tx already exists. Read the row once —
+    # scalar_one_or_none() consumes the Result, so re-reading it with
+    # scalar_one() would raise ResourceClosedError ("result object is closed").
     if tx_id:
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
-        if existing.scalar_one_or_none() is not None:
-            return existing.scalar_one()
+        existing_transfer = existing.scalar_one_or_none()
+        if existing_transfer is not None:
+            return existing_transfer
 
     balance = await get_balance(db, user_id)
     if balance < amount:

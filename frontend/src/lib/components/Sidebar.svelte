@@ -6,6 +6,7 @@
     CreditCard,
     KeyRound,
     Shield,
+    GraduationCap,
     PanelLeftClose,
     PanelLeftOpen
   } from 'lucide-svelte';
@@ -44,10 +45,16 @@
   ];
 
   const adminItems: NavItem[] = [
-    { href: '/admin', label: 'Admin', icon: Shield }
+    { href: '/admin', label: 'Admin', icon: Shield },
+    { href: '/teacher', label: 'Teaching', icon: GraduationCap, role: 'professor' }
   ];
 
   const isAdmin = $derived(user?.role === 'admin' || user?.role === 'professor');
+  // Per-item gating: an item with no `role` shows for any manager; a role-bound
+  // item (e.g. Teaching → professor) shows only to that role.
+  const visibleAdminItems = $derived(
+    adminItems.filter((i) => !i.role || i.role === user?.role)
+  );
 
   function isActive(href: string): boolean {
     const path = page.url.pathname;
@@ -152,7 +159,7 @@
           </div>
         {/if}
         <ul class="space-y-1">
-          {#each adminItems as item (item.href)}
+          {#each visibleAdminItems as item (item.href)}
             <li>
               <a
                 href={item.href}

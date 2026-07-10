@@ -5,9 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.models.credit_ledger import LedgerEntry, Transfer
+from app.models.user import User
 from app.schemas.credit import CreditBalanceResponse, CreditHistoryResponse
 from app.schemas.user import TokenPayload
-from app.services.credit_service import get_balance, get_or_create_account, add_credits
+from app.services.credit_service import (
+    add_credits,
+    allocate_between_users,
+    get_balance,
+    get_or_create_account,
+)
 
 router = APIRouter()
 
@@ -19,7 +25,7 @@ async def get_credit_balance(
 ):
     """Get current credit balance."""
     balance = await get_balance(db, current_user.sub)
-    account = await get_or_create_account(db, current_user.sub)
+    account = await get_or_create_account(db, current_user.sub, persist=True)
     return CreditBalanceResponse(account_id=account.id, balance=balance)
 
 
@@ -67,18 +73,82 @@ class AllocateRequest(BaseModel):
     description: str = Field(default="allocation", max_length=500)
 
 
+async def _users_with_balance(db: AsyncSession, role: str) -> list[dict]:
+    result = await db.execute(select(User).where(User.role == role).order_by(User.name))
+    out = []
+    for u in result.scalars().all():
+        out.append({
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "balance": await get_balance(db, u.id),
+        })
+    return out
+
+
+@router.get("/teachers")
+async def list_teachers(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Teachers (professors) with balances — for the admin grant view."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
+    return await _users_with_balance(db, "professor")
+
+
+@router.get("/students")
+async def list_students(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Students with balances — for the teacher allocation view."""
+    if current_user.role not in ("admin", "professor"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Teachers only")
+    return await _users_with_balance(db, "student")
+
+
 @router.post("/allocate")
 async def allocate_credits(
     request: AllocateRequest,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Allocate credits to a user account (professor/admin only)."""
-    if current_user.role not in ("admin", "professor"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only professors and admins can allocate credits",
-        )
+    """Credit delegation, role-aware:
 
-    transfer = await add_credits(db, request.user_id, request.amount, request.description)
-    return {"message": "allocated", "transfer_id": transfer.id}
+    - **admin** grants credits to a user from the system account (used to fund
+      teachers). This can't overdraw — the system account is the ledger source.
+    - **professor** allocates from *their own* balance to a student, and is
+      rejected with 402 if they lack the credits.
+    """
+    if request.user_id == current_user.sub:
+        raise HTTPException(status_code=400, detail="Cannot allocate credits to yourself")
+
+    target = await db.get(User, request.user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    if current_user.role == "admin":
+        transfer = await add_credits(
+            db, request.user_id, request.amount, request.description or "admin_grant"
+        )
+        return {"message": "granted", "transfer_id": transfer.id}
+
+    if current_user.role == "professor":
+        if target.role != "student":
+            raise HTTPException(status_code=400, detail="Teachers can only allocate to students")
+        try:
+            transfer = await allocate_between_users(
+                db, current_user.sub, request.user_id, request.amount,
+                request.description or "teacher_allocation",
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)
+            )
+        return {"message": "allocated", "transfer_id": transfer.id}
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only admins and teachers can allocate credits",
+    )

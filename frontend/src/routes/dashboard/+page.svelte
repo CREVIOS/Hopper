@@ -8,7 +8,8 @@
     ArrowUpRight,
     ArrowDownRight,
     Activity,
-    Sparkles
+    Sparkles,
+    Clock
   } from 'lucide-svelte';
   import type { Pod, CreditTransaction, User } from '$lib/types';
   import {
@@ -76,6 +77,22 @@
       </Button>
     {/snippet}
   </PageTitle>
+
+  {#if data.user?.pending_teacher}
+    <div
+      class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+    >
+      <Clock class="mt-0.5 size-5 shrink-0 text-warning" />
+      <div class="text-sm">
+        <p class="font-medium text-foreground">Teacher account pending approval</p>
+        <p class="mt-0.5 text-muted-foreground">
+          Thanks for signing up as a teacher — an admin will review your request
+          shortly. For now you have a student account: you can launch VMs, and
+          allocating credits to students unlocks as soon as you're approved.
+        </p>
+      </div>
+    </div>
+  {/if}
 
   <!-- Stats -->
   <div class="animate-fade-up grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
