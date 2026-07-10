@@ -18,7 +18,8 @@
     ChevronDown,
     Check,
     X,
-    Power
+    Power,
+    Inbox
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import type { SvelteComponent } from 'svelte';
@@ -101,6 +102,16 @@
       activeVms: ActiveVm[];
       auditLogs: AuditLog[];
       teacherRequests: { id: string; email: string; name: string; created_at: string | null }[];
+      issues: {
+        id: string;
+        user_id: string;
+        pod_id: string | null;
+        description: string;
+        status: string;
+        response: string | null;
+        created_at: string | null;
+        resolved_at: string | null;
+      }[];
     };
   } = $props();
 
@@ -155,6 +166,26 @@
       });
     } finally {
       terminatingVm = null;
+    }
+  }
+
+  // Issue triage (admin only): resolve with an optional reply shown to the reporter.
+  let resolvingIssue = $state<string | null>(null);
+  let issueResponses = $state<Record<string, string>>({});
+  async function resolveIssue(id: string) {
+    resolvingIssue = id;
+    const tid = toast.loading('Resolving issue…');
+    try {
+      await api.post(`/issues/admin/${id}/resolve`, { response: issueResponses[id] || null });
+      toast.success('Issue resolved', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not resolve issue', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      resolvingIssue = null;
     }
   }
 
@@ -475,6 +506,7 @@
       <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
+      <Tabs.Trigger value="issues"><Inbox /> Issues</Tabs.Trigger>
     </Tabs.List>
 
     <!-- Overview -->
@@ -1174,6 +1206,62 @@
           </div>
         </Card>
       </div>
+    </Tabs.Content>
+
+    <!-- Issues -->
+    <Tabs.Content value="issues" class="mt-5">
+      <Card class="overflow-hidden">
+        <CardContent class="space-y-3 p-4">
+          <SectionHeader title="Issue reports" icon={Inbox}>
+            {#snippet action()}
+              <Badge variant="muted">
+                {data.issues.filter((i) => i.status === 'open').length} open
+              </Badge>
+            {/snippet}
+          </SectionHeader>
+          {#if data.issues.length === 0}
+            <p class="py-10 text-center text-sm text-muted-foreground">No issue reports.</p>
+          {:else}
+            <div class="space-y-3">
+              {#each data.issues as issue (issue.id)}
+                <div class="rounded-lg border border-border p-3">
+                  <div class="mb-1 flex items-center justify-between gap-2">
+                    <span class="truncate font-mono text-xs text-muted-foreground">
+                      {shortId(issue.id, 8)}{issue.pod_id ? ` · pod ${shortId(issue.pod_id, 8)}` : ''}
+                    </span>
+                    <Badge variant={issue.status === 'resolved' ? 'success' : 'muted'}>
+                      {issue.status}
+                    </Badge>
+                  </div>
+                  <p class="whitespace-pre-wrap text-sm">{issue.description}</p>
+                  {#if issue.status === 'open'}
+                    <div class="mt-2 flex items-start gap-2">
+                      <textarea
+                        bind:value={issueResponses[issue.id]}
+                        placeholder="Reply (optional) — shown to the reporter…"
+                        rows="2"
+                        class="flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      ></textarea>
+                      <Button
+                        size="sm"
+                        disabled={resolvingIssue === issue.id}
+                        onclick={() => resolveIssue(issue.id)}
+                      >
+                        {#if resolvingIssue === issue.id}<Spinner class="size-4" />{:else}Resolve{/if}
+                      </Button>
+                    </div>
+                  {:else if issue.response}
+                    <p class="mt-2 rounded-md bg-muted/50 px-2 py-1 text-sm">
+                      <span class="font-medium">Response:</span>
+                      {issue.response}
+                    </p>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
     </Tabs.Content>
   </Tabs.Root>
 </div>
