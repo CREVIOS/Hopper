@@ -72,6 +72,14 @@
     window.location.href = '/api/auth/login';
   }
 
+  // Clicking "Sign in as admin" does a full-page nav to Keycloak. If the user
+  // hits browser Back, this page is restored from the bfcache with `signing`
+  // still true, leaving the button stuck on "Redirecting…". Reset it whenever
+  // the page is shown (pageshow fires on bfcache restores too).
+  function handlePageShow() {
+    signing = false;
+  }
+
   const features = [
     {
       icon: Server,
@@ -97,6 +105,8 @@
     { icon: Layers, label: 'Up to 3 concurrent VMs', tint: 'text-info bg-info/10' }
   ];
 </script>
+
+<svelte:window onpageshow={handlePageShow} />
 
 <div class="grid min-h-[100dvh] bg-background lg:grid-cols-[1.1fr_1fr]">
   <!-- Brand panel: a fixed deep-indigo surface in both themes (split-login
@@ -243,7 +253,7 @@
       </Button>
 
       <p class="animate-fade-up mt-2 text-center text-xs text-muted-foreground" style="animation-delay: 65ms">
-        Administrators sign in through University SSO.
+        Administrators sign in with their admin username and password.
       </p>
 
       {#if dev}
@@ -295,8 +305,8 @@
         <p class="mt-1.5">
           Create an account with your email and sign in
           above. Teacher accounts are reviewed by an admin before they can
-          allocate credits. Administrators sign in with University SSO. Trouble?
-          Email
+          allocate credits. Administrators sign in with their admin username and
+          password. Trouble? Email
           <a class="font-medium text-foreground underline underline-offset-2" href="mailto:hopper-admin@cs.du.ac.bd">
             hopper-admin@cs.du.ac.bd
           </a>.
