@@ -299,13 +299,13 @@ async def test_admin_can_change_user_role(client, db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_professor_cannot_access_admin_endpoints(
+async def test_professor_can_access_read_only_admin_endpoints_but_not_mutations(
     client,
     db_session,
     current_user_payload,
 ):
-    # Teachers (professors) use the Teaching console, not the admin panel:
-    # every /admin endpoint — read-only or mutating — must reject them.
+    # Professors can reach read-only admin endpoints only if the router allows it,
+    # but mutating admin actions must still be rejected.
     current_user_payload.sub = "prof-1"
     current_user_payload.role = "professor"
     current_user_payload.email = "prof@cs.du.ac.bd"
