@@ -61,7 +61,7 @@ async def ensure_system_account(db: AsyncSession) -> Account:
 
 async def get_balance(db: AsyncSession, user_id: str) -> float:
     """Get the current credit balance for a user by reading last ledger entry."""
-    account = await get_or_create_account(db, user_id)
+    account = await get_or_create_account(db, user_id, persist=True)
 
     result = await db.execute(
         select(LedgerEntry.current_balance)
