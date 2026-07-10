@@ -36,6 +36,15 @@ message CreatePodRequest {
   // key CRUD previously stored keys that never reached the VM). Public keys
   // are not secret, so passing them in the request (vs a Secret) is fine.
   repeated string authorized_keys = 9;
+  // Persistent per-user workspace (FR-HC-28). When workspace_pvc_name is set,
+  // the orchestrator ensures a ReadWriteOnce PVC of that name exists (creating
+  // it lazily, without a pod owner-reference so it outlives the pod) and mounts
+  // it read-write at /workspace. It is never deleted by the session lifecycle
+  // — its distinct name (ws-user-<id>) is outside DeletePod's ws-<pod> scope.
+  string workspace_pvc_name = 10;
+  int32 workspace_capacity_gb = 11;
+  // K8s StorageClassName for the workspace PVC; empty uses the cluster default.
+  string storage_class = 12;
 }
 
 message PodStatus {

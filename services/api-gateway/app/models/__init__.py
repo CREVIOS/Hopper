@@ -6,6 +6,7 @@ from app.models.metrics import MetricsSample
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
 from app.models.user import User
+from app.models.user_workspace import UserWorkspace
 
 __all__ = [
     "Account",
@@ -18,4 +19,5 @@ __all__ = [
     "SSHKey",
     "Transfer",
     "User",
+    "UserWorkspace",
 ]

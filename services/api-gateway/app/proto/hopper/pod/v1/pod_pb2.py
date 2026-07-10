@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!app/proto/hopper/pod/v1/pod.proto\x12\rhopper.pod.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x13\n\x05PodId\x12\n\n\x02id\x18\x01 \x01(\t\"\x80\x02\n\x10\x43reatePodRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x0c\n\x04plan\x18\x02 \x01(\t\x12\r\n\x05image\x18\x03 \x01(\t\x12\x0b\n\x03\x63pu\x18\x04 \x01(\t\x12\x0e\n\x06memory\x18\x05 \x01(\t\x12;\n\x06labels\x18\x06 \x03(\x0b\x32+.hopper.pod.v1.CreatePodRequest.LabelsEntry\x12\x0c\n\x04\x64isk\x18\x07 \x01(\t\x12\x0e\n\x06pod_id\x18\x08 \x01(\t\x12\x17\n\x0f\x61uthorized_keys\x18\t \x03(\t\x1a-\n\x0bLabelsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xcf\x02\n\tPodStatus\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12&\n\x05state\x18\x03 \x01(\x0e\x32\x17.hopper.pod.v1.PodState\x12\x0c\n\x04plan\x18\x04 \x01(\t\x12\x11\n\tnode_name\x18\x05 \x01(\t\x12\x11\n\tnamespace\x18\x06 \x01(\t\x12.\n\ncreated_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12.\n\nupdated_at\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0f\n\x07message\x18\t \x01(\t\x12\x10\n\x08ssh_port\x18\n \x01(\x05\x12\x13\n\x0bvscode_port\x18\r \x01(\x05\x12\x0b\n\x03\x63pu\x18\x0b \x01(\t\x12\x0e\n\x06memory\x18\x0c \x01(\t\x12\x14\n\x0cssh_password\x18\x0e \x01(\t\"5\n\x11TerminateResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\xc9\x01\n\tVmMetrics\x12\x0e\n\x06pod_id\x18\x01 \x01(\t\x12\x13\n\x0b\x63pu_percent\x18\x02 \x01(\x01\x12\x19\n\x11memory_used_bytes\x18\x03 \x01(\x03\x12\x1a\n\x12memory_limit_bytes\x18\x04 \x01(\x03\x12\x17\n\x0f\x64isk_used_bytes\x18\x05 \x01(\x01\x12\x18\n\x10\x64isk_limit_bytes\x18\x06 \x01(\x01\x12-\n\ttimestamp\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x12\n\x10ListNodesRequest\"\x9e\x01\n\x08NodeInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x63pu_capacity\x18\x02 \x01(\t\x12\x17\n\x0fmemory_capacity\x18\x03 \x01(\t\x12\x17\n\x0f\x63pu_allocatable\x18\x04 \x01(\t\x12\x1a\n\x12memory_allocatable\x18\x05 \x01(\t\x12\x11\n\tpod_count\x18\x06 \x01(\x05\x12\r\n\x05ready\x18\x07 \x01(\x08\";\n\x11ListNodesResponse\x12&\n\x05nodes\x18\x01 \x03(\x0b\x32\x17.hopper.pod.v1.NodeInfo*\xb3\x01\n\x08PodState\x12\x19\n\x15POD_STATE_UNSPECIFIED\x10\x00\x12\x15\n\x11POD_STATE_PENDING\x10\x01\x12\x16\n\x12POD_STATE_CREATING\x10\x02\x12\x15\n\x11POD_STATE_RUNNING\x10\x03\x12\x16\n\x12POD_STATE_STOPPING\x10\x04\x12\x18\n\x14POD_STATE_TERMINATED\x10\x05\x12\x14\n\x10POD_STATE_FAILED\x10\x06\x32\xb8\x03\n\x0fPodOrchestrator\x12\x46\n\tCreatePod\x12\x1f.hopper.pod.v1.CreatePodRequest\x1a\x18.hopper.pod.v1.PodStatus\x12\x46\n\x0cTerminatePod\x12\x14.hopper.pod.v1.PodId\x1a .hopper.pod.v1.TerminateResponse\x12>\n\x0cGetPodStatus\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.PodStatus\x12\x41\n\rStreamMetrics\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.VmMetrics0\x01\x12\x42\n\x0eWatchPodStatus\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.PodStatus0\x01\x12N\n\tListNodes\x12\x1f.hopper.pod.v1.ListNodesRequest\x1a .hopper.pod.v1.ListNodesResponseB7Z5github.com/hopper/orchestrator/api/proto/pod/v1;podv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!app/proto/hopper/pod/v1/pod.proto\x12\rhopper.pod.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x13\n\x05PodId\x12\n\n\x02id\x18\x01 \x01(\t\"\xd2\x02\n\x10\x43reatePodRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x0c\n\x04plan\x18\x02 \x01(\t\x12\r\n\x05image\x18\x03 \x01(\t\x12\x0b\n\x03\x63pu\x18\x04 \x01(\t\x12\x0e\n\x06memory\x18\x05 \x01(\t\x12;\n\x06labels\x18\x06 \x03(\x0b\x32+.hopper.pod.v1.CreatePodRequest.LabelsEntry\x12\x0c\n\x04\x64isk\x18\x07 \x01(\t\x12\x0e\n\x06pod_id\x18\x08 \x01(\t\x12\x17\n\x0f\x61uthorized_keys\x18\t \x03(\t\x12\x1a\n\x12workspace_pvc_name\x18\n \x01(\t\x12\x1d\n\x15workspace_capacity_gb\x18\x0b \x01(\x05\x12\x15\n\rstorage_class\x18\x0c \x01(\t\x1a-\n\x0bLabelsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xcf\x02\n\tPodStatus\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12&\n\x05state\x18\x03 \x01(\x0e\x32\x17.hopper.pod.v1.PodState\x12\x0c\n\x04plan\x18\x04 \x01(\t\x12\x11\n\tnode_name\x18\x05 \x01(\t\x12\x11\n\tnamespace\x18\x06 \x01(\t\x12.\n\ncreated_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12.\n\nupdated_at\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0f\n\x07message\x18\t \x01(\t\x12\x10\n\x08ssh_port\x18\n \x01(\x05\x12\x13\n\x0bvscode_port\x18\r \x01(\x05\x12\x0b\n\x03\x63pu\x18\x0b \x01(\t\x12\x0e\n\x06memory\x18\x0c \x01(\t\x12\x14\n\x0cssh_password\x18\x0e \x01(\t\"5\n\x11TerminateResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\xc9\x01\n\tVmMetrics\x12\x0e\n\x06pod_id\x18\x01 \x01(\t\x12\x13\n\x0b\x63pu_percent\x18\x02 \x01(\x01\x12\x19\n\x11memory_used_bytes\x18\x03 \x01(\x03\x12\x1a\n\x12memory_limit_bytes\x18\x04 \x01(\x03\x12\x17\n\x0f\x64isk_used_bytes\x18\x05 \x01(\x01\x12\x18\n\x10\x64isk_limit_bytes\x18\x06 \x01(\x01\x12-\n\ttimestamp\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x12\n\x10ListNodesRequest\"\x9e\x01\n\x08NodeInfo\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x63pu_capacity\x18\x02 \x01(\t\x12\x17\n\x0fmemory_capacity\x18\x03 \x01(\t\x12\x17\n\x0f\x63pu_allocatable\x18\x04 \x01(\t\x12\x1a\n\x12memory_allocatable\x18\x05 \x01(\t\x12\x11\n\tpod_count\x18\x06 \x01(\x05\x12\r\n\x05ready\x18\x07 \x01(\x08\";\n\x11ListNodesResponse\x12&\n\x05nodes\x18\x01 \x03(\x0b\x32\x17.hopper.pod.v1.NodeInfo*\xb3\x01\n\x08PodState\x12\x19\n\x15POD_STATE_UNSPECIFIED\x10\x00\x12\x15\n\x11POD_STATE_PENDING\x10\x01\x12\x16\n\x12POD_STATE_CREATING\x10\x02\x12\x15\n\x11POD_STATE_RUNNING\x10\x03\x12\x16\n\x12POD_STATE_STOPPING\x10\x04\x12\x18\n\x14POD_STATE_TERMINATED\x10\x05\x12\x14\n\x10POD_STATE_FAILED\x10\x06\x32\xb8\x03\n\x0fPodOrchestrator\x12\x46\n\tCreatePod\x12\x1f.hopper.pod.v1.CreatePodRequest\x1a\x18.hopper.pod.v1.PodStatus\x12\x46\n\x0cTerminatePod\x12\x14.hopper.pod.v1.PodId\x1a .hopper.pod.v1.TerminateResponse\x12>\n\x0cGetPodStatus\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.PodStatus\x12\x41\n\rStreamMetrics\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.VmMetrics0\x01\x12\x42\n\x0eWatchPodStatus\x12\x14.hopper.pod.v1.PodId\x1a\x18.hopper.pod.v1.PodStatus0\x01\x12N\n\tListNodes\x12\x1f.hopper.pod.v1.ListNodesRequest\x1a .hopper.pod.v1.ListNodesResponseB7Z5github.com/hopper/orchestrator/api/proto/pod/v1;podv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,26 +35,26 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._serialized_options = b'Z5github.com/hopper/orchestrator/api/proto/pod/v1;podv1'
   _globals['_CREATEPODREQUEST_LABELSENTRY']._loaded_options = None
   _globals['_CREATEPODREQUEST_LABELSENTRY']._serialized_options = b'8\001'
-  _globals['_PODSTATE']._serialized_start=1205
-  _globals['_PODSTATE']._serialized_end=1384
+  _globals['_PODSTATE']._serialized_start=1287
+  _globals['_PODSTATE']._serialized_end=1466
   _globals['_PODID']._serialized_start=85
   _globals['_PODID']._serialized_end=104
   _globals['_CREATEPODREQUEST']._serialized_start=107
-  _globals['_CREATEPODREQUEST']._serialized_end=363
-  _globals['_CREATEPODREQUEST_LABELSENTRY']._serialized_start=318
-  _globals['_CREATEPODREQUEST_LABELSENTRY']._serialized_end=363
-  _globals['_PODSTATUS']._serialized_start=366
-  _globals['_PODSTATUS']._serialized_end=701
-  _globals['_TERMINATERESPONSE']._serialized_start=703
-  _globals['_TERMINATERESPONSE']._serialized_end=756
-  _globals['_VMMETRICS']._serialized_start=759
-  _globals['_VMMETRICS']._serialized_end=960
-  _globals['_LISTNODESREQUEST']._serialized_start=962
-  _globals['_LISTNODESREQUEST']._serialized_end=980
-  _globals['_NODEINFO']._serialized_start=983
-  _globals['_NODEINFO']._serialized_end=1141
-  _globals['_LISTNODESRESPONSE']._serialized_start=1143
-  _globals['_LISTNODESRESPONSE']._serialized_end=1202
-  _globals['_PODORCHESTRATOR']._serialized_start=1387
-  _globals['_PODORCHESTRATOR']._serialized_end=1827
+  _globals['_CREATEPODREQUEST']._serialized_end=445
+  _globals['_CREATEPODREQUEST_LABELSENTRY']._serialized_start=400
+  _globals['_CREATEPODREQUEST_LABELSENTRY']._serialized_end=445
+  _globals['_PODSTATUS']._serialized_start=448
+  _globals['_PODSTATUS']._serialized_end=783
+  _globals['_TERMINATERESPONSE']._serialized_start=785
+  _globals['_TERMINATERESPONSE']._serialized_end=838
+  _globals['_VMMETRICS']._serialized_start=841
+  _globals['_VMMETRICS']._serialized_end=1042
+  _globals['_LISTNODESREQUEST']._serialized_start=1044
+  _globals['_LISTNODESREQUEST']._serialized_end=1062
+  _globals['_NODEINFO']._serialized_start=1065
+  _globals['_NODEINFO']._serialized_end=1223
+  _globals['_LISTNODESRESPONSE']._serialized_start=1225
+  _globals['_LISTNODESRESPONSE']._serialized_end=1284
+  _globals['_PODORCHESTRATOR']._serialized_start=1469
+  _globals['_PODORCHESTRATOR']._serialized_end=1909
 # @@protoc_insertion_point(module_scope)

@@ -110,6 +110,34 @@ async def test_create_pod_forwards_authorized_keys(monkeypatch):
     assert captured["request"].authorized_keys == keys
 
 
+async def test_create_pod_forwards_workspace_fields(monkeypatch):
+    captured = {}
+
+    class FakeStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        async def CreatePod(self, req, timeout):
+            captured["request"] = req
+            return types.SimpleNamespace(
+                id="vm-1", state=3, ssh_port=1, vscode_port=2, message="running", ssh_password="",
+            )
+
+    _install_fake_proto_modules(monkeypatch, FakeStub)
+
+    client = orchestrator_module.OrchestratorClient()
+    client._channel = object()
+
+    await client.create_pod(
+        "user-1", "small", "image", "1", "2Gi", pod_id="pod-1",
+        workspace_pvc_name="ws-user-user-1", workspace_capacity_gb=20, storage_class="longhorn",
+    )
+
+    assert captured["request"].workspace_pvc_name == "ws-user-user-1"
+    assert captured["request"].workspace_capacity_gb == 20
+    assert captured["request"].storage_class == "longhorn"
+
+
 async def test_create_pod_defaults_authorized_keys_to_empty(monkeypatch):
     captured = {}
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -85,6 +86,13 @@ type CreatePodOpts struct {
 	// key-based SSH works. Public keys are not secret; they are passed as a
 	// pod env var and materialised by the container's startup command.
 	AuthorizedKeys []string
+	// WorkspacePVCName, when set, is the user's persistent ReadWriteOnce PVC
+	// (ws-user-<id>, FR-HC-28). It is ensured lazily (created if absent, reused
+	// otherwise), mounted read-write at /workspace, and — because its name is
+	// outside DeletePod's ws-<pod> scope — never deleted by the session
+	// lifecycle. Takes precedence over the legacy per-pod DiskGiB path.
+	WorkspacePVCName    string
+	WorkspaceCapacityGB int
 }
 
 type PodPorts struct {
@@ -128,16 +136,26 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	// inside the VM shows the node's RAM and `nproc` shows all host cores —
 	// a tenant-isolation leak. The lxcfs daemon must be running on every node
 	// (systemd unit `lxcfs.service`).
-	// Per-pod workspace PVC for persistence across pod restarts. We name it
-	// after the pod so deletion can be reconciled by the orchestrator. The
-	// PVC is created BEFORE the Pod so the kubelet doesn't loop on a missing
-	// claim. Failure to create the PVC fails the whole pod create (no silent
-	// "ephemeral fallback" — the user expects their disk to persist).
-	pvcName := fmt.Sprintf("ws-%s", opts.PodName)
-	if opts.DiskGiB > 0 {
+	// Resolve the /workspace-backing PVC (created BEFORE the Pod so the kubelet
+	// doesn't loop on a missing claim):
+	//   - Persistent per-user workspace (FR-HC-28): opts.WorkspacePVCName set →
+	//     ensure a RWO PVC exists (create-if-absent, reuse otherwise). It has no
+	//     pod owner-reference and its ws-user-<id> name is outside DeletePod's
+	//     ws-<pod> scope, so it survives the pod and is reused across sessions.
+	//   - Legacy per-pod disk: opts.DiskGiB>0 → a pod-scoped ws-<pod> PVC that
+	//     DeletePod removes with the pod (unused today; kept for compatibility).
+	workspacePVC := ""
+	workspaceSizeGi := 0
+	switch {
+	case opts.WorkspacePVCName != "":
+		workspacePVC, workspaceSizeGi = opts.WorkspacePVCName, opts.WorkspaceCapacityGB
+	case opts.DiskGiB > 0:
+		workspacePVC, workspaceSizeGi = fmt.Sprintf("ws-%s", opts.PodName), opts.DiskGiB
+	}
+	if workspacePVC != "" {
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
+				Name:      workspacePVC,
 				Namespace: pm.namespace,
 				Labels:    labels,
 			},
@@ -145,7 +163,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", opts.DiskGiB)),
+						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", workspaceSizeGi)),
 					},
 				},
 			},
@@ -153,8 +171,10 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		if opts.StorageClass != "" {
 			pvc.Spec.StorageClassName = &opts.StorageClass
 		}
-		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
-			return PodPorts{}, fmt.Errorf("creating workspace pvc: %w", err)
+		// Idempotent: a returning user already has their workspace PVC, so
+		// AlreadyExists means "reuse it" (keep the data), not an error.
+		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return PodPorts{}, fmt.Errorf("ensuring workspace pvc: %w", err)
 		}
 	}
 
@@ -226,14 +246,14 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
 			Volumes: append(lxcfsVolumes, func() []corev1.Volume {
-				if opts.DiskGiB == 0 {
+				if workspacePVC == "" {
 					return nil
 				}
 				return []corev1.Volume{{
 					Name: "workspace",
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvcName,
+							ClaimName: workspacePVC,
 						},
 					},
 				}}
@@ -305,7 +325,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						},
 					},
 					VolumeMounts: append(lxcfsMounts, func() []corev1.VolumeMount {
-						if opts.DiskGiB == 0 {
+						if workspacePVC == "" {
 							return nil
 						}
 						return []corev1.VolumeMount{{

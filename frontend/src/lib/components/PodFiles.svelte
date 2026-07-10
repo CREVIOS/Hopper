@@ -391,9 +391,10 @@
       >
         <AlertCircle class="mt-0.5 size-3.5 shrink-0 text-warning" />
         <span>
-          Paths inside the VM are <span class="font-medium text-foreground">ephemeral</span> —
-          wiped when the VM terminates. Persistent
-          <code class="rounded bg-muted px-1 py-0.5 font-mono">/workspace</code> is on the roadmap.
+          Files in <code class="rounded bg-muted px-1 py-0.5 font-mono">/workspace</code>
+          <span class="font-medium text-foreground">persist</span> across sessions. Anything
+          outside it (e.g. <code class="rounded bg-muted px-1 py-0.5 font-mono">/root</code>) is
+          <span class="font-medium text-foreground">ephemeral</span> — wiped when the VM terminates.
         </span>
       </div>
     </div>
