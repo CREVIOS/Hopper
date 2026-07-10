@@ -5,6 +5,10 @@
     File as FileIcon,
     Folder,
     FolderOpen,
+    FolderPlus,
+    Pencil,
+    Check,
+    X,
     Trash2,
     ChevronRight,
     RefreshCw,
@@ -16,6 +20,7 @@
   import { toast } from 'svelte-sonner';
   import { Button, Card, Input, Label } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
+  import { confirm } from '$lib/confirm.svelte';
   import { formatBytes, relTime } from '$lib/utils';
 
   let { podId, podRunning }: { podId: string; podRunning: boolean } = $props();
@@ -68,6 +73,120 @@
       entries = [];
     } finally {
       listing = false;
+    }
+  }
+
+  function joinPath(name: string): string {
+    return cwd === '/' ? `/${name}` : `${cwd}/${name}`;
+  }
+
+  // A single path *segment* (folder/file name): non-empty, no slashes, not a
+  // traversal token. The backend re-validates and rejects deleting the root.
+  function nameError(n: string): string | null {
+    const v = n.trim();
+    if (!v) return 'Name is required';
+    if (v === '.' || v === '..') return 'Invalid name';
+    if (v.includes('/')) return 'Name cannot contain /';
+    if (/[\x00\n\r]/.test(v)) return 'Name contains an invalid character';
+    return null;
+  }
+
+  // --- New folder ---
+  let creatingFolder = $state(false);
+  let newFolderName = $state('');
+  let creating = $state(false);
+
+  async function createFolder() {
+    const name = newFolderName.trim();
+    const err = nameError(name);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    creating = true;
+    try {
+      await api.post(`/files/${podId}/mkdir`, { path: joinPath(name) });
+      toast.success(`Created ${name}`);
+      creatingFolder = false;
+      newFolderName = '';
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not create folder', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      creating = false;
+    }
+  }
+
+  // --- Rename (inline per row) ---
+  let renaming = $state<string | null>(null);
+  let renameValue = $state('');
+  let renamingBusy = $state(false);
+
+  function startRename(entry: Entry) {
+    renaming = entry.name;
+    renameValue = entry.name;
+  }
+
+  function cancelRename() {
+    renaming = null;
+    renameValue = '';
+  }
+
+  async function commitRename(entry: Entry) {
+    const name = renameValue.trim();
+    const err = nameError(name);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    if (name === entry.name) {
+      cancelRename();
+      return;
+    }
+    renamingBusy = true;
+    try {
+      await api.post(`/files/${podId}/rename`, {
+        path: joinPath(entry.name),
+        new_path: joinPath(name)
+      });
+      toast.success(`Renamed to ${name}`);
+      cancelRename();
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not rename', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      renamingBusy = false;
+    }
+  }
+
+  // --- Delete (confirm then remove) ---
+  let deletingName = $state<string | null>(null);
+
+  async function removeEntry(entry: Entry) {
+    const ok = await confirm({
+      title: `Delete ${entry.name}?`,
+      description: entry.is_dir
+        ? `The folder "${entry.name}" and everything inside it will be permanently deleted from the VM.`
+        : `The file "${entry.name}" will be permanently deleted from the VM.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive'
+    });
+    if (!ok) return;
+    deletingName = entry.name;
+    try {
+      await api.post(`/files/${podId}/delete`, { path: joinPath(entry.name) });
+      toast.success(`Deleted ${entry.name}`);
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not delete', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      deletingName = null;
     }
   }
 
@@ -223,6 +342,17 @@
       >
         <RefreshCw class="size-3.5 {listing ? 'animate-spin' : ''}" /> Refresh
       </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onclick={() => {
+          creatingFolder = !creatingFolder;
+          newFolderName = '';
+        }}
+        disabled={!podRunning || listing}
+      >
+        <FolderPlus class="size-3.5" /> New folder
+      </Button>
     </div>
   </div>
 
@@ -268,6 +398,47 @@
     <!-- Scrollable list — capped so heavy directories can't grow the card unbounded. -->
     <div class="max-h-[20rem] overflow-y-auto">
       <ul class="divide-y divide-border/60">
+        {#if creatingFolder}
+          <li class="flex items-center gap-2.5 bg-muted/30 px-5 py-2">
+            <span
+              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"
+            >
+              <FolderPlus class="size-3.5" />
+            </span>
+            <Input
+              bind:value={newFolderName}
+              placeholder="New folder name"
+              class="h-8 flex-1 font-mono"
+              autofocus
+              disabled={creating}
+              onkeydown={(e: KeyboardEvent) => {
+                if (e.key === 'Enter') createFolder();
+                else if (e.key === 'Escape') {
+                  creatingFolder = false;
+                  newFolderName = '';
+                }
+              }}
+            />
+            <Button size="sm" onclick={createFolder} disabled={creating}>
+              {#if creating}
+                <Spinner class="size-3.5" />
+              {:else}
+                Create
+              {/if}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onclick={() => {
+                creatingFolder = false;
+                newFolderName = '';
+              }}
+              disabled={creating}
+            >
+              Cancel
+            </Button>
+          </li>
+        {/if}
         {#if cwd !== '/'}
           <li>
             <button
@@ -282,27 +453,90 @@
         {/if}
         {#each entries as entry (entry.name)}
           <li class="group flex items-center gap-2.5 px-5 py-2 transition-colors hover:bg-muted/50">
-            <button
-              class="flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm"
-              onclick={() => (entry.is_dir ? navigate(entry.name) : pickForDownload(entry))}
-              title={entry.is_dir ? `Open ${entry.name}` : `Select ${entry.name} for download`}
-            >
-              {#if entry.is_dir}
-                <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            {#if renaming === entry.name}
+              <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                {#if entry.is_dir}
                   <Folder class="size-3.5" />
-                </span>
-              {:else}
-                <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                {:else}
                   <FileIcon class="size-3.5" />
-                </span>
-              {/if}
-              <span class="truncate font-mono transition-colors group-hover:text-primary">
-                {entry.name}{entry.is_dir ? '/' : ''}
+                {/if}
               </span>
-            </button>
-            <span class="shrink-0 font-mono text-xs text-muted-foreground">
-              {entry.is_dir ? '' : formatBytes(entry.size)}
-            </span>
+              <Input
+                bind:value={renameValue}
+                class="h-8 flex-1 font-mono"
+                autofocus
+                disabled={renamingBusy}
+                onkeydown={(e: KeyboardEvent) => {
+                  if (e.key === 'Enter') commitRename(entry);
+                  else if (e.key === 'Escape') cancelRename();
+                }}
+              />
+              <button
+                class="rounded-md p-1.5 text-success transition-colors hover:bg-success/10 disabled:opacity-50"
+                onclick={() => commitRename(entry)}
+                disabled={renamingBusy}
+                aria-label="Save new name"
+              >
+                {#if renamingBusy}
+                  <Spinner class="size-3.5" />
+                {:else}
+                  <Check class="size-3.5" />
+                {/if}
+              </button>
+              <button
+                class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                onclick={cancelRename}
+                disabled={renamingBusy}
+                aria-label="Cancel rename"
+              >
+                <X class="size-3.5" />
+              </button>
+            {:else}
+              <button
+                class="flex min-w-0 flex-1 items-center gap-2.5 text-left text-sm"
+                onclick={() => (entry.is_dir ? navigate(entry.name) : pickForDownload(entry))}
+                title={entry.is_dir ? `Open ${entry.name}` : `Select ${entry.name} for download`}
+              >
+                {#if entry.is_dir}
+                  <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Folder class="size-3.5" />
+                  </span>
+                {:else}
+                  <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <FileIcon class="size-3.5" />
+                  </span>
+                {/if}
+                <span class="truncate font-mono transition-colors group-hover:text-primary">
+                  {entry.name}{entry.is_dir ? '/' : ''}
+                </span>
+              </button>
+              <span class="shrink-0 font-mono text-xs text-muted-foreground">
+                {entry.is_dir ? '' : formatBytes(entry.size)}
+              </span>
+              <div
+                class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
+              >
+                <button
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  onclick={() => startRename(entry)}
+                  aria-label={`Rename ${entry.name}`}
+                >
+                  <Pencil class="size-3.5" />
+                </button>
+                <button
+                  class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                  onclick={() => removeEntry(entry)}
+                  disabled={deletingName === entry.name}
+                  aria-label={`Delete ${entry.name}`}
+                >
+                  {#if deletingName === entry.name}
+                    <Spinner class="size-3.5" />
+                  {:else}
+                    <Trash2 class="size-3.5" />
+                  {/if}
+                </button>
+              </div>
+            {/if}
           </li>
         {:else}
           <li class="px-5 py-12 text-center text-xs text-muted-foreground">
@@ -312,7 +546,8 @@
       </ul>
     </div>
     <div class="border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
-      Click a folder to open it, a file to select it for download. Uploads go to the current path.
+      Click a folder to open it, a file to select it for download. Hover a row to rename or delete.
+      Uploads go to the current path.
     </div>
   {/if}
 </Card>

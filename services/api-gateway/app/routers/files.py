@@ -12,12 +12,14 @@ List: SSH `ls -lA --time-style=long-iso` parsed into structured entries.
 
 import asyncio
 import logging
+import os
 import re
 import shlex
 import tempfile
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,11 +32,36 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class MkdirRequest(BaseModel):
+    path: str
+
+
+class RenameRequest(BaseModel):
+    path: str
+    new_path: str
+
+
+class DeleteRequest(BaseModel):
+    path: str
+
+
 def _safe_path(path: str) -> str:
     """Reject paths that try to escape via shell injection or null bytes."""
     if not path or "\x00" in path or "\n" in path:
         raise HTTPException(status_code=400, detail="invalid path")
     return path
+
+
+def _reject_root_delete(path: str) -> None:
+    """Refuse to recursively delete the filesystem root.
+
+    The student already has root SSH into their own VM, so this is not a
+    privilege boundary — it's a guard against a UI action accidentally wiping
+    the whole VM (e.g. an empty/"/" path). normpath collapses ``..`` and
+    trailing slashes so "/home/.." and "//" are caught too.
+    """
+    if os.path.normpath(path) in ("/", "//"):
+        raise HTTPException(status_code=400, detail="refusing to delete the filesystem root")
 
 
 async def _get_user_pod(pod_id: str, user: TokenPayload, db: AsyncSession) -> PodSession:
@@ -228,3 +255,88 @@ async def download_file(
 
     return StreamingResponse(stream(), media_type="application/octet-stream",
                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+async def _ssh_exec(session: PodSession, remote_cmd: str) -> tuple[int, bytes, bytes]:
+    """Run a single remote command over SSH; return (returncode, stdout, stderr).
+
+    Shared by mkdir/rename/delete. The caller is responsible for building
+    ``remote_cmd`` with ``shlex.quote`` around every user-supplied path.
+    """
+    host, port = await _ssh_endpoint(session)
+    proc = await asyncio.create_subprocess_exec(
+        "sshpass", "-p", session.ssh_password or "hopper",
+        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=5",
+        "-p", str(port),
+        f"root@{host}", remote_cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    return proc.returncode, stdout, stderr
+
+
+def _raise_ssh_error(returncode: int, stderr: bytes, path: str, *, exists_conflict: bool = False) -> None:
+    """Map a failed remote command to a user-friendly HTTP error.
+
+    Mirrors the list/upload/download error mapping so callers get consistent
+    404/403/409 instead of a generic 500 with raw ssh chatter.
+    """
+    if returncode == 0:
+        return
+    msg = stderr.decode(errors="replace").strip() or "command failed"
+    if "No such file" in msg:
+        raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+    if "Permission denied" in msg:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+    if exists_conflict and "File exists" in msg:
+        raise HTTPException(status_code=409, detail=f"Already exists: {path}")
+    raise HTTPException(status_code=500, detail=msg)
+
+
+@router.post("/{pod_id}/mkdir")
+async def make_directory(
+    pod_id: str,
+    body: MkdirRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a directory inside the VM. Parent must exist; existing → 409."""
+    path = _safe_path(body.path)
+    session = await _get_user_pod(pod_id, current_user, db)
+    rc, _, stderr = await _ssh_exec(session, f"mkdir -- {shlex.quote(path)}")
+    _raise_ssh_error(rc, stderr, path, exists_conflict=True)
+    return {"message": "created", "path": path}
+
+
+@router.post("/{pod_id}/rename")
+async def rename_entry(
+    pod_id: str,
+    body: RenameRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename or move a file/directory inside the VM (mv semantics)."""
+    src = _safe_path(body.path)
+    dst = _safe_path(body.new_path)
+    session = await _get_user_pod(pod_id, current_user, db)
+    rc, _, stderr = await _ssh_exec(session, f"mv -- {shlex.quote(src)} {shlex.quote(dst)}")
+    _raise_ssh_error(rc, stderr, src)
+    return {"message": "renamed", "path": src, "new_path": dst}
+
+
+@router.post("/{pod_id}/delete")
+async def delete_entry(
+    pod_id: str,
+    body: DeleteRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a file or directory (recursively) inside the VM."""
+    path = _safe_path(body.path)
+    _reject_root_delete(path)
+    session = await _get_user_pod(pod_id, current_user, db)
+    rc, _, stderr = await _ssh_exec(session, f"rm -r -- {shlex.quote(path)}")
+    _raise_ssh_error(rc, stderr, path)
+    return {"message": "deleted", "path": path}
