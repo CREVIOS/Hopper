@@ -17,7 +17,8 @@
     User,
     ChevronDown,
     Check,
-    X
+    X,
+    Power
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import type { SvelteComponent } from 'svelte';
@@ -129,6 +130,31 @@
       toast.error('Could not reject', { id: tid, description: e instanceof ApiError ? e.message : '' });
     } finally {
       processingReq = null;
+    }
+  }
+
+  // Admin force-terminate any user's VM (FR-HC-20).
+  let terminatingVm = $state<string | null>(null);
+  async function forceTerminateVm(vm: { id: string; user_email?: string | null }) {
+    if (
+      !confirm(
+        `Force-terminate VM ${vm.id.slice(0, 8)} (owner: ${vm.user_email ?? 'unknown'})?\nThis stops the VM immediately and cannot be undone.`
+      )
+    )
+      return;
+    terminatingVm = vm.id;
+    const tid = toast.loading('Terminating VM…');
+    try {
+      await api.delete(`/pods/${vm.id}`);
+      toast.success('VM terminated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not terminate VM', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      terminatingVm = null;
     }
   }
 
@@ -854,6 +880,7 @@
                 <Table.Head class="hidden w-44 lg:table-cell">Resources</Table.Head>
                 <Table.Head class="w-32">State</Table.Head>
                 <Table.Head class="w-24 text-right">Started</Table.Head>
+                <Table.Head class="w-24 text-right">Actions</Table.Head>
               </Table.Row>
             </Table.Header>
           </Table.Root>
@@ -907,11 +934,27 @@
                   <Table.Cell class="w-24 text-right text-xs text-muted-foreground">
                     {relTime(vm.started_at)}
                   </Table.Cell>
+                  <Table.Cell class="w-24 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      class="text-muted-foreground hover:text-destructive"
+                      title="Force-terminate this VM"
+                      disabled={terminatingVm === vm.id || vm.state === 'terminated'}
+                      onclick={() => forceTerminateVm(vm)}
+                    >
+                      {#if terminatingVm === vm.id}
+                        <Spinner class="size-4" />
+                      {:else}
+                        <Power class="size-4" />
+                      {/if}
+                    </Button>
+                  </Table.Cell>
                 </Table.Row>
               {/each}
               {#if filteredVms.length === 0}
                 <Table.Row class="hover:bg-transparent">
-                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
+                  <Table.Cell colspan={7} class="py-12 text-center text-sm text-muted-foreground">
                     <Server class="mx-auto mb-2 size-5 opacity-50" />
                     No active VMs.
                   </Table.Cell>

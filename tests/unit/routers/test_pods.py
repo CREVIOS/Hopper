@@ -314,3 +314,50 @@ async def test_terminate_pod_sets_state_and_stops_port_forward(monkeypatch):
     assert calls == {"terminated": "vm-pod-1", "stopped": "vm-pod-1"}
     assert session.state == "terminated"
     assert db.commits == 1
+
+
+def _admin() -> TokenPayload:
+    return TokenPayload(
+        sub="admin-1", email="admin@example.com", name="Admin", role="admin", exp=1234567890,
+    )
+
+
+async def test_terminate_pod_admin_can_force_terminate_any_vm(monkeypatch):
+    # FR-HC-20: an admin may terminate a VM they don't own (runaway/abuse).
+    session = PodSession(
+        id="pod-9", user_id="other-user", plan="small", image="hopper/vm-ubuntu:22.04",
+        cpu="1", memory="2Gi", namespace="hopper", pod_name="vm-pod-9", state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0), updated_at=datetime(2026, 1, 1, 12, 5, 0),
+    )
+    db = FakeDB(execute_results=[session])
+    calls = {}
+
+    async def fake_terminate_pod(pod_name):
+        calls["terminated"] = pod_name
+
+    async def fake_stop(pod_name):
+        calls["stopped"] = pod_name
+
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.terminate_pod", fake_terminate_pod)
+    monkeypatch.setattr("app.routers.pods.port_forward.stop", fake_stop)
+
+    result = await terminate_pod("pod-9", current_user=_admin(), db=db)
+
+    assert result == {"message": "terminated", "pod_id": "pod-9"}
+    assert session.state == "terminated"
+    assert calls["terminated"] == "vm-pod-9"
+
+
+async def test_terminate_pod_rejects_non_owner_non_admin():
+    session = PodSession(
+        id="pod-9", user_id="other-user", plan="small", image="hopper/vm-ubuntu:22.04",
+        cpu="1", memory="2Gi", namespace="hopper", pod_name="vm-pod-9", state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0), updated_at=datetime(2026, 1, 1, 12, 5, 0),
+    )
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await terminate_pod("pod-9", current_user=_payload(), db=db)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Not your VM"

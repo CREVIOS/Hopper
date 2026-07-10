@@ -220,7 +220,14 @@ async def terminate_pod(
     if not session:
         raise HTTPException(status_code=404, detail="VM not found")
     if session.user_id != current_user.sub:
-        raise HTTPException(status_code=403, detail="Not your VM")
+        # Admins may force-terminate any user's VM (FR-HC-20) — e.g. a runaway
+        # or abusive pod. The AuditMiddleware records the actor + resource.
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="Not your VM")
+        logger.info(
+            "Admin %s force-terminating pod %s (owner=%s)",
+            current_user.sub, pod_id, session.user_id,
+        )
 
     # Call orchestrator to delete the K8s pod
     try:
