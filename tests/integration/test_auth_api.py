@@ -160,6 +160,54 @@ async def test_auth_signup_creates_pending_teacher_user_and_audit_log(client, db
 
 
 @pytest.mark.asyncio
+async def test_auth_login_direct_upserts_user_and_sets_session_cookies(client, db_session, monkeypatch):
+    async def fake_password_grant(email, password):
+        assert email == "student1@cs.du.ac.bd"
+        assert password == "strongpass123"
+        return {
+            "access_token": "access-1",
+            "refresh_token": "refresh-1",
+            "expires_in": 300,
+            "refresh_expires_in": 1800,
+            "id_token": "id-1",
+        }
+
+    async def fake_verify_token(token):
+        assert token == "access-1"
+        return TokenPayload(
+            sub="student-1",
+            email="student1@cs.du.ac.bd",
+            name="Student One",
+            role="student",
+            exp=4_102_444_800,
+            email_verified=True,
+        )
+
+    monkeypatch.setattr("app.routers.auth._password_grant", fake_password_grant)
+    monkeypatch.setattr("app.routers.auth.verify_token", fake_verify_token)
+
+    response = await client.post(
+        "/auth/login",
+        json={"email": "student1@cs.du.ac.bd", "password": "strongpass123"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "student-1",
+        "email": "student1@cs.du.ac.bd",
+        "name": "Student One",
+        "role": "student",
+    }
+    cookies = response.headers.get_list("set-cookie")
+    assert any(cookie.startswith("session_token=access-1") for cookie in cookies)
+    assert any(cookie.startswith("refresh_token=refresh-1") for cookie in cookies)
+
+    user = await db_session.get(User, "student-1")
+    assert user is not None
+    assert user.email == "student1@cs.du.ac.bd"
+
+
+@pytest.mark.asyncio
 async def test_auth_me_returns_pending_teacher_flag(client, db_session):
     db_session.add(
         User(
@@ -206,6 +254,34 @@ async def test_auth_refresh_rejects_forbidden_origin(client):
 
     assert response.status_code == 403
     assert response.text == '{"detail":"forbidden origin"}'
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_uses_refresh_cookie_and_returns_new_session(client, monkeypatch):
+    fake_client = FakeAsyncClient(
+        FakeHTTPResponse(
+            status_code=200,
+            json_body={
+                "access_token": "access-2",
+                "refresh_token": "refresh-2",
+                "expires_in": 300,
+                "refresh_expires_in": 1800,
+            },
+        )
+    )
+    monkeypatch.setattr("app.routers.auth.httpx.AsyncClient", lambda timeout: fake_client)
+
+    response = await client.post(
+        "/auth/refresh",
+        headers={"origin": "http://localhost:5173"},
+        cookies={"refresh_token": "refresh-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "refreshed"}
+    cookies = response.headers.get_list("set-cookie")
+    assert any(cookie.startswith("session_token=access-2") for cookie in cookies)
+    assert any(cookie.startswith("refresh_token=refresh-2") for cookie in cookies)
 
 
 @pytest.mark.asyncio

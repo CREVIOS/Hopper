@@ -195,6 +195,36 @@ async def test_list_pods_returns_only_current_users_sessions(client, db_session)
 
 
 @pytest.mark.asyncio
+async def test_get_pod_returns_running_session_details(client, db_session):
+    db_session.add(
+        PodSession(
+            id="pod-1",
+            user_id="student-1",
+            plan="small",
+            image="hopper/vm-ubuntu:22.04",
+            cpu="1",
+            memory="2Gi",
+            namespace="hopper",
+            pod_name="vm-pod-1",
+            state="running",
+            ssh_port=30022,
+            vscode_port=30080,
+            ssh_password="secret",
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get("/pods/pod-1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "pod-1"
+    assert body["state"] == "running"
+    assert body["ssh_port"] == 30022
+    assert body["vscode_port"] == 30080
+
+
+@pytest.mark.asyncio
 async def test_get_pod_rejects_other_users_session(client, db_session):
     db_session.add(
         PodSession(

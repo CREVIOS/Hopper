@@ -161,6 +161,57 @@ async def test_admin_can_approve_teacher_request(client, db_session, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_admin_lists_users_teacher_requests_and_courses(client, db_session):
+    db_session.add_all(
+        [
+            User(id="student-1", email="student1@cs.du.ac.bd", name="Student One", role="student"),
+            User(
+                id="teacher-1",
+                email="teacher1@cs.du.ac.bd",
+                name="Teacher One",
+                role="student",
+                pending_teacher=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    users_response = await client.get("/admin/users")
+    requests_response = await client.get("/admin/teacher-requests")
+    courses_response = await client.get("/admin/courses")
+
+    assert users_response.status_code == 200
+    assert len(users_response.json()) == 2
+    assert requests_response.status_code == 200
+    assert requests_response.json()[0]["id"] == "teacher-1"
+    assert courses_response.status_code == 200
+    assert courses_response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_admin_can_reject_teacher_request(client, db_session):
+    db_session.add(
+        User(
+            id="teacher-1",
+            email="teacher1@cs.du.ac.bd",
+            name="Teacher One",
+            role="student",
+            pending_teacher=True,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post("/admin/teacher-requests/teacher-1/reject")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "user_id": "teacher-1", "role": "student"}
+
+    user = await db_session.get(User, "teacher-1")
+    assert user is not None
+    assert user.pending_teacher is False
+
+
+@pytest.mark.asyncio
 async def test_admin_nodes_and_audit_logs_use_mocked_dependencies(client, db_session, monkeypatch):
     db_session.add(
         AuditLog(
@@ -210,6 +261,41 @@ async def test_admin_nodes_and_audit_logs_use_mocked_dependencies(client, db_ses
     logs = audit_response.json()
     assert len(logs) == 1
     assert logs[0]["action"] == "login"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_change_user_role(client, db_session, monkeypatch):
+    db_session.add_all(
+        [
+            User(id="admin-1", email="admin@cs.du.ac.bd", name="Admin", role="admin"),
+            User(id="student-1", email="student1@cs.du.ac.bd", name="Student One", role="student"),
+        ]
+    )
+    await db_session.commit()
+
+    role_changes = []
+    logout_calls = []
+
+    async def fake_set_user_role(user_id, role):
+        role_changes.append((user_id, role))
+
+    async def fake_logout_user(user_id):
+        logout_calls.append(user_id)
+
+    monkeypatch.setattr("app.routers.admin.keycloak_admin.set_user_role", fake_set_user_role)
+    monkeypatch.setattr("app.routers.admin.keycloak_admin.logout_user", fake_logout_user)
+
+    response = await client.patch("/admin/users/student-1/role", json={"role": "professor"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "user_id": "student-1",
+        "old_role": "student",
+        "new_role": "professor",
+    }
+    assert role_changes == [("student-1", "professor")]
+    assert logout_calls == ["student-1"]
 
 
 @pytest.mark.asyncio
