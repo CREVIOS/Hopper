@@ -25,7 +25,7 @@ async def get_credit_balance(
 ):
     """Get current credit balance."""
     balance = await get_balance(db, current_user.sub)
-    account = await get_or_create_account(db, current_user.sub)
+    account = await get_or_create_account(db, current_user.sub, persist=True)
     return CreditBalanceResponse(account_id=account.id, balance=balance)
 
 

@@ -9,7 +9,12 @@ from app.models.credit_ledger import Account, Transfer, LedgerEntry
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000000"
 
 
-async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
+async def get_or_create_account(
+    db: AsyncSession,
+    user_id: str,
+    *,
+    persist: bool = False,
+) -> Account:
     """Find or create a credit account for a user."""
     result = await db.execute(
         select(Account).where(Account.owner_id == user_id, Account.owner_type == "user")
@@ -27,6 +32,9 @@ async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
     )
     db.add(account)
     await db.flush()
+    if persist:
+        await db.commit()
+        await db.refresh(account)
     return account
 
 
