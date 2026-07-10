@@ -53,9 +53,17 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
+    # Institutional ID (e.g. student/staff number). DB-managed, user-editable.
+    university_id: str | None = None
     # True while a teacher signup is awaiting admin approval (role stays
     # "student" until then). Surfaced so the UI can show the pending state.
     pending_teacher: bool = False
+
+
+class ProfileUpdateRequest(BaseModel):
+    # Editable profile fields. name/email/role are Keycloak-canonical and are
+    # not editable here; university_id lives only on our users row.
+    university_id: str | None = Field(default=None, max_length=64)
 
 
 class ChangeRoleRequest(BaseModel):

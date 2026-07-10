@@ -28,6 +28,7 @@ from app.models.user import User
 from app.schemas.user import (
     ForgotPasswordRequest,
     LoginRequest,
+    ProfileUpdateRequest,
     ResendCodeRequest,
     ResetPasswordRequest,
     SignupRequest,
@@ -536,7 +537,34 @@ async def me(
         email=current_user.email,
         name=current_user.name,
         role=current_user.role,
+        university_id=user.university_id if user else None,
         pending_teacher=bool(user.pending_teacher) if user else False,
+    )
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the caller's editable profile fields (currently university_id).
+
+    name/email/role are Keycloak-canonical and not editable here.
+    """
+    result = await db.execute(select(User).where(User.id == current_user.sub))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.university_id = body.university_id
+    await db.commit()
+    return UserResponse(
+        id=current_user.sub,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role,
+        university_id=user.university_id,
+        pending_teacher=bool(user.pending_teacher),
     )
 
 
