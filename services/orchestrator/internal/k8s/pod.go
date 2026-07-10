@@ -403,6 +403,12 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 
 	var result []NodeInfo
 	for _, n := range nodes.Items {
+		// Skip nodes VMs can't actually land on, so capacity accounting reflects
+		// real schedulable space. VM pods carry no tolerations, so any NoSchedule/
+		// NoExecute taint (e.g. the control-plane) or a cordoned node is excluded.
+		if !schedulableForVMs(&n) {
+			continue
+		}
 		ready := false
 		for _, c := range n.Status.Conditions {
 			if c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue {
@@ -421,6 +427,20 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 		})
 	}
 	return result, nil
+}
+
+// schedulableForVMs reports whether a VM pod (which carries no tolerations) could
+// be scheduled onto the node: not cordoned and free of NoSchedule/NoExecute taints.
+func schedulableForVMs(n *corev1.Node) bool {
+	if n.Spec.Unschedulable {
+		return false
+	}
+	for _, t := range n.Spec.Taints {
+		if t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute {
+			return false
+		}
+	}
+	return true
 }
 
 type NodeInfo struct {

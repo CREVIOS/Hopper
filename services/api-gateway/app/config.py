@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     code_url_signing_secret: str = "change-me-in-production-32bytes-or-more"
     code_url_ttl_seconds: int = 600
 
+    # CPU/RAM admission queue. The gateway computes free cluster capacity
+    # itself; these reserves cover kube-system pods it cannot see. Kubernetes
+    # quantity strings, parsed in app.services.vm_capacity.
+    cluster_reserve_cpu: str = "1"
+    cluster_reserve_memory: str = "2Gi"
+    # Workspace-disk (PVC) pool. Node ephemeral-storage is not reported by
+    # ListNodes, so the total is configured; used = sum of live VMs' plan disk.
+    cluster_storage_total: str = "150Gi"
+    cluster_reserve_storage: str = "10Gi"
+    # How often the background admission loop re-checks the queue, in seconds.
+    scheduler_tick_seconds: int = 5
+
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 

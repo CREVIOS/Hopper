@@ -20,7 +20,10 @@
     creating: { variant: 'info', pulse: true, label: 'Creating' },
     stopping: { variant: 'warning', pulse: true, label: 'Stopping' },
     terminated: { variant: 'muted', pulse: false, label: 'Terminated' },
-    failed: { variant: 'destructive', pulse: false, label: 'Failed' }
+    failed: { variant: 'destructive', pulse: false, label: 'Failed' },
+    // Admission-queue states (VmQueueEntry, not PodSession).
+    queued: { variant: 'info', pulse: true, label: 'Queued' },
+    admitting: { variant: 'info', pulse: true, label: 'Starting' }
   };
 </script>
 

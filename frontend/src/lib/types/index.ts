@@ -61,6 +61,53 @@ export interface Pod {
   updated_at: string;
 }
 
+/** Cluster capacity readout from GET /pods/availability. Every capacity field
+ * is nullable: when the orchestrator is unreachable the backend fails open and
+ * returns nulls rather than 500ing, so the UI must tolerate missing numbers. */
+export interface Availability {
+  cpu: {
+    total_cores: number | null;
+    used_cores: number | null;
+    free_cores: number | null;
+  };
+  memory: {
+    total_gib: number | null;
+    used_gib: number | null;
+    free_gib: number | null;
+  };
+  storage: {
+    total_gib: number | null;
+    used_gib: number | null;
+    free_gib: number | null;
+  };
+  nodes_ready: number | null;
+  queue_length: number;
+}
+
+/** A pending admission-queue request owned by the caller (GET /pods/queue). */
+export interface QueueEntry {
+  id: string;
+  plan: string;
+  template: string;
+  /** 'queued' while waiting; 'admitting' once the create is in flight. */
+  state: 'queued' | 'admitting' | string;
+  position: number;
+  created_at: string;
+}
+
+/** 202 body returned by POST /pods/ when the cluster is full and the request
+ * was enqueued instead of created. Discriminated from a running Pod by `queued`. */
+export interface QueuedCreateResult {
+  queued: true;
+  id: string;
+  state: string;
+  plan: string;
+  position: number;
+}
+
+/** POST /pods/ returns either a running Pod (201) or a queued result (202). */
+export type CreatePodResult = Pod | QueuedCreateResult;
+
 export interface Credit {
   account_id: string;
   balance: number;
