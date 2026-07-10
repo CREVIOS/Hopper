@@ -18,6 +18,8 @@ from app.middleware import audit as audit_middleware
 from app.models import SSHKey
 from app.schemas.user import TokenPayload
 
+VALID_PUBLIC_KEY = "ssh-ed25519 dGVzdC1rZXktZGF0YQ== test@example.com"
+
 
 def _docker_available() -> bool:
     try:
@@ -75,11 +77,9 @@ async def client(db_session, current_user_payload):
 
 @pytest.mark.asyncio
 async def test_add_and_list_ssh_key(client):
-    public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-
     add_response = await client.post(
         "/ssh-keys/",
-        json={"name": "Laptop", "public_key": public_key},
+        json={"name": "Laptop", "public_key": VALID_PUBLIC_KEY},
     )
 
     assert add_response.status_code == 201
@@ -98,15 +98,13 @@ async def test_add_and_list_ssh_key(client):
 
 @pytest.mark.asyncio
 async def test_add_ssh_key_rejects_duplicate_for_same_user(client):
-    public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-
     first_response = await client.post(
         "/ssh-keys/",
-        json={"name": "Laptop", "public_key": public_key},
+        json={"name": "Laptop", "public_key": VALID_PUBLIC_KEY},
     )
     second_response = await client.post(
         "/ssh-keys/",
-        json={"name": "Laptop Copy", "public_key": public_key},
+        json={"name": "Laptop Copy", "public_key": VALID_PUBLIC_KEY},
     )
 
     assert first_response.status_code == 201
@@ -121,7 +119,7 @@ async def test_delete_ssh_key_removes_it(client, db_session):
             id="key-1",
             user_id="student-1",
             name="Laptop",
-            public_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            public_key=VALID_PUBLIC_KEY,
             fingerprint="SHA256:abc",
         )
     )

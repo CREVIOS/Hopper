@@ -88,8 +88,11 @@ async def test_get_credit_balance_returns_zero_for_new_user(client, db_session):
         await db_session.execute(
             select(Account).where(Account.owner_id == "student-1", Account.owner_type == "user")
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    assert account is not None
     assert body["account_id"] == account.id
+    assert account.owner_id == "student-1"
+    assert account.owner_type == "user"
 
 
 @pytest.mark.asyncio
