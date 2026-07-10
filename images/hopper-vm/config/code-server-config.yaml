@@ -1,15 +1,17 @@
 # images/hopper-vm/config/code-server-config.yaml
 #
-# Auth: code-server reads $PASSWORD at startup and uses it as the login
-# password (auth: password). The orchestrator generates a per-pod random
-# value and injects it via env. The FastAPI proxy auto-fills the cookie
-# after JWT validation, so the user never sees the password.
+# Auth: DISABLED (`auth: none`). code-server itself asks for no password —
+# access is already gated end-to-end by the platform: the api-gateway VS Code
+# proxy validates the user's Keycloak JWT and pod ownership before proxying a
+# single byte, and the NetworkPolicy only lets the gateway reach the pod. A
+# per-pod code-server password on top of that added nothing the user could see
+# except a login wall (there is no auto-fill flow), so it is removed.
 #
 # Trusted origins: needed because we serve code-server through the api
 # gateway under a different host than `bind-addr`, so its built-in CSRF
 # check would otherwise reject the WebSocket upgrade.
 bind-addr: 0.0.0.0:8080
-auth: password
+auth: none
 cert: false
 disable-telemetry: true
 disable-update-check: true
