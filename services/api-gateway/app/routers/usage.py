@@ -2,11 +2,12 @@
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
+from app.models.session import PodSession
 from app.schemas.user import TokenPayload
 
 router = APIRouter()
@@ -34,6 +35,23 @@ async def get_pod_usage(
     delta = RANGE_MAP.get(range, timedelta(hours=1))
     since = datetime.utcnow() - delta
 
+    # Resolve the session and enforce ownership (previously this endpoint queried
+    # metrics_samples by the raw path id with no ownership check — IDOR). The URL
+    # carries the API UUID, but metrics_samples may be keyed by either the UUID
+    # (reconciled pods) or the K8s pod name (fresh pods), so match on both.
+    session = (
+        await db.execute(
+            select(PodSession).where(
+                or_(PodSession.id == pod_id, PodSession.pod_name == pod_id)
+            )
+        )
+    ).scalars().first()
+    if session is None:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
+    pod_ids = list({session.id, session.pod_name} - {None})
+
     # Determine bucket size based on range
     if delta <= timedelta(hours=1):
         bucket = "1 minute"
@@ -52,11 +70,11 @@ async def get_pod_usage(
                        avg(memory_used_bytes) as avg_memory,
                        max(memory_limit_bytes) as memory_limit
                 FROM metrics_samples
-                WHERE pod_id = :pod_id AND time > :since
+                WHERE pod_id = ANY(:pod_ids) AND time > :since
                 GROUP BY bucket
                 ORDER BY bucket
             """),
-            {"bucket": bucket, "pod_id": pod_id, "since": since},
+            {"bucket": bucket, "pod_ids": pod_ids, "since": since},
         )
     except Exception:
         # Fallback without time_bucket (vanilla Postgres)
@@ -67,11 +85,11 @@ async def get_pod_usage(
                        avg(memory_used_bytes) as avg_memory,
                        max(memory_limit_bytes) as memory_limit
                 FROM metrics_samples
-                WHERE pod_id = :pod_id AND time > :since
+                WHERE pod_id = ANY(:pod_ids) AND time > :since
                 GROUP BY bucket
                 ORDER BY bucket
             """),
-            {"pod_id": pod_id, "since": since},
+            {"pod_ids": pod_ids, "since": since},
         )
 
     rows = result.fetchall()

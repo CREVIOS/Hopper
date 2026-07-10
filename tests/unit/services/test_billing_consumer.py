@@ -213,7 +213,10 @@ async def test_handle_billing_exhausted_marks_active_pod_terminated(monkeypatch)
     committed = {}
 
     class FakeResult:
-        def scalar_one_or_none(self):
+        def scalars(self):
+            return self
+
+        def first(self):
             return session
 
     class FakeDB:
@@ -244,7 +247,10 @@ async def test_handle_billing_exhausted_skips_terminal_states(monkeypatch):
     committed = {"called": False}
 
     class FakeResult:
-        def scalar_one_or_none(self):
+        def scalars(self):
+            return self
+
+        def first(self):
             return session
 
     class FakeDB:
@@ -268,6 +274,45 @@ async def test_handle_billing_exhausted_skips_terminal_states(monkeypatch):
 
     assert session.state == "failed"
     assert committed["called"] is False
+
+
+async def test_handle_billing_exhausted_matches_pod_by_id_or_pod_name(monkeypatch):
+    """Fresh pods emit the K8s pod name as pod_id while reconciled pods emit the
+    UUID, so the exhaustion handler must match on either. Guard that the query
+    references both columns (the id-only lookup left fresh pods stuck 'running')."""
+    session = type("Session", (), {"state": "running"})()
+    captured = {}
+
+    class FakeResult:
+        def scalars(self):
+            return self
+
+        def first(self):
+            return session
+
+    class FakeDB:
+        async def execute(self, stmt):
+            captured["sql"] = str(stmt)
+            return FakeResult()
+
+        async def commit(self):
+            pass
+
+    class FakeDBContext:
+        async def __aenter__(self):
+            return FakeDB()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("app.services.billing_consumer.async_session", lambda: FakeDBContext())
+
+    # pod_id here is the K8s name a fresh pod emits, not the session UUID.
+    msg = FakeMessage(json.dumps({"pod_id": "vm-1700000000"}).encode())
+    await billing_module._handle_billing_exhausted(msg)
+
+    assert session.state == "terminated"
+    assert "id" in captured["sql"] and "pod_name" in captured["sql"]
 
 
 async def test_start_billing_consumer_subscribes_to_both_subjects(monkeypatch):

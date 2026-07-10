@@ -21,7 +21,7 @@ import json
 import logging
 
 from nats.errors import NotJSMessageError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.core import nats as nats_client
@@ -111,10 +111,18 @@ async def _handle_billing_exhausted(msg):
 
     try:
         async with async_session() as db:
+            # The orchestrator's billing event carries whatever id the in-memory
+            # pod manager holds: the API UUID for reconciled pods, but the K8s
+            # name ("vm-<unixNano>") for freshly-created pods that haven't been
+            # through a reconcile yet. Match on either so a credit-exhausted VM
+            # is reliably flipped to `terminated` in both cases (previously the
+            # id-only lookup missed fresh pods, leaving the row stuck "running").
             result = await db.execute(
-                select(PodSession).where(PodSession.id == pod_id)
+                select(PodSession).where(
+                    or_(PodSession.id == pod_id, PodSession.pod_name == pod_id)
+                )
             )
-            session = result.scalar_one_or_none()
+            session = result.scalars().first()
             if session and session.state not in ("terminated", "failed"):
                 session.state = "terminated"
                 await db.commit()
