@@ -1,5 +1,6 @@
 """Integration test fixtures using Testcontainers."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ async def db_session(postgres_container) -> AsyncSession:
     alembic_cfg = Config(str(API_GATEWAY_ROOT / "alembic.ini"))
     alembic_cfg.set_main_option("script_location", str(API_GATEWAY_ROOT / "alembic"))
     alembic_cfg.set_main_option("sqlalchemy.url", url.replace("+asyncpg", ""))
-    command.upgrade(alembic_cfg, "head")
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
