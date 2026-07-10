@@ -13,6 +13,34 @@ per-user `/workspace`.
 bug, (3) SSH-key injection, (4) persistent workspace. Student-facing security fixes
 (H-2, H-3) are documented in `02-security-findings.md` but out of scope for this pass.
 
+## Status (updated 2026-07-11, branch `feat/student-side-durability`)
+
+| Task | Status | Commit / note |
+|---|---|---|
+| 0. Green baseline (admin test) | ✅ DONE | `test: repair admin RBAC unit test` |
+| 2. Stale-state bug + /usage IDOR | ✅ DONE | `fix(billing,usage): …` — see deviation below |
+| 3. SSH-key injection | ✅ DONE | `feat(vm): inject registered SSH public keys` |
+| 4. Persistent workspace (FR-HC-28) | ✅ DONE | `feat(vm): persistent per-user /workspace` (migration **013**) |
+| 1. Land notifications branch | ⛔ REMAINING | see the renumber note in Task 1 below |
+
+**Verified here:** `go build`/`vet`/`test`, `pytest` (changed areas +7 tests, 0 new
+failures), `ruff`, linear Alembic chain (…012→013), app import. **Needs a live cluster
+(no cluster in this env):** key-based SSH into a VM, and `/workspace` persistence across
+restart/re-launch.
+
+**Task 2 deviation (important):** the plan proposed making the API UUID the canonical
+manager id in the orchestrator. That was **rejected during implementation** because
+`tx_id = <podId>:<seq>` and `seq` resets on orchestrator restart — a *stable* id would
+collide post-restart tx_ids and **under-bill after a restart**. The shipped fix is
+**gateway-only**: `billing_consumer` and `/usage` now match a pod by `id` OR `pod_name`,
+robust to both the fresh `vm-<nano>` and post-reconcile UUID, with no billing-path change.
+It also closed the `/usage` IDOR (security M-3) since the fix must load the session anyway.
+
+**Task 1 renumber (important):** Task 4 took migration **013**, so when landing the
+notifications branch its `011_notifications` must be renumbered to **`014`**
+(`down_revision="013"`), not 013 as originally written below. Also note `billing_consumer.py`
+and `pods.py` now carry my Task 2/3/4 changes, so the merge is a 3-way in those files.
+
 **Tech Stack:** Go orchestrator (gRPC), FastAPI gateway (Python 3.12, poetry), SvelteKit
 frontend, Alembic migrations, protobuf via `scripts/generate-proto.sh` (protoc fallback —
 `buf` absent), Postgres/TimescaleDB.
