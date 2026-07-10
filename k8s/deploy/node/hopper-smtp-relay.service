@@ -1,0 +1,34 @@
+# Node-level SMTP relay for Hopper.
+#
+# Why this exists: pods on this k3s cluster cannot open outbound connections to
+# external SMTP ports (25/465/587 time out; general egress on 443 works, and
+# the node itself can reach SMTP). The api-gateway therefore cannot talk to
+# smtp.gmail.com:587 directly. This unit runs a plain TCP relay on the node,
+# which CAN reach Gmail, and the api-gateway pod reaches it via a hostAlias
+# (smtp.gmail.com -> node IP) on port 2525. STARTTLS is negotiated end-to-end
+# between the app and real Gmail, so the relay only pipes bytes and Gmail's
+# TLS certificate still validates.
+#
+# Install on the node (out-of-band; not applied by CI):
+#   sudo cp k8s/deploy/node/hopper-smtp-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hopper-smtp-relay
+#
+# Requires: socat (apt-get install -y socat). Pairs with the hostAliases +
+# HOPPER_SMTP_PORT=2525 in 02-apps.yaml.
+#
+# Long-term alternative: switch to an HTTPS email API (port 443, which pods can
+# reach) to remove the need for this relay entirely.
+
+[Unit]
+Description=Hopper SMTP relay (pod egress workaround) -> smtp.gmail.com:587
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/socat -d TCP-LISTEN:2525,fork,reuseaddr,bind=0.0.0.0 TCP:smtp.gmail.com:587
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

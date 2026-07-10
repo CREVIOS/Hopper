@@ -25,8 +25,19 @@ from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
 from app.models.audit import AuditLog
 from app.models.user import User
-from app.schemas.user import LoginRequest, SignupRequest, TokenPayload, UserResponse
+from app.schemas.user import (
+    ForgotPasswordRequest,
+    LoginRequest,
+    ResendCodeRequest,
+    ResetPasswordRequest,
+    SignupRequest,
+    TokenPayload,
+    UserResponse,
+    VerifyEmailRequest,
+)
+from app.services import verification
 from app.services.credit_service import get_or_create_account
+from app.services.email import send_code_email
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 
 logger = logging.getLogger(__name__)
@@ -217,12 +228,14 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     if body.role not in ("student", "teacher"):
         raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
     if "@" not in email or not _domain_allowed(email):
-        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign up.")
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign up.")
 
     try:
+        # Created unverified — the user must confirm the emailed code before a
+        # session is issued (login enforces require_email_verified).
         user_id = await keycloak_admin.create_user(
             email=email, name=body.name, password=body.password,
-            role="student", email_verified=True,
+            role="student", email_verified=False,
         )
     except KeycloakAdminError as e:
         if "exists" in str(e):
@@ -237,8 +250,10 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
         resource_type="user", resource_id=user_id,
         ip_address=request.client.host if request.client else "-", status_code=201,
     ))
+    code = await verification.issue_code(db, email, verification.VERIFY_EMAIL)
     await db.commit()
     await get_or_create_account(db, user_id)
+    await send_code_email(email, verification.VERIFY_EMAIL, code)
 
     tokens = await _password_grant(email, body.password)
     return _issue_session(
@@ -246,6 +261,92 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
         tokens,
         status_code=status.HTTP_202_ACCEPTED if pending else status.HTTP_200_OK,
     )
+
+
+@router.post("/verify-email")
+@limiter.limit("10/minute")
+async def verify_email(request: Request, body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
+    """Confirm a signup verification code and mark the account email-verified.
+    On success the client logs in normally (POST /auth/login)."""
+    email = (body.email or "").lower().strip()
+    ok = await verification.verify_code(db, email, verification.VERIFY_EMAIL, body.code)
+    if not ok:
+        await db.commit()  # persist the incremented attempt counter
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        await db.commit()
+        raise HTTPException(status_code=404, detail="Account not found.")
+    try:
+        await keycloak_admin.set_email_verified(user.id, True)
+    except KeycloakAdminError as e:
+        logger.error("verify-email: set_email_verified failed: %s", e)
+        raise HTTPException(status_code=502, detail="Could not verify the account. Try again later.")
+    await db.commit()
+    return JSONResponse({"status": "verified", "email": email})
+
+
+@router.post("/resend-code")
+@limiter.limit("3/minute")
+async def resend_code(request: Request, body: ResendCodeRequest, db: AsyncSession = Depends(get_db)):
+    """Re-send a verification code for a not-yet-verified signup. Always returns
+    200 (never reveals whether the account exists / is already verified)."""
+    email = (body.email or "").lower().strip()
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku and not ku.get("emailVerified", False):
+            code = await verification.issue_code(db, email, verification.VERIFY_EMAIL)
+            await db.commit()
+            await send_code_email(email, verification.VERIFY_EMAIL, code)
+    except KeycloakAdminError as e:
+        logger.error("resend-code failed for %s: %s", email, e)
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+async def forgot_password(request: Request, body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Begin a password reset. Always returns 200 so the response can't be used
+    to enumerate which emails have accounts."""
+    email = (body.email or "").lower().strip()
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku:
+            code = await verification.issue_code(db, email, verification.PASSWORD_RESET)
+            await db.commit()
+            await send_code_email(email, verification.PASSWORD_RESET, code)
+    except KeycloakAdminError as e:
+        logger.error("forgot-password failed for %s: %s", email, e)
+    return JSONResponse({"status": "ok"})
+
+
+@router.post("/reset-password")
+@limiter.limit("10/minute")
+async def reset_password(request: Request, body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Complete a password reset with the emailed code, then set the new
+    password in Keycloak. The client logs in afterwards."""
+    email = (body.email or "").lower().strip()
+    ok = await verification.verify_code(db, email, verification.PASSWORD_RESET, body.code)
+    if not ok:
+        await db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    try:
+        ku = await keycloak_admin.get_user_by_email(email)
+        if ku is None:
+            await db.commit()
+            raise HTTPException(status_code=404, detail="Account not found.")
+        await keycloak_admin.reset_password(ku["id"], body.password)
+        # A reset also confirms control of the mailbox — mark verified.
+        if not ku.get("emailVerified", False):
+            await keycloak_admin.set_email_verified(ku["id"], True)
+    except KeycloakAdminError as e:
+        logger.error("reset-password failed for %s: %s", email, e)
+        raise HTTPException(status_code=502, detail="Could not reset the password. Try again later.")
+    await db.commit()
+    return JSONResponse({"status": "reset", "email": email})
 
 
 @router.post("/login")
@@ -259,7 +360,7 @@ async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = 
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid token")
     if not _domain_allowed(payload.email):
-        raise HTTPException(status_code=403, detail="Only @cs.du.ac.bd accounts may sign in.")
+        raise HTTPException(status_code=403, detail="This email domain is not permitted to sign in.")
     if settings.require_email_verified and not payload.email_verified:
         raise HTTPException(status_code=403, detail="Please verify your email, then sign in.")
     await _upsert_user_row(db, payload)

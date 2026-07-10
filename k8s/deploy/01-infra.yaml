@@ -227,6 +227,21 @@ spec:
                 secretKeyRef: { name: hopper-db, key: password }
             - name: KC_HOSTNAME
               value: "https://hopper.farefin.com"
+            # Theme resource caching. Keycloak's hosted login page (the SSO /
+            # "Sign in as admin" path) pulls ~1.8 MB of PatternFly CSS from
+            # /resources/<ver>/. In dev mode those assets are served with
+            # `Cache-Control: no-cache` and no ETag, so the browser re-downloads
+            # all of it on every login — making the admin login page load far
+            # slower than the app's own (tiny, cached) pages. These SPI settings
+            # force long-lived caching of theme static resources + templates
+            # regardless of start mode; the <ver> path segment changes on a
+            # Keycloak upgrade so a long max-age is safe.
+            - name: KC_SPI_THEME_STATIC_MAX_AGE
+              value: "2592000"
+            - name: KC_SPI_THEME_CACHE_THEMES
+              value: "true"
+            - name: KC_SPI_THEME_CACHE_TEMPLATES
+              value: "true"
           resources:
             requests:
               cpu: "500m"
