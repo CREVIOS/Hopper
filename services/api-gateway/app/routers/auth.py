@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -24,8 +24,14 @@ from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
 from app.models.audit import AuditLog
+from app.models.email_code import EmailCode
+from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.models.user import User
+from app.models.user_setting import UserSetting
+from app.models.user_workspace import UserWorkspace
 from app.schemas.user import (
+    AccountDeleteRequest,
     ForgotPasswordRequest,
     LoginRequest,
     ProfileUpdateRequest,
@@ -36,8 +42,9 @@ from app.schemas.user import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import verification
+from app.services import port_forward, verification
 from app.services.credit_service import get_or_create_account, grant_signup_bonus
+from app.services.orchestrator_client import orchestrator_client
 from app.services.email import send_code_email
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 
@@ -566,6 +573,85 @@ async def update_profile(
         university_id=user.university_id,
         pending_teacher=bool(user.pending_teacher),
     )
+
+
+async def _terminate_user_pods(db: AsyncSession, user_id: str) -> None:
+    """Best-effort terminate every live VM owned by the user.
+
+    Called during account deletion so nothing keeps running (or billing) once
+    the account is gone. Failures are logged, never fatal — the account must
+    still be deletable even if the orchestrator is unreachable.
+    """
+    result = await db.execute(
+        select(PodSession).where(
+            PodSession.user_id == user_id,
+            PodSession.state.in_(("running", "pending")),
+        )
+    )
+    for session in result.scalars().all():
+        try:
+            await orchestrator_client.terminate_pod(session.pod_name)
+        except Exception as e:
+            logger.error("delete_account: terminate pod %s failed: %s", session.pod_name, e)
+        try:
+            await port_forward.stop(session.pod_name)
+        except Exception:
+            pass
+        session.state = "terminated"
+
+
+@router.delete("/me")
+async def delete_account(
+    body: AccountDeleteRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Irreversibly delete the caller's own account.
+
+    Removes the Keycloak login and the user's operational data (SSH keys,
+    settings, workspace row, live VMs). The immutable credit ledger
+    (accounts/transfers/ledger_entries) and the audit trail are intentionally
+    preserved for financial + compliance integrity. Requires the caller to
+    re-type their email as confirmation.
+
+    Note: the workspace PVC in the cluster is not reclaimed here (needs
+    orchestrator support) — only the DB workspace row is removed.
+    """
+    if body.confirm_email.strip().lower() != current_user.email.strip().lower():
+        raise HTTPException(status_code=400, detail="Confirmation email does not match your account")
+
+    sub = current_user.sub
+
+    # Delete the Keycloak identity first: if this fails the account is left
+    # fully intact (clean 502). Once it succeeds the user can no longer log in,
+    # so any subsequent DB hiccup leaves orphaned rows — never a live account.
+    try:
+        await keycloak_admin.delete_user(sub)
+    except Exception as e:
+        logger.error("delete_account: keycloak delete failed for %s: %s", sub, e)
+        raise HTTPException(
+            status_code=502, detail="Failed to delete account in the identity provider"
+        )
+
+    # Terminate live VMs, then remove operational + PII rows. The ledger and
+    # audit_logs are deliberately kept.
+    await _terminate_user_pods(db, sub)
+    await db.execute(delete(SSHKey).where(SSHKey.user_id == sub))
+    await db.execute(delete(UserSetting).where(UserSetting.user_id == sub))
+    await db.execute(delete(UserWorkspace).where(UserWorkspace.user_id == sub))
+    await db.execute(delete(EmailCode).where(EmailCode.email == current_user.email))
+    await db.execute(delete(User).where(User.id == sub))
+
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), user_id=sub, action="account.delete",
+        resource_type="user", resource_id=sub, ip_address="-", status_code=200,
+    ))
+    await db.commit()
+
+    resp = JSONResponse({"message": "account deleted"})
+    _clear_session_cookies(resp)
+    resp.delete_cookie("id_token", path="/", secure=settings.cookie_secure, samesite="lax", httponly=True)
+    return resp
 
 
 @router.post("/logout")

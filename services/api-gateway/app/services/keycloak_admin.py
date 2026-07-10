@@ -232,6 +232,20 @@ class KeycloakAdminClient:
         if resp.status_code not in (204, 200):
             raise KeycloakAdminError(f"reset password failed: {resp.text}")
 
+    async def delete_user(self, user_id: str) -> None:
+        """Permanently delete a user from Keycloak.
+
+        Revokes all of the user's sessions and blocks any future login.
+        Idempotent: a 404 (already gone) is treated as success.
+        """
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.delete(
+                await self._admin_url(f"/users/{user_id}"),
+                headers=await self._headers(),
+            )
+        if resp.status_code not in (204, 200, 404):
+            raise KeycloakAdminError(f"delete user failed: {resp.text}")
+
     async def logout_user(self, user_id: str) -> None:
         """Force-revoke all of the user's Keycloak sessions and refresh tokens."""
         async with httpx.AsyncClient(timeout=10.0) as client:

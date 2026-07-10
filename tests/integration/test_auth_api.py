@@ -228,6 +228,7 @@ async def test_auth_me_returns_pending_teacher_flag(client, db_session):
         "email": "student1@cs.du.ac.bd",
         "name": "Student One",
         "role": "student",
+        "university_id": None,
         "pending_teacher": True,
     }
 
@@ -298,3 +299,104 @@ async def test_auth_logout_revokes_refresh_token_and_redirects(client, monkeypat
     assert "post_logout_redirect_uri=" in response.headers["location"]
     assert "id_token_hint=id-token-1" in response.headers["location"]
     assert fake_client.calls
+
+
+@pytest.mark.asyncio
+async def test_delete_account_removes_user_but_preserves_ledger(client, db_session, monkeypatch):
+    from datetime import datetime
+
+    from app.models import (
+        Account,
+        EmailCode,
+        LedgerEntry,
+        PodSession,
+        SSHKey,
+        Transfer,
+        UserSetting,
+        UserWorkspace,
+    )
+
+    # Seed the user + all their operational data.
+    db_session.add(User(id="student-1", email="student1@cs.du.ac.bd", name="Student One", role="student"))
+    db_session.add(SSHKey(id="k1", user_id="student-1", name="laptop", public_key="ssh-ed25519 AAAA", fingerprint="fp1"))
+    db_session.add(UserSetting(id="s1", user_id="student-1", vscode={"theme": "dark"}))
+    db_session.add(UserWorkspace(id="w1", user_id="student-1", pvc_name="ws-student-1", capacity_gb=20))
+    db_session.add(EmailCode(id="e1", email="student1@cs.du.ac.bd", purpose="verify_email", code_hash="h", expires_at=datetime(2999, 1, 1)))
+    db_session.add(PodSession(
+        id="pod-1", user_id="student-1", plan="small", image="img", cpu="1", memory="2Gi",
+        namespace="hopper", pod_name="vm-pod-1", state="running",
+    ))
+    # Seed an immutable ledger record that must survive deletion.
+    db_session.add(Account(id="acct-1", name="student-1 wallet", type="asset", owner_id="student-1", owner_type="user"))
+    db_session.add(Transfer(id="t1", type="grant", metadata_={}, event_at=datetime(2026, 1, 1)))
+    db_session.add(LedgerEntry(
+        id="le1", transfer_id="t1", account_id="acct-1", direction=-1, amount=10,
+        previous_balance=0, current_balance=10, event_at=datetime(2026, 1, 1),
+    ))
+    await db_session.commit()
+
+    terminated = {}
+
+    async def fake_terminate_pod(pod_name):
+        terminated["pod"] = pod_name
+        return True
+
+    async def fake_delete_user(uid):
+        terminated["kc"] = uid
+
+    async def fake_stop(pod_name):
+        pass
+
+    monkeypatch.setattr("app.routers.auth.orchestrator_client.terminate_pod", fake_terminate_pod)
+    monkeypatch.setattr("app.routers.auth.keycloak_admin.delete_user", fake_delete_user)
+    monkeypatch.setattr("app.routers.auth.port_forward.stop", fake_stop)
+
+    response = await client.request(
+        "DELETE", "/auth/me", json={"confirm_email": "student1@cs.du.ac.bd"}
+    )
+
+    assert response.status_code == 200
+    assert terminated == {"pod": "vm-pod-1", "kc": "student-1"}
+
+    db_session.expire_all()
+
+    # User + operational rows are gone.
+    assert (await db_session.execute(select(User).where(User.id == "student-1"))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(SSHKey).where(SSHKey.user_id == "student-1"))).scalars().all() == []
+    assert (await db_session.execute(select(UserSetting).where(UserSetting.user_id == "student-1"))).scalars().all() == []
+    assert (await db_session.execute(select(UserWorkspace).where(UserWorkspace.user_id == "student-1"))).scalars().all() == []
+    assert (await db_session.execute(select(EmailCode).where(EmailCode.email == "student1@cs.du.ac.bd"))).scalars().all() == []
+
+    # The VM session is marked terminated.
+    pod = (await db_session.execute(select(PodSession).where(PodSession.id == "pod-1"))).scalar_one()
+    assert pod.state == "terminated"
+
+    # The immutable ledger is preserved.
+    assert (await db_session.execute(select(LedgerEntry).where(LedgerEntry.id == "le1"))).scalar_one_or_none() is not None
+    assert (await db_session.execute(select(Account).where(Account.id == "acct-1"))).scalar_one_or_none() is not None
+
+    # An account.delete audit row was written.
+    audit = (await db_session.execute(
+        select(AuditLog).where(AuditLog.user_id == "student-1", AuditLog.action == "account.delete")
+    )).scalar_one()
+    assert audit.resource_type == "user"
+
+
+@pytest.mark.asyncio
+async def test_delete_account_rejects_email_mismatch(client, db_session, monkeypatch):
+    db_session.add(User(id="student-1", email="student1@cs.du.ac.bd", name="Student One", role="student"))
+    await db_session.commit()
+
+    called = {"kc": False}
+
+    async def fake_delete_user(uid):
+        called["kc"] = True
+
+    monkeypatch.setattr("app.routers.auth.keycloak_admin.delete_user", fake_delete_user)
+
+    response = await client.request("DELETE", "/auth/me", json={"confirm_email": "wrong@e.com"})
+
+    assert response.status_code == 400
+    assert called["kc"] is False
+    db_session.expire_all()
+    assert (await db_session.execute(select(User).where(User.id == "student-1"))).scalar_one_or_none() is not None

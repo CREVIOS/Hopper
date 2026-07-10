@@ -7,10 +7,11 @@
     Fingerprint,
     ShieldCheck,
     Terminal,
-    Check
+    Check,
+    AlertTriangle
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import {
     Button,
@@ -29,11 +30,39 @@
   import { copyToClipboard, relTime } from '$lib/utils';
   import type { SshKey } from '$lib/types';
 
-  let { data }: { data: { keys: SshKey[] } } = $props();
+  // `user` is merged in from the root layout load (email is needed to confirm
+  // account deletion below).
+  let { data }: { data: { keys: SshKey[]; user?: { email?: string } | null } } = $props();
 
   const MAX_KEYS = 10;
   const usedPct = $derived((data.keys.length / MAX_KEYS) * 100);
   const atLimit = $derived(data.keys.length >= MAX_KEYS);
+
+  // --- Account deletion (danger zone) ---
+  let deleteOpen = $state(false);
+  let confirmEmail = $state('');
+  let deleting = $state(false);
+  const accountEmail = $derived(data.user?.email ?? '');
+  // The confirm button only enables once the typed email matches the account.
+  const confirmMatches = $derived(
+    accountEmail.length > 0 && confirmEmail.trim().toLowerCase() === accountEmail.toLowerCase()
+  );
+
+  async function deleteAccount() {
+    if (!confirmMatches || deleting) return;
+    deleting = true;
+    const id = toast.loading('Deleting your account…');
+    try {
+      await api.delete('/auth/me', { confirm_email: confirmEmail.trim() });
+      toast.success('Account deleted', { id, description: 'Signing you out…' });
+      // Cookies are cleared by the backend; send the user to login.
+      await goto('/login');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Could not delete account';
+      toast.error('Deletion failed', { id, description: msg });
+      deleting = false;
+    }
+  }
 
   // Derive the key algorithm from the public key for a small, modest type chip.
   function keyAlgo(pk: string): { label: string; tint: string } {
@@ -305,6 +334,75 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
     </CardContent>
   </Card>
 </div>
+
+<!-- Danger zone: irreversible account deletion. -->
+<div class="mt-8">
+  <Card class="overflow-hidden border-destructive/40">
+    <div class="flex items-start gap-3 border-b border-destructive/30 bg-destructive/5 px-5 py-4">
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+        <AlertTriangle class="size-4" />
+      </span>
+      <div>
+        <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
+        <p class="text-xs text-muted-foreground">Irreversible account actions.</p>
+      </div>
+    </div>
+    <CardContent class="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm">
+        <p class="font-medium">Delete your account</p>
+        <p class="text-xs text-muted-foreground">
+          Terminates your VMs and permanently removes your login, SSH keys, settings, and
+          workspace. Your billing history is retained. This cannot be undone.
+        </p>
+      </div>
+      <Button
+        variant="destructive"
+        class="shrink-0"
+        onclick={() => {
+          confirmEmail = '';
+          deleteOpen = true;
+        }}
+      >
+        <Trash2 class="size-4" /> Delete account
+      </Button>
+    </CardContent>
+  </Card>
+</div>
+
+<Dialog bind:open={deleteOpen} title="Delete your account?" description="This action is permanent and cannot be undone.">
+  <div class="space-y-4">
+    <div class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-muted-foreground">
+      <AlertTriangle class="mt-0.5 size-4 shrink-0 text-destructive" />
+      <span>
+        Your running VMs will be terminated and your login, SSH keys, settings, and workspace
+        will be permanently deleted. Your credit/billing history is retained for records.
+      </span>
+    </div>
+    <div>
+      <Label for="confirm-email">
+        Type <span class="font-mono font-medium text-foreground">{accountEmail}</span> to confirm
+      </Label>
+      <Input
+        id="confirm-email"
+        bind:value={confirmEmail}
+        placeholder={accountEmail}
+        class="mt-1 font-mono"
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (deleteOpen = false)} disabled={deleting}>Cancel</Button>
+    <Button variant="destructive" onclick={deleteAccount} disabled={!confirmMatches || deleting}>
+      {#if deleting}
+        <Spinner class="size-4" /> Deleting…
+      {:else}
+        <Trash2 class="size-4" /> Delete my account
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
 
 <Dialog
   bind:open={dialogOpen}

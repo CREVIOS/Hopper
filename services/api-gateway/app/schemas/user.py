@@ -68,3 +68,9 @@ class ProfileUpdateRequest(BaseModel):
 
 class ChangeRoleRequest(BaseModel):
     role: str  # one of: admin, professor, student
+
+
+class AccountDeleteRequest(BaseModel):
+    # The caller must re-type their own email to confirm this irreversible
+    # action; the router rejects a mismatch with 400 before any side effects.
+    confirm_email: str = Field(max_length=254)
