@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { LogOut, KeyRound, ChevronDown, Shield } from 'lucide-svelte';
+  import { LogOut, KeyRound, ChevronDown, Shield, GraduationCap } from 'lucide-svelte';
   import { goto } from '$app/navigation';
   import { Avatar, DropdownMenu } from '$lib/ui';
   import type { User } from '$lib/types';
 
   let { user }: { user: User } = $props();
 
-  const isAdmin = $derived(user.role === 'admin' || user.role === 'professor');
+  // Admin console is admin-only (professors are redirected out of /admin);
+  // professors get a working Teaching link instead of a dead one.
+  const isAdmin = $derived(user.role === 'admin');
+  const isTeacher = $derived(user.role === 'professor');
 
   // Human-friendly role label. A "teacher" signup stays role=student until an
   // admin approves, so show the pending state instead of a bare "student".
@@ -56,6 +59,11 @@
     {#if isAdmin}
       <DropdownMenu.Item onclick={() => goto('/admin')}>
         <Shield class="size-4" /> Admin console
+      </DropdownMenu.Item>
+    {/if}
+    {#if isTeacher}
+      <DropdownMenu.Item onclick={() => goto('/teacher')}>
+        <GraduationCap class="size-4" /> Teaching
       </DropdownMenu.Item>
     {/if}
     <DropdownMenu.Separator />
