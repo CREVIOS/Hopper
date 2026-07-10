@@ -4,6 +4,7 @@ import sys
 import httpx
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
@@ -15,9 +16,9 @@ if str(API_ROOT) not in sys.path:
 from app.dependencies import get_current_user, get_db
 from app.main import create_app
 from app.middleware import audit as audit_middleware
-from app.models import User
+from app.models import Account, User
 from app.schemas.user import TokenPayload
-from app.services.credit_service import add_credits, get_balance, get_or_create_account
+from app.services.credit_service import add_credits, get_balance
 
 
 def _docker_available() -> bool:
@@ -83,7 +84,11 @@ async def test_get_credit_balance_returns_zero_for_new_user(client, db_session):
     assert body["balance"] == 0.0
     assert body["account_id"]
 
-    account = await get_or_create_account(db_session, "student-1")
+    account = (
+        await db_session.execute(
+            select(Account).where(Account.owner_id == "student-1", Account.owner_type == "user")
+        )
+    ).scalar_one()
     assert body["account_id"] == account.id
 
 

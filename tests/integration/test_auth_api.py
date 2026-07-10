@@ -4,6 +4,7 @@ import sys
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -140,7 +141,7 @@ async def test_auth_signup_creates_pending_teacher_user_and_audit_log(client, db
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == status.HTTP_202_ACCEPTED
     body = response.json()
     assert body["id"] == "teacher-1"
     assert body["role"] == "student"

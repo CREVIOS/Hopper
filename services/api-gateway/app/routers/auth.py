@@ -166,10 +166,15 @@ async def _password_grant(email: str, password: str) -> dict:
     return resp.json()
 
 
-def _issue_session(body: dict, tokens: dict) -> JSONResponse:
+def _issue_session(
+    body: dict,
+    tokens: dict,
+    *,
+    status_code: int = 200,
+) -> JSONResponse:
     """Return a JSON response carrying the auth cookies (same shape as callback)."""
     refresh_ttl = int(tokens.get("refresh_expires_in", 1800))
-    resp = JSONResponse(body)
+    resp = JSONResponse(body, status_code=status_code)
     _set_session_cookies(
         resp,
         access_token=tokens["access_token"],
@@ -198,7 +203,12 @@ async def _upsert_user_row(db: AsyncSession, payload: TokenPayload) -> None:
     await get_or_create_account(db, payload.sub)
 
 
-@router.post("/signup")
+@router.post(
+    "/signup",
+    responses={
+        202: {"description": "Teacher signup accepted and pending admin approval"},
+    },
+)
 @limiter.limit("5/minute")
 async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depends(get_db)):
     """Self-service signup. Students activate immediately; teachers are created
@@ -234,6 +244,7 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     return _issue_session(
         {"id": user_id, "email": email, "name": body.name, "role": "student", "pending_teacher": pending},
         tokens,
+        status_code=status.HTTP_202_ACCEPTED if pending else status.HTTP_200_OK,
     )
 
 
