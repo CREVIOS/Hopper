@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+from datetime import datetime, timedelta
 
 import httpx
 import websockets
@@ -37,6 +38,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# FR-HC-27: a running session may be extended up to 3 times, +1h each, but never
+# past started_at + 8h wall-clock (the cap overrides remaining credits so one
+# user can't hold a scarce VM indefinitely).
+SESSION_EXTENSION_HOURS = 1
+SESSION_MAX_EXTENSIONS = 3
+SESSION_MAX_WALLCLOCK_HOURS = 8
+
+
+def _plan_hourly_rate(plan: str) -> float:
+    """Credits-per-hour for a plan name (session.plan is the enum's string value)."""
+    for vm_plan, res in VM_PLAN_RESOURCES.items():
+        if vm_plan.value == plan:
+            return float(res["credits_per_hour"])
+    return 0.0
+
+
 def _session_to_response(s: PodSession) -> PodResponse:
     # Only surface live connection details for running pods. Once a pod is
     # stopped or terminated, its NodePort is released and may be reassigned,
@@ -57,6 +74,8 @@ def _session_to_response(s: PodSession) -> PodResponse:
         ssh_password=s.ssh_password if is_live else None,
         created_at=s.started_at,
         updated_at=s.updated_at,
+        expires_at=s.expires_at,
+        extension_count=s.extension_count or 0,
     )
 
 
@@ -140,6 +159,7 @@ async def create_pod(
         namespace=namespace,
         pod_name=f"vm-{pod_id[:8]}",
         state="pending",
+        expires_at=datetime.utcnow() + timedelta(hours=settings.session_ttl_hours),
     )
     db.add(session)
     await db.commit()
@@ -241,6 +261,54 @@ async def terminate_pod(
     session.state = "terminated"
     await db.commit()
     return {"message": "terminated", "pod_id": pod_id}
+
+
+@router.post("/{pod_id}/extend")
+async def extend_pod(
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extend a running VM's TTL by 1 hour (FR-HC-27).
+
+    Up to 3 extensions per session, never past started_at + 8h wall-clock, and
+    only if the user can afford the extra hour at the plan's rate. The wall-clock
+    cap overrides remaining credits (409 ttl_cap_reached even if funded).
+    """
+    result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "running":
+        raise HTTPException(status_code=400, detail="VM is not running")
+    if (session.extension_count or 0) >= SESSION_MAX_EXTENSIONS:
+        raise HTTPException(status_code=409, detail="extension_limit_reached")
+
+    started = session.started_at or datetime.utcnow()
+    current_expiry = session.expires_at or (started + timedelta(hours=settings.session_ttl_hours))
+    new_expiry = current_expiry + timedelta(hours=SESSION_EXTENSION_HOURS)
+    if new_expiry > started + timedelta(hours=SESSION_MAX_WALLCLOCK_HOURS):
+        raise HTTPException(status_code=409, detail="ttl_cap_reached")
+
+    cost = _plan_hourly_rate(session.plan) * SESSION_EXTENSION_HOURS
+    balance = await get_balance(db, current_user.sub)
+    if balance < cost:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits to extend. Need {cost}, have {balance:.2f}",
+        )
+
+    session.expires_at = new_expiry
+    session.extension_count = (session.extension_count or 0) + 1
+    await db.commit()
+    return {
+        "pod_id": pod_id,
+        "expires_at": new_expiry.isoformat(),
+        "extensions_used": session.extension_count,
+        "extensions_remaining": SESSION_MAX_EXTENSIONS - session.extension_count,
+    }
 
 
 @router.get("/{pod_id}/metrics")

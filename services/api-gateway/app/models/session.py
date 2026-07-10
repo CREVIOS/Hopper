@@ -22,6 +22,8 @@ class PodSession(Base):
     ssh_password: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Number of user-initiated TTL extensions applied (FR-HC-27 caps this at 3).
+    extension_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
     state: Mapped[str] = mapped_column(String, default="pending")
     credits_charged: Mapped[float] = mapped_column(Numeric(12, 4), default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

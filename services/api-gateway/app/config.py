@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # VM without waiting for an admin/teacher allocation. Set to 0 to disable
     # (accounts then start at 0 and must be funded before launching anything).
     signup_grant_credits: float = 10.0
+    # Initial VM session lifetime (hours) from launch; expires_at = started_at +
+    # this. Extendable up to SESSION_MAX_WALLCLOCK_HOURS (see routers/pods.py).
+    session_ttl_hours: float = 4.0
 
     # Self-registration email-domain allowlist. Use lowercase, no @.
     # Empty list = allow any valid email (the default). Set a non-empty list

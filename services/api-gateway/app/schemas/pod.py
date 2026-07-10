@@ -69,5 +69,7 @@ class PodResponse(BaseModel):
     ssh_password: str | None = None
     created_at: datetime
     updated_at: datetime
+    expires_at: datetime | None = None
+    extension_count: int = 0
 
     model_config = {"from_attributes": True}

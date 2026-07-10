@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -7,6 +7,7 @@ from app.models.session import PodSession
 from app.routers.pods import (
     _session_to_response,
     create_pod,
+    extend_pod,
     get_pod,
     list_plans,
     list_pods,
@@ -375,3 +376,80 @@ async def test_terminate_pod_rejects_non_owner_non_admin():
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Not your VM"
+
+
+def _running_session(**over):
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    defaults = dict(
+        id="pod-1", user_id="user-1", plan="small", image="hopper/vm-ubuntu:22.04",
+        cpu="1", memory="2Gi", namespace="hopper", pod_name="vm-pod-1", state="running",
+        started_at=now, expires_at=now + timedelta(hours=4), extension_count=0, updated_at=now,
+    )
+    defaults.update(over)
+    return PodSession(**defaults)
+
+
+async def test_extend_pod_extends_running_session(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    session = _running_session()
+    db = FakeDB(execute_results=[session])
+
+    result = await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert session.extension_count == 1
+    assert result["extensions_remaining"] == 2
+    assert session.expires_at == datetime(2026, 1, 1, 17, 0, 0)  # was 16:00, +1h
+
+
+async def test_extend_pod_rejects_after_three_extensions(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    session = _running_session(extension_count=3)
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "extension_limit_reached"
+
+
+async def test_extend_pod_rejects_past_wall_clock_cap(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    # started 8h ago → wall-clock cap is now; current expiry at the cap → +1h exceeds it.
+    session = _running_session(started_at=now - timedelta(hours=8), expires_at=now, extension_count=1)
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "ttl_cap_reached"
+
+
+async def test_extend_pod_rejects_insufficient_credits(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(0.0))
+    session = _running_session()
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 402
+
+
+async def test_extend_pod_rejects_when_not_running():
+    session = _running_session(state="terminated")
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 400
+
+
+def _async(value):
+    async def _coro():
+        return value
+
+    return _coro()
