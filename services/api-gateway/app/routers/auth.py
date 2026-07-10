@@ -94,7 +94,7 @@ def _set_session_cookies(
     stolen browser cookie expires before the refresh token. Refresh cookie max
     -age tracks the refresh token TTL.
     """
-    common = dict(httponly=True, secure=True, samesite="lax", path="/")
+    common = dict(httponly=True, secure=settings.cookie_secure, samesite="lax", path="/")
     if access_token is not None and access_ttl is not None:
         resp.set_cookie("session_token", access_token, max_age=access_ttl, **common)
     if refresh_token is not None and refresh_ttl is not None:
@@ -111,7 +111,7 @@ def _clear_session_cookies(resp: Response) -> None:
         resp.delete_cookie(
             name,
             path="/",
-            secure=True,
+            secure=settings.cookie_secure,
             samesite="lax",
             httponly=True,
         )
@@ -141,12 +141,12 @@ async def login(request: Request):
     resp.set_cookie(
         "oauth_state",
         f"{state}.{nonce}",
-        httponly=True, secure=True, samesite="lax", path="/", max_age=600,
+        httponly=True, secure=settings.cookie_secure, samesite="lax", path="/", max_age=600,
     )
     resp.set_cookie(
         "oauth_pkce",
         verifier,
-        httponly=True, secure=True, samesite="lax", path="/", max_age=600,
+        httponly=True, secure=settings.cookie_secure, samesite="lax", path="/", max_age=600,
     )
     return resp
 
@@ -196,7 +196,7 @@ def _issue_session(
     if "id_token" in tokens:
         resp.set_cookie(
             "id_token", tokens["id_token"],
-            httponly=True, secure=True, samesite="lax", path="/", max_age=refresh_ttl,
+            httponly=True, secure=settings.cookie_secure, samesite="lax", path="/", max_age=refresh_ttl,
         )
     return resp
 
@@ -457,14 +457,14 @@ async def callback(
         refresh_ttl=refresh_ttl,
     )
     # Clear the one-time PKCE/state cookies.
-    resp.delete_cookie("oauth_state", path="/", secure=True, samesite="lax", httponly=True)
-    resp.delete_cookie("oauth_pkce", path="/", secure=True, samesite="lax", httponly=True)
+    resp.delete_cookie("oauth_state", path="/", secure=settings.cookie_secure, samesite="lax", httponly=True)
+    resp.delete_cookie("oauth_pkce", path="/", secure=settings.cookie_secure, samesite="lax", httponly=True)
     # id_token is needed for RP-initiated logout (`id_token_hint`).
     if "id_token" in tokens:
         resp.set_cookie(
             "id_token",
             tokens["id_token"],
-            httponly=True, secure=True, samesite="lax", path="/",
+            httponly=True, secure=settings.cookie_secure, samesite="lax", path="/",
             max_age=refresh_ttl,
         )
     return resp
@@ -573,5 +573,5 @@ async def logout(request: Request):
 
     resp = RedirectResponse(url=redirect_url, status_code=302)
     _clear_session_cookies(resp)
-    resp.delete_cookie("id_token", path="/", secure=True, samesite="lax", httponly=True)
+    resp.delete_cookie("id_token", path="/", secure=settings.cookie_secure, samesite="lax", httponly=True)
     return resp

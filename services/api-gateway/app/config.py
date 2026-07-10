@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     jwt_algorithm: str = "RS256"
     debug: bool = False
+    # Set the `Secure` flag on auth cookies. Must stay true in production (HTTPS).
+    # For local dev over http://localhost, browsers (notably Safari) drop Secure
+    # cookies, so set HOPPER_COOKIE_SECURE=false to log in locally.
+    cookie_secure: bool = True
     node_ip: str = "127.0.0.1"
 
     # Self-registration email-domain allowlist. Use lowercase, no @.
