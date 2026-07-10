@@ -32,8 +32,13 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting metrics consumer...", flush=True)
     from app.services.metrics_consumer import start_metrics_consumer
     await start_metrics_consumer()
+    print(">>> Startup: starting audit retention job...", flush=True)
+    from app.services.audit_retention import start_audit_retention
+    await start_audit_retention()
     print(">>> Startup: complete.", flush=True)
     yield
+    from app.services.audit_retention import stop_audit_retention
+    await stop_audit_retention()
     await nats_client.disconnect()
     await orchestrator_client.close()
     await engine.dispose()

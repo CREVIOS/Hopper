@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # this. Extendable up to SESSION_MAX_WALLCLOCK_HOURS (see routers/pods.py).
     session_ttl_hours: float = 4.0
 
+    # Audit-log retention (NFR-NF-014). A background job periodically deletes
+    # audit_logs rows older than this many days. Set to 0 to disable (retain
+    # forever). The purge runs every audit_retention_interval_hours.
+    audit_retention_days: int = 90
+    audit_retention_interval_hours: float = 24.0
+
     # Self-registration email-domain allowlist. Use lowercase, no @.
     # Empty list = allow any valid email (the default). Set a non-empty list
     # (e.g. via HOPPER_ALLOWED_EMAIL_DOMAINS) to restrict signup/login to
