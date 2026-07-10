@@ -26,8 +26,13 @@ class IssueOut(BaseModel):
     pod_id: str | None
     description: str
     status: str
+    response: str | None = None
     created_at: datetime
     resolved_at: datetime | None
+
+
+class ResolveRequest(BaseModel):
+    response: str | None = Field(default=None, max_length=2000)
 
 
 @router.post("/", response_model=IssueOut, status_code=201)
@@ -82,6 +87,7 @@ async def list_all_issues(
 @router.post("/admin/{issue_id}/resolve", response_model=IssueOut)
 async def resolve_issue(
     issue_id: str,
+    body: ResolveRequest | None = None,
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -92,6 +98,8 @@ async def resolve_issue(
         raise HTTPException(status_code=404, detail="Issue not found")
     issue.status = "resolved"
     issue.resolved_at = datetime.utcnow()
+    if body and body.response:
+        issue.response = body.response.strip()
     await db.commit()
     await db.refresh(issue)
     return issue

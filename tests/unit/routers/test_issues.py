@@ -3,7 +3,13 @@ from datetime import datetime
 import pytest
 from fastapi import HTTPException
 
-from app.routers.issues import IssueCreate, create_issue, list_all_issues, resolve_issue
+from app.routers.issues import (
+    IssueCreate,
+    ResolveRequest,
+    create_issue,
+    list_all_issues,
+    resolve_issue,
+)
 from app.schemas.user import TokenPayload
 
 
@@ -83,3 +89,25 @@ async def test_resolve_issue_marks_issue_resolved():
     assert db.refreshed is True
     assert result.status == "resolved"
     assert result.resolved_at is not None
+
+
+async def test_resolve_issue_stores_trimmed_admin_response():
+    issue = type("Issue", (), {"status": "open", "resolved_at": None, "response": None})()
+    db = FakeDB(issue=issue)
+
+    result = await resolve_issue(
+        "issue-1",
+        body=ResolveRequest(response="  Rebooted the node — try again.  "),
+        current_user=_payload("admin"),
+        db=db,
+    )
+
+    assert result.status == "resolved"
+    assert result.response == "Rebooted the node — try again."
+
+
+async def test_resolve_issue_requires_admin():
+    with pytest.raises(HTTPException) as exc_info:
+        await resolve_issue("issue-1", current_user=_payload("student"), db=FakeDB())
+
+    assert exc_info.value.status_code == 403

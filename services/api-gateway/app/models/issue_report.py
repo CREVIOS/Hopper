@@ -16,3 +16,5 @@ class IssueReport(Base):
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Admin's reply, shown to the reporter when the issue is resolved.
+    response: Mapped[str | None] = mapped_column(Text, nullable=True)
