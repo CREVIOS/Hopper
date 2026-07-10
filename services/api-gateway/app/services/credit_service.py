@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.credit_ledger import Account, Transfer, LedgerEntry
 
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000000"
@@ -124,6 +125,19 @@ async def add_credits(
 
     await db.commit()
     return transfer
+
+
+async def grant_signup_bonus(db: AsyncSession, user_id: str) -> Transfer | None:
+    """Grant the configured welcome credits to a newly-signed-up user.
+
+    A fresh account starts at 0, and pod creation hard-blocks on balance, so
+    without this a new student is stuck until an admin/teacher funds them. Reuses
+    the audited system→user ledger path. No-op when HOPPER_SIGNUP_GRANT_CREDITS<=0.
+    """
+    amount = settings.signup_grant_credits
+    if amount <= 0:
+        return None
+    return await add_credits(db, user_id, amount, "signup_welcome_grant")
 
 
 async def allocate_between_users(

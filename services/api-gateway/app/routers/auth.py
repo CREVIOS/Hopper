@@ -36,7 +36,7 @@ from app.schemas.user import (
     VerifyEmailRequest,
 )
 from app.services import verification
-from app.services.credit_service import get_or_create_account
+from app.services.credit_service import get_or_create_account, grant_signup_bonus
 from app.services.email import send_code_email
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 
@@ -253,6 +253,9 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     code = await verification.issue_code(db, email, verification.VERIFY_EMAIL)
     await db.commit()
     await get_or_create_account(db, user_id)
+    # Welcome credits so the new student can launch a first VM immediately
+    # (no-op when HOPPER_SIGNUP_GRANT_CREDITS=0).
+    await grant_signup_bonus(db, user_id)
     await send_code_email(email, verification.VERIFY_EMAIL, code)
 
     tokens = await _password_grant(email, body.password)

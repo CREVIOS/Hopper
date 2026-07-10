@@ -80,7 +80,7 @@ async def test_ensure_system_account_creates_default_account():
 
 
 async def test_get_balance_returns_zero_when_no_ledger_entry(monkeypatch):
-    async def fake_get_or_create_account(db, user_id):
+    async def fake_get_or_create_account(db, user_id, persist=False):
         return Account(
             id="acct-1",
             name="user:user-1",
@@ -289,3 +289,38 @@ async def test_deduct_credits_creates_transfer_and_balanced_entries(monkeypatch)
     credit_entry = db.added[2]
     assert debit_entry.current_balance == 15.0
     assert credit_entry.current_balance == 60.0
+
+
+async def test_grant_signup_bonus_noop_when_disabled(monkeypatch):
+    monkeypatch.setattr(credit_service_module.settings, "signup_grant_credits", 0.0)
+    called = {}
+
+    async def fake_add_credits(*args, **kwargs):
+        called["yes"] = True
+
+    monkeypatch.setattr(credit_service_module, "add_credits", fake_add_credits)
+
+    result = await credit_service_module.grant_signup_bonus(object(), "user-1")
+
+    assert result is None
+    assert "yes" not in called
+
+
+async def test_grant_signup_bonus_grants_configured_amount(monkeypatch):
+    monkeypatch.setattr(credit_service_module.settings, "signup_grant_credits", 15.0)
+    captured = {}
+
+    async def fake_add_credits(db, user_id, amount, description):
+        captured.update(user_id=user_id, amount=amount, description=description)
+        return "transfer-sentinel"
+
+    monkeypatch.setattr(credit_service_module, "add_credits", fake_add_credits)
+
+    result = await credit_service_module.grant_signup_bonus(object(), "user-42")
+
+    assert result == "transfer-sentinel"
+    assert captured == {
+        "user_id": "user-42",
+        "amount": 15.0,
+        "description": "signup_welcome_grant",
+    }

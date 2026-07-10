@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # cookies, so set HOPPER_COOKIE_SECURE=false to log in locally.
     cookie_secure: bool = True
     node_ip: str = "127.0.0.1"
+    # Credits granted automatically on signup so a new student can launch a first
+    # VM without waiting for an admin/teacher allocation. Set to 0 to disable
+    # (accounts then start at 0 and must be funded before launching anything).
+    signup_grant_credits: float = 10.0
 
     # Self-registration email-domain allowlist. Use lowercase, no @.
     # Empty list = allow any valid email (the default). Set a non-empty list
