@@ -248,3 +248,68 @@ async def test_change_user_role_updates_user_role(monkeypatch):
     assert result == {"status": "ok", "user_id": "user-2", "old_role": "student", "new_role": "admin"}
     assert user.role == "admin"
     assert db.committed is True
+
+
+def _fake_audit_log(log_id="a1", action="login"):
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=log_id, user_id="user-1", action=action, resource_type="user",
+        resource_id="user-1", ip_address="1.2.3.4", status_code=200,
+        created_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+
+
+def _fake_request():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(client=SimpleNamespace(host="9.9.9.9"))
+
+
+async def test_get_audit_logs_accepts_action_and_user_filters():
+    from app.routers.admin import get_audit_logs
+
+    db = FakeDB(execute_rows=[[_fake_audit_log("a1", action="login")]])
+    result = await get_audit_logs(
+        current_user=_payload("admin"), db=db, action="login", user_id="user-1"
+    )
+
+    assert result[0]["action"] == "login"
+
+
+async def test_export_audit_logs_json_records_export_event():
+    from app.routers.admin import export_audit_logs
+
+    db = FakeDB(execute_rows=[[_fake_audit_log("a1"), _fake_audit_log("a2")]])
+    result = await export_audit_logs(
+        request=_fake_request(), current_user=_payload("admin"), db=db, from_=None, to=None
+    )
+
+    assert [r["id"] for r in result] == ["a1", "a2"]
+    assert any(getattr(o, "action", None) == "audit.export" for o in db.added)
+    assert db.committed is True
+
+
+async def test_export_audit_logs_csv_returns_csv_body():
+    from app.routers.admin import export_audit_logs
+
+    db = FakeDB(execute_rows=[[_fake_audit_log("a1")]])
+    resp = await export_audit_logs(
+        request=_fake_request(), current_user=_payload("admin"), db=db, format="csv", from_=None, to=None
+    )
+
+    assert resp.media_type == "text/csv"
+    body = resp.body.decode() if isinstance(resp.body, bytes) else resp.body
+    assert "action" in body and "a1" in body
+
+
+async def test_export_audit_logs_rejects_bad_format():
+    from app.routers.admin import export_audit_logs
+
+    with pytest.raises(HTTPException) as exc:
+        await export_audit_logs(
+            request=_fake_request(), current_user=_payload("admin"), db=FakeDB(), format="xml"
+        )
+
+    assert exc.value.status_code == 400

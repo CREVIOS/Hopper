@@ -1,7 +1,11 @@
+import csv
+import io
 import logging
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -294,33 +298,97 @@ async def change_user_role(
     return {"status": "ok", "user_id": user_id, "old_role": old_role, "new_role": body.role}
 
 
+def _audit_row(log) -> dict:
+    return {
+        "id": log.id,
+        "user_id": log.user_id,
+        "action": log.action,
+        "resource_type": log.resource_type,
+        "resource_id": log.resource_id,
+        "ip_address": log.ip_address,
+        "status_code": log.status_code,
+        "created_at": log.created_at.isoformat() if log.created_at else None,
+    }
+
+
+def _parse_audit_dt(value: str, field: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid '{field}' datetime (use ISO 8601)")
+
+
 @router.get("/audit-logs")
 async def get_audit_logs(
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = 50,
     offset: int = 0,
+    action: str | None = None,
+    user_id: str | None = None,
 ):
-    """View audit logs (admin only)."""
+    """View audit logs (admin only), optionally filtered by action and/or actor."""
     _require_admin(current_user)
 
-    result = await db.execute(
-        select(AuditLog)
-        .order_by(AuditLog.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    logs = result.scalars().all()
-    return [
-        {
-            "id": log.id,
-            "user_id": log.user_id,
-            "action": log.action,
-            "resource_type": log.resource_type,
-            "resource_id": log.resource_id,
-            "ip_address": log.ip_address,
-            "status_code": log.status_code,
-            "created_at": log.created_at.isoformat() if log.created_at else None,
-        }
-        for log in logs
+    query = select(AuditLog).order_by(AuditLog.created_at.desc())
+    if action:
+        query = query.where(AuditLog.action == action)
+    if user_id:
+        query = query.where(AuditLog.user_id == user_id)
+    result = await db.execute(query.limit(limit).offset(offset))
+    return [_audit_row(log) for log in result.scalars().all()]
+
+
+@router.get("/audit/export")
+async def export_audit_logs(
+    request: Request,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = Query(None, alias="to"),
+    format: str = "json",
+):
+    """Export the audit log over an optional date range as JSON or CSV (NFR-NF-015).
+
+    The export is itself recorded as an `audit.export` event (a GET isn't
+    captured by the AuditMiddleware, so it's logged explicitly here).
+    """
+    _require_admin(current_user)
+    if format not in ("json", "csv"):
+        raise HTTPException(status_code=400, detail="format must be 'json' or 'csv'")
+
+    query = select(AuditLog).order_by(AuditLog.created_at.desc())
+    if from_:
+        query = query.where(AuditLog.created_at >= _parse_audit_dt(from_, "from"))
+    if to:
+        query = query.where(AuditLog.created_at <= _parse_audit_dt(to, "to"))
+    rows = [_audit_row(log) for log in (await db.execute(query)).scalars().all()]
+
+    db.add(AuditLog(
+        id=str(uuid.uuid4()),
+        user_id=current_user.sub,
+        action="audit.export",
+        resource_type="audit_log",
+        resource_id=None,
+        ip_address=request.client.host if request and request.client else "-",
+        status_code=200,
+        metadata_={"format": format, "count": len(rows), "from": from_, "to": to},
+    ))
+    await db.commit()
+
+    if format == "json":
+        return rows
+
+    buf = io.StringIO()
+    fieldnames = [
+        "id", "user_id", "action", "resource_type", "resource_id",
+        "ip_address", "status_code", "created_at",
     ]
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
+    )
