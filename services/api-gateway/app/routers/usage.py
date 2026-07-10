@@ -48,7 +48,7 @@ async def get_pod_usage(
     ).scalars().first()
     if session is None:
         raise HTTPException(status_code=404, detail="VM not found")
-    if session.user_id != current_user.sub:
+    if session.user_id != current_user.sub and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not your VM")
     pod_ids = list({session.id, session.pod_name} - {None})
 

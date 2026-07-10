@@ -200,7 +200,7 @@ async def get_pod(
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="VM not found")
-    if session.user_id != current_user.sub:
+    if session.user_id != current_user.sub and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not your VM")
 
     return _session_to_response(session)
@@ -262,7 +262,7 @@ async def stream_metrics(
 
     result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
     session = result.scalar_one_or_none()
-    if not session or session.user_id != current_user.sub:
+    if not session or (session.user_id != current_user.sub and current_user.role != "admin"):
         raise HTTPException(status_code=404, detail="VM not found")
     subject_id = session.pod_name or pod_id
 

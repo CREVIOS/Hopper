@@ -56,12 +56,12 @@ class FakeDB:
         return self.result
 
 
-def _payload(sub: str = "user-1") -> TokenPayload:
+def _payload(sub: str = "user-1", role: str = "student") -> TokenPayload:
     return TokenPayload(
         sub=sub,
         email="user@example.com",
         name="Test User",
-        role="student",
+        role=role,
         exp=1234567890,
     )
 
@@ -132,3 +132,14 @@ async def test_get_pod_usage_404_when_session_missing():
         await get_pod_usage("nope", range="1h", current_user=_payload(), db=db)
 
     assert exc.value.status_code == 404
+
+
+async def test_get_pod_usage_admin_can_view_any_pod():
+    # Admins may inspect any user's usage (read-only), bypassing ownership.
+    db = FakeDB(
+        result=FakeUsageResult(rows=[]),
+        session=SimpleNamespace(id="pod-1", pod_name="vm-pod-1", user_id="someone-else"),
+    )
+    result = await get_pod_usage("pod-1", range="1h", current_user=_payload("admin-1", "admin"), db=db)
+
+    assert result["pod_id"] == "pod-1"

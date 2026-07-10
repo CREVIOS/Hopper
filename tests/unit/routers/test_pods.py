@@ -348,6 +348,20 @@ async def test_terminate_pod_admin_can_force_terminate_any_vm(monkeypatch):
     assert calls["terminated"] == "vm-pod-9"
 
 
+async def test_get_pod_admin_can_view_any_vm():
+    # Admins may inspect any user's VM detail (read-only drill-down).
+    session = PodSession(
+        id="pod-9", user_id="other-user", plan="small", image="hopper/vm-ubuntu:22.04",
+        cpu="1", memory="2Gi", namespace="hopper", pod_name="vm-pod-9", state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0), updated_at=datetime(2026, 1, 1, 12, 5, 0),
+    )
+    db = FakeDB(execute_results=[session])
+
+    result = await get_pod("pod-9", current_user=_admin(), db=db)
+
+    assert result.id == "pod-9"
+
+
 async def test_terminate_pod_rejects_non_owner_non_admin():
     session = PodSession(
         id="pod-9", user_id="other-user", plan="small", image="hopper/vm-ubuntu:22.04",
