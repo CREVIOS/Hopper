@@ -43,13 +43,14 @@
   ];
 
   const adminItems: NavItem[] = [
-    { href: '/admin', label: 'Admin', icon: Shield },
+    { href: '/admin', label: 'Admin', icon: Shield, role: 'admin' },
     { href: '/teacher', label: 'Teaching', icon: GraduationCap, role: 'professor' }
   ];
 
   const isAdmin = $derived(user?.role === 'admin' || user?.role === 'professor');
   // Per-item gating: an item with no `role` shows for any manager; a role-bound
-  // item (e.g. Teaching → professor) shows only to that role.
+  // item shows only to that role — Admin → admin, Teaching → professor. Teachers
+  // therefore see only the Teaching console, never the admin panel.
   const visibleAdminItems = $derived(
     adminItems.filter((i) => !i.role || i.role === user?.role)
   );
