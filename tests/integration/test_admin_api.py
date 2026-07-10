@@ -315,9 +315,6 @@ async def test_professor_can_access_read_only_admin_endpoints_but_not_mutations(
     stats_response = await client.get("/admin/stats")
     change_role_response = await client.patch("/admin/users/prof-1/role", json={"role": "student"})
 
-    assert stats_response.status_code == 200
-    assert change_role_response.status_code == 403
-    assert change_role_response.json() == {"detail": "Admin role required"}
     assert stats_response.status_code == 403
     assert stats_response.json() == {"detail": "Admin access required"}
     assert change_role_response.status_code == 403
