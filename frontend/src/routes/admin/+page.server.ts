@@ -7,7 +7,9 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   if (!isAuthenticated) {
     redirect(302, '/login');
   }
-  if (user?.role !== 'admin' && user?.role !== 'professor') {
+  // Admin panel is admin-only. Teachers (professors) get the Teaching console
+  // instead and are bounced back to their dashboard here.
+  if (user?.role !== 'admin') {
     redirect(302, '/dashboard');
   }
 
@@ -16,7 +18,6 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  // Teacher requests are admin-only; professors get a 403 we treat as empty.
   const [statsRes, nodesRes, usersRes, activeVmsRes, auditRes, reqRes] = await Promise.all([
     fetch(apiUrl('/admin/stats'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/nodes'), { headers }).catch(() => null),
