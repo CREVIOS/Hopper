@@ -1,25 +1,47 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '../fixtures/app.fixture';
+import { authRequirementMessage, hasAuth } from '../helpers/env';
 
-// TC-AUTH-001: SSO Login Flow
 test.describe('Authentication', () => {
-  test('TC-AUTH-001: should redirect unauthenticated user to login', async ({ page }) => {
+  test('redirects an unauthenticated user away from the dashboard', async ({ page }) => {
     await page.goto('/dashboard');
-    // Should redirect to login page
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
   });
 
-  test('TC-AUTH-002: should display SSO login button', async ({ page }) => {
+  test('renders the login form and supported actions', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();
+
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^sign in$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /sign in as admin/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /create an account/i })).toBeVisible();
   });
 
-  test('TC-AUTH-003: should show user info after login', async ({ page }) => {
-    // TODO: Mock Keycloak OIDC flow for testing
-    test.skip();
+  test('shows a useful error for invalid credentials', async ({ page }) => {
+    await page.goto('/login');
+
+    await page.getByLabel('Email').fill('invalid-user@example.com');
+    await page.getByLabel('Password').fill('definitely-wrong-password');
+    await page.getByRole('button', { name: /^sign in$/i }).click();
+
+    await expect(
+      page.getByText(/invalid email or password|login failed|sign-in failed/i)
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
   });
 
-  test('TC-AUTH-004: should handle expired session', async ({ page }) => {
-    // TODO: Set expired cookie and verify redirect to login
-    test.skip();
+  test('allows a signed-in student to log out and lose protected access', async ({
+    page,
+    loginAsStudent,
+    logoutCurrentUser
+  }) => {
+    test.skip(!hasAuth('student'), authRequirementMessage('student'));
+
+    await loginAsStudent();
+    await logoutCurrentUser();
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
   });
 });
