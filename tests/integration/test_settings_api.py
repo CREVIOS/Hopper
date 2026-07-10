@@ -4,7 +4,6 @@ import sys
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
@@ -16,7 +15,6 @@ if str(API_ROOT) not in sys.path:
 from app.dependencies import get_current_user, get_db
 from app.main import create_app
 from app.middleware import audit as audit_middleware
-from app.models import Account, AuditLog, IssueReport, LedgerEntry, MetricsSample, PodSession, SSHKey, Transfer, User
 from app.schemas.user import TokenPayload
 
 
@@ -50,38 +48,7 @@ async def current_user_payload() -> TokenPayload:
 
 
 @pytest_asyncio.fixture
-async def clean_database(db_session):
-    for model in (
-        AuditLog,
-        IssueReport,
-        MetricsSample,
-        SSHKey,
-        PodSession,
-        LedgerEntry,
-        Transfer,
-        Account,
-        User,
-    ):
-        await db_session.execute(delete(model))
-    await db_session.commit()
-    yield
-    for model in (
-        AuditLog,
-        IssueReport,
-        MetricsSample,
-        SSHKey,
-        PodSession,
-        LedgerEntry,
-        Transfer,
-        Account,
-        User,
-    ):
-        await db_session.execute(delete(model))
-    await db_session.commit()
-
-
-@pytest_asyncio.fixture
-async def client(db_session, current_user_payload, clean_database):
+async def client(db_session, current_user_payload):
     session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     app = create_app()
     original_async_session = audit_middleware.async_session

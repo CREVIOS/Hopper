@@ -5,11 +5,23 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 API_GATEWAY_ROOT = REPO_ROOT / "services" / "api-gateway"
+APP_TABLES = (
+    "audit_logs",
+    "issue_reports",
+    "metrics_samples",
+    "ssh_keys",
+    "pod_sessions",
+    "ledger_entries",
+    "transfers",
+    "accounts",
+    "users",
+)
 
 
 def to_async_database_url(database_url: str) -> str:
@@ -24,6 +36,14 @@ def to_async_database_url(database_url: str) -> str:
         return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
     return database_url
+
+
+async def reset_database(session: AsyncSession) -> None:
+    """Clear all application tables between integration tests."""
+    await session.rollback()
+    table_list = ", ".join(APP_TABLES)
+    await session.execute(text(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"))
+    await session.commit()
 
 
 @pytest.fixture(scope="session")
@@ -68,7 +88,9 @@ async def db_session(postgres_container) -> AsyncSession:
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
+        await reset_database(session)
         yield session
+        await reset_database(session)
 
     await engine.dispose()
 
