@@ -45,6 +45,11 @@ message CreatePodRequest {
   int32 workspace_capacity_gb = 11;
   // K8s StorageClassName for the workspace PVC; empty uses the cluster default.
   string storage_class = 12;
+  // Credits-per-hour billing rate for the chosen plan, resolved by the gateway
+  // from its (now DB-backed) plan catalogue. The orchestrator bills at this
+  // rate instead of a hardcoded map; when 0 it falls back to the built-in
+  // Plans map for backward compatibility with older gateways.
+  double credits_per_hour = 13;
 }
 
 message PodStatus {

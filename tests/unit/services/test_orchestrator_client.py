@@ -138,6 +138,52 @@ async def test_create_pod_forwards_workspace_fields(monkeypatch):
     assert captured["request"].storage_class == "longhorn"
 
 
+async def test_create_pod_forwards_credits_per_hour(monkeypatch):
+    captured = {}
+
+    class FakeStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        async def CreatePod(self, req, timeout):
+            captured["request"] = req
+            return types.SimpleNamespace(
+                id="vm-1", state=3, ssh_port=1, vscode_port=2, message="running", ssh_password="",
+            )
+
+    _install_fake_proto_modules(monkeypatch, FakeStub)
+
+    client = orchestrator_module.OrchestratorClient()
+    client._channel = object()
+
+    await client.create_pod("user-1", "medium", "image", "2", "4Gi", pod_id="pod-1", credits_per_hour=2.0)
+
+    assert captured["request"].credits_per_hour == 2.0
+
+
+async def test_create_pod_defaults_credits_per_hour_to_zero(monkeypatch):
+    captured = {}
+
+    class FakeStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        async def CreatePod(self, req, timeout):
+            captured["request"] = req
+            return types.SimpleNamespace(
+                id="vm-1", state=3, ssh_port=1, vscode_port=2, message="running", ssh_password="",
+            )
+
+    _install_fake_proto_modules(monkeypatch, FakeStub)
+
+    client = orchestrator_module.OrchestratorClient()
+    client._channel = object()
+
+    await client.create_pod("user-1", "small", "image", "1", "2Gi", pod_id="pod-1")
+
+    assert captured["request"].credits_per_hour == 0.0
+
+
 async def test_create_pod_defaults_authorized_keys_to_empty(monkeypatch):
     captured = {}
 

@@ -79,6 +79,7 @@ class OrchestratorClient:
         self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
         pod_id: str = "", authorized_keys: list[str] | None = None,
         workspace_pvc_name: str = "", workspace_capacity_gb: int = 0, storage_class: str = "",
+        credits_per_hour: float = 0.0,
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -97,6 +98,7 @@ class OrchestratorClient:
             workspace_pvc_name=workspace_pvc_name,
             workspace_capacity_gb=workspace_capacity_gb,
             storage_class=storage_class,
+            credits_per_hour=credits_per_hour,
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(

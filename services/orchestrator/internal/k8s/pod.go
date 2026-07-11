@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,6 +21,12 @@ import (
 // object so it can be recovered on orchestrator restart (reconciliation) without
 // a separate secret store.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
+
+// CreditsPerHrAnnotation stores the plan's credits-per-hour billing rate on the
+// Pod so reconciliation after an orchestrator restart can resume billing at the
+// gateway-supplied rate — the running pod is the only durable source for it once
+// plan pricing is admin-configurable (the built-in Plans map is just a fallback).
+const CreditsPerHrAnnotation = "hopper.dev/credits-per-hr"
 
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
 // of entropy). Used for the per-pod SSH root password. (code-server runs with
@@ -93,6 +100,10 @@ type CreatePodOpts struct {
 	// lifecycle. Takes precedence over the legacy per-pod DiskGiB path.
 	WorkspacePVCName    string
 	WorkspaceCapacityGB int
+	// CreditsPerHr is the plan's billing rate, supplied by the gateway from its
+	// DB-backed plan catalogue. Stored as a pod annotation so reconcile can
+	// recover it. Zero means "unknown" → the caller falls back to the Plans map.
+	CreditsPerHr float64
 }
 
 type PodPorts struct {
@@ -231,9 +242,10 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 			Namespace: pm.namespace,
 			Labels:    labels,
 			// Stored on the Pod so reconciliation after orchestrator restart can
-			// recover the SSH password without an extra Secret.
+			// recover the SSH password + billing rate without an extra Secret.
 			Annotations: map[string]string{
-				SshPasswordAnnotation: sshPassword,
+				SshPasswordAnnotation:  sshPassword,
+				CreditsPerHrAnnotation: strconv.FormatFloat(opts.CreditsPerHr, 'f', -1, 64),
 			},
 		},
 		Spec: corev1.PodSpec{

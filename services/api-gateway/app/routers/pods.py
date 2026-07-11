@@ -190,6 +190,7 @@ async def create_pod(
             workspace_pvc_name=workspace.pvc_name,
             workspace_capacity_gb=workspace.capacity_gb,
             storage_class=workspace.storage_class or "",
+            credits_per_hour=float(resources["credits_per_hour"]),
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator

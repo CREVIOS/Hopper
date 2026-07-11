@@ -113,6 +113,7 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		WorkspacePVCName:    req.WorkspacePvcName,
 		WorkspaceCapacityGB: int(req.WorkspaceCapacityGb),
 		StorageClass:        req.StorageClass,
+		CreditsPerHr:        req.CreditsPerHour,
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
@@ -138,10 +139,11 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		"plan":        req.Plan,
 	})
 
-	// 6. Start billing ticker
-	plan, ok := billingpkg.Plans[req.Plan]
-	if ok {
-		s.server.ticker.Start(p.ID, plan, func(ev billingpkg.TickEvent) {
+	// 6. Start billing ticker. Bill at the gateway-supplied rate; fall back to
+	// the built-in Plans map only when an older gateway sends no rate (0).
+	rate := billingpkg.ResolveRate(req.CreditsPerHour, req.Plan)
+	if rate > 0 {
+		s.server.ticker.Start(p.ID, billingpkg.VmPlan{Name: req.Plan, CreditsPerHr: rate}, func(ev billingpkg.TickEvent) {
 			s.server.logger.Info("billing tick",
 				zap.String("pod_id", ev.PodID),
 				zap.Float64("amount", ev.Amount),
