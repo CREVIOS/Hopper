@@ -35,8 +35,13 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting audit retention job...", flush=True)
     from app.services.audit_retention import start_audit_retention
     await start_audit_retention()
+    print(">>> Startup: starting session reaper...", flush=True)
+    from app.services.session_reaper import start_session_reaper
+    await start_session_reaper()
     print(">>> Startup: complete.", flush=True)
     yield
+    from app.services.session_reaper import stop_session_reaper
+    await stop_session_reaper()
     from app.services.audit_retention import stop_audit_retention
     await stop_audit_retention()
     await nats_client.disconnect()

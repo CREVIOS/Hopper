@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     audit_retention_days: int = 90
     audit_retention_interval_hours: float = 24.0
 
+    # Session-expiry reaper (FR-HC-27): a background job terminates VMs whose
+    # expires_at TTL has passed. Set enabled=false to turn it off (e.g. local
+    # dev without an orchestrator).
+    session_reaper_enabled: bool = True
+    session_reaper_interval_seconds: float = 60.0
+
     # Self-registration email-domain allowlist. Use lowercase, no @.
     # Empty list = allow any valid email (the default). Set a non-empty list
     # (e.g. via HOPPER_ALLOWED_EMAIL_DOMAINS) to restrict signup/login to
