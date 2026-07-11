@@ -431,3 +431,50 @@ async def test_create_pod_rejects_inactive_plan(client, db_session, monkeypatch)
     finally:
         await db_session.execute(sa_delete(VmPlanRow).where(VmPlanRow.name == "retired"))
         await db_session.commit()
+
+
+# --- DB-backed template/image resolution -------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_templates_returns_seeded_catalog(client):
+    response = await client.get("/pods/templates")
+    assert response.status_code == 200
+    body = response.json()
+    assert {"ubuntu", "python-ml", "cpp", "java"} <= set(body)
+    assert body["ubuntu"]["image"] == "hopper/vm-ubuntu:22.04"
+    assert body["ubuntu"]["is_default"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_pod_resolves_image_from_db_template(client, db_session, current_user_payload, monkeypatch):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import VmImageRow
+
+    current_user_payload.sub = "tmpl-user"
+    # An admin-added template with a distinct image tag.
+    db_session.add(VmImageRow(
+        template="rust", display_name="Rust", image="hopper/vm-rust:1.2",
+        description="", is_active=True, is_default=False,
+    ))
+    await db_session.commit()
+
+    captured = {}
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    async def fake_create_pod(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id="vm-real", state="running", ssh_port=1, vscode_port=2, ssh_password="p")
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    try:
+        response = await client.post("/pods/", json={"plan": "small", "template": "rust"})
+        assert response.status_code == 201
+        assert captured["image"] == "hopper/vm-rust:1.2"
+    finally:
+        await db_session.execute(sa_delete(VmImageRow).where(VmImageRow.template == "rust"))
+        await db_session.commit()

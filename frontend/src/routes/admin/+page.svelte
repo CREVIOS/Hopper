@@ -97,6 +97,14 @@
     workspace_gb: number;
     is_active: boolean;
   };
+  type Image = {
+    template: string;
+    display_name: string;
+    image: string;
+    description: string;
+    is_active: boolean;
+    is_default: boolean;
+  };
 
   let {
     data
@@ -125,6 +133,7 @@
         resolved_at: string | null;
       }[];
       plans: Plan[];
+      images: Image[];
     };
   } = $props();
 
@@ -257,6 +266,99 @@
       planBusy = null;
     }
   }
+
+  // VM image / template catalogue management (admin CRUD).
+  type ImageForm = {
+    template: string;
+    display_name: string;
+    image: string;
+    description: string;
+    is_default: boolean;
+  };
+  let imageDialogOpen = $state(false);
+  let imageEditing = $state<string | null>(null);
+  let imageSaving = $state(false);
+  let imageBusy = $state<string | null>(null);
+  let imageForm = $state<ImageForm>({
+    template: '',
+    display_name: '',
+    image: '',
+    description: '',
+    is_default: false
+  });
+
+  function openCreateImage() {
+    imageEditing = null;
+    imageForm = { template: '', display_name: '', image: '', description: '', is_default: false };
+    imageDialogOpen = true;
+  }
+  function openEditImage(i: Image) {
+    imageEditing = i.template;
+    imageForm = {
+      template: i.template,
+      display_name: i.display_name,
+      image: i.image,
+      description: i.description,
+      is_default: i.is_default
+    };
+    imageDialogOpen = true;
+  }
+  async function saveImage() {
+    imageSaving = true;
+    const tid = toast.loading('Saving template…');
+    try {
+      const payload = {
+        display_name: imageForm.display_name,
+        image: imageForm.image,
+        description: imageForm.description,
+        is_default: imageForm.is_default
+      };
+      if (imageEditing) {
+        await api.put(`/admin/images/${imageEditing}`, payload);
+      } else {
+        await api.post('/admin/images', { template: imageForm.template, ...payload });
+      }
+      toast.success('Template saved', { id: tid });
+      imageDialogOpen = false;
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not save template', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      imageSaving = false;
+    }
+  }
+  async function deactivateImage(i: Image) {
+    if (!confirm(`Deactivate template "${i.template}"? It will be hidden from new VM launches.`)) return;
+    imageBusy = i.template;
+    const tid = toast.loading('Deactivating…');
+    try {
+      await api.delete(`/admin/images/${i.template}`);
+      toast.success('Template deactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not deactivate', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      imageBusy = null;
+    }
+  }
+  async function reactivateImage(i: Image) {
+    imageBusy = i.template;
+    const tid = toast.loading('Reactivating…');
+    try {
+      await api.put(`/admin/images/${i.template}`, { is_active: true });
+      toast.success('Template reactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not reactivate', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      imageBusy = null;
+    }
+  }
+  const imageFormValid = $derived(
+    (imageEditing !== null || /^[a-z0-9][a-z0-9-]*$/.test(imageForm.template)) &&
+      imageForm.display_name.trim().length > 0 &&
+      imageForm.image.trim().length > 0
+  );
 
   const planFormValid = $derived(
     (planEditing !== null || /^[a-z0-9][a-z0-9-]*$/.test(planForm.name)) &&
@@ -630,6 +732,7 @@
       <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="plans"><Coins /> Plans</Tabs.Trigger>
+      <Tabs.Trigger value="images"><Database /> Images</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
       <Tabs.Trigger value="issues"><Inbox /> Issues</Tabs.Trigger>
     </Tabs.List>
@@ -1339,6 +1442,77 @@
       </Card>
     </Tabs.Content>
 
+    <Tabs.Content value="images" class="mt-5">
+      <Card>
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5 pb-3 pt-5">
+          <SectionHeader icon={Database} title="VM templates" description="Base images students can launch. The default is used when a launch omits a template." />
+          <Button size="sm" onclick={openCreateImage}>
+            <Plus class="size-4" /> New template
+          </Button>
+        </div>
+        <CardContent class="pt-0">
+          <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head class="w-40">Template</Table.Head>
+                <Table.Head class="hidden md:table-cell">Image</Table.Head>
+                <Table.Head class="w-24">Default</Table.Head>
+                <Table.Head class="w-24">Status</Table.Head>
+                <Table.Head class="w-32 text-right">Actions</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each data.images as im (im.template)}
+                <Table.Row class="group {im.is_active ? '' : 'opacity-60'}">
+                  <Table.Cell>
+                    <div class="font-medium">{im.display_name}</div>
+                    <div class="font-mono text-xs text-muted-foreground">{im.template}</div>
+                  </Table.Cell>
+                  <Table.Cell class="hidden truncate font-mono text-xs text-muted-foreground md:table-cell">
+                    {im.image}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {#if im.is_default}
+                      <Badge variant="outline" class="border-primary/30 text-primary">Default</Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell>
+                    {#if im.is_active}
+                      <Badge variant="outline" class="border-success/30 text-success">Active</Badge>
+                    {:else}
+                      <Badge variant="outline" class="text-muted-foreground">Inactive</Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <div class="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onclick={() => openEditImage(im)} aria-label={`Edit ${im.template}`}>
+                        <Pencil class="size-3.5" />
+                      </Button>
+                      {#if im.is_active}
+                        <Button variant="ghost" size="sm" onclick={() => deactivateImage(im)} disabled={imageBusy === im.template} aria-label={`Deactivate ${im.template}`}>
+                          {#if imageBusy === im.template}<Spinner class="size-3.5" />{:else}<Power class="size-3.5 text-destructive" />{/if}
+                        </Button>
+                      {:else}
+                        <Button variant="ghost" size="sm" onclick={() => reactivateImage(im)} disabled={imageBusy === im.template}>
+                          {#if imageBusy === im.template}<Spinner class="size-3.5" />{:else}<Check class="size-3.5 text-success" />{/if}
+                        </Button>
+                      {/if}
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                <Table.Row>
+                  <Table.Cell colspan={5} class="py-10 text-center text-sm text-muted-foreground">
+                    No templates yet.
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        </CardContent>
+      </Card>
+    </Tabs.Content>
+
     <Tabs.Content value="audit" class="mt-5">
       <div class="animate-fade-up space-y-3">
         <SectionHeader title="Audit log" icon={ScrollText} />
@@ -1582,6 +1756,49 @@
         <Spinner class="size-4" /> Saving…
       {:else}
         <Check class="size-4" /> Save plan
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<Dialog
+  bind:open={imageDialogOpen}
+  title={imageEditing ? `Edit template “${imageEditing}”` : 'New template'}
+  description="Maps a template key to a container image students can launch."
+>
+  <div class="space-y-4">
+    {#if !imageEditing}
+      <div>
+        <Label for="img-template">Key</Label>
+        <Input id="img-template" bind:value={imageForm.template} placeholder="rust" class="mt-1 font-mono" />
+        <p class="mt-1 text-xs text-muted-foreground">Lowercase letters, digits and hyphens. Immutable once created.</p>
+      </div>
+    {/if}
+    <div>
+      <Label for="img-display">Display name</Label>
+      <Input id="img-display" bind:value={imageForm.display_name} placeholder="Rust" class="mt-1" />
+    </div>
+    <div>
+      <Label for="img-image">Container image</Label>
+      <Input id="img-image" bind:value={imageForm.image} placeholder="hopper/vm-rust:1.0" class="mt-1 font-mono" />
+    </div>
+    <div>
+      <Label for="img-desc">Description</Label>
+      <Input id="img-desc" bind:value={imageForm.description} placeholder="Cargo + rustc toolchain" class="mt-1" />
+    </div>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" bind:checked={imageForm.is_default} class="size-4 rounded border-border" />
+      Make this the default template
+    </label>
+  </div>
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (imageDialogOpen = false)}>Cancel</Button>
+    <Button onclick={saveImage} disabled={imageSaving || !imageFormValid}>
+      {#if imageSaving}
+        <Spinner class="size-4" /> Saving…
+      {:else}
+        <Check class="size-4" /> Save template
       {/if}
     </Button>
   {/snippet}

@@ -32,7 +32,7 @@ from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
-from app.services import plan_service, port_forward
+from app.services import image_service, plan_service, port_forward
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -85,6 +85,21 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             "workspace_gb": p.workspace_gb,
         }
         for p in plans
+    }
+
+
+@router.get("/templates")
+async def list_templates(db: AsyncSession = Depends(get_db)):
+    """List available (active) VM templates with their resolved image + metadata."""
+    images = await image_service.list_images(db)
+    return {
+        i.template: {
+            "display_name": i.display_name,
+            "image": i.image,
+            "description": i.description,
+            "is_default": i.is_default,
+        }
+        for i in images
     }
 
 
@@ -150,7 +165,17 @@ async def create_pod(
 
     pod_id = str(uuid.uuid4())
     namespace = "hopper"
-    image = body.resolved_image()
+
+    # Resolve the container image from the admin-managed catalogue. An explicit
+    # body.image override wins (admin/CLI); otherwise the chosen template, then
+    # the default template, then the hardcoded fallback baked into the schema.
+    if body.image:
+        image = body.image
+    else:
+        image_row = await image_service.get_image(db, body.template, active_only=True)
+        if image_row is None:
+            image_row = await image_service.get_default_image(db)
+        image = image_row.image if image_row else body.resolved_image()
 
     session = PodSession(
         id=pod_id,

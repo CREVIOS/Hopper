@@ -405,3 +405,75 @@ async def test_admin_plans_forbidden_for_non_admin(client, db_session, current_u
 
     assert listing.status_code == 403
     assert creating.status_code == 403
+
+
+# --- VM image / template catalogue CRUD --------------------------------------
+
+async def _delete_image_rows(db_session, *templates):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import VmImageRow
+
+    for t in templates:
+        await db_session.execute(sa_delete(VmImageRow).where(VmImageRow.template == t))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_list_images_returns_seeded_templates(client):
+    response = await client.get("/admin/images")
+    assert response.status_code == 200
+    by_t = {i["template"]: i for i in response.json()}
+    assert {"ubuntu", "python-ml", "cpp", "java"} <= set(by_t)
+    assert by_t["ubuntu"]["image"] == "hopper/vm-ubuntu:22.04"
+    assert by_t["ubuntu"]["is_default"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_image_crud_and_single_default(client, db_session):
+    try:
+        # Create a new default template — this must clear ubuntu's default.
+        create = await client.post("/admin/images", json={
+            "template": "rust", "display_name": "Rust", "image": "hopper/vm-rust:1.0",
+            "description": "Cargo + rustc", "is_default": True,
+        })
+        assert create.status_code == 201
+        assert create.json()["is_default"] is True
+
+        by_t = {i["template"]: i for i in (await client.get("/admin/images")).json()}
+        assert by_t["rust"]["is_default"] is True
+        assert by_t["ubuntu"]["is_default"] is False  # single-valued default
+
+        # Duplicate → 409
+        dup = await client.post("/admin/images", json={
+            "template": "rust", "display_name": "x", "image": "y",
+        })
+        assert dup.status_code == 409
+
+        # Update image tag
+        upd = await client.put("/admin/images/rust", json={"image": "hopper/vm-rust:1.1"})
+        assert upd.status_code == 200
+        assert upd.json()["image"] == "hopper/vm-rust:1.1"
+
+        # Deactivate → hidden from the student catalogue
+        assert (await client.delete("/admin/images/rust")).status_code == 200
+        student = (await client.get("/pods/templates")).json()
+        assert "rust" not in student
+    finally:
+        # Restore ubuntu default + drop throwaway.
+        from app.models import VmImageRow
+        from sqlalchemy import select as sa_select
+
+        ubuntu = (await db_session.execute(sa_select(VmImageRow).where(VmImageRow.template == "ubuntu"))).scalar_one()
+        ubuntu.is_default = True
+        await db_session.commit()
+        await _delete_image_rows(db_session, "rust")
+
+
+@pytest.mark.asyncio
+async def test_admin_images_forbidden_for_non_admin(client, current_user_payload):
+    current_user_payload.role = "professor"
+    assert (await client.get("/admin/images")).status_code == 403
+    assert (
+        await client.post("/admin/images", json={"template": "x", "display_name": "x", "image": "y"})
+    ).status_code == 403

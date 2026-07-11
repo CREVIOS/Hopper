@@ -14,14 +14,22 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [podsRes, balanceRes, plansRes] = await Promise.all([
+  const [podsRes, balanceRes, plansRes, templatesRes] = await Promise.all([
     fetch(apiUrl('/pods/'), { headers }).catch(() => null),
     fetch(apiUrl('/credits/balance'), { headers }).catch(() => null),
-    fetch(apiUrl('/pods/plans'), { headers }).catch(() => null)
+    fetch(apiUrl('/pods/plans'), { headers }).catch(() => null),
+    fetch(apiUrl('/pods/templates'), { headers }).catch(() => null)
   ]);
 
   const pods = podsRes?.ok ? await podsRes.json() : [];
   const balance = balanceRes?.ok ? (await balanceRes.json()).balance : 0;
+
+  const templatesObj: Record<string, Record<string, unknown>> = templatesRes?.ok
+    ? await templatesRes.json()
+    : {};
+  const templates = Object.entries(templatesObj)
+    .sort(([, a], [, b]) => Number(b.is_default) - Number(a.is_default))
+    .map(([template, v]) => ({ template, ...v }));
 
   // The catalogue is a { name: {...} } map; flatten to a sorted array for the
   // picker. Empty on failure — the page falls back to its static list.
@@ -36,6 +44,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     pods,
     balance,
     plans,
+    templates,
     nodeIp: env.NODE_IP ?? '127.0.0.1'
   };
 };
