@@ -27,12 +27,12 @@ from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
 from app.services.workspace_service import get_or_create_workspace
-from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
+from app.schemas.pod import CreatePodRequest, PodResponse
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
-from app.services import port_forward
+from app.services import plan_service, port_forward
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -44,14 +44,6 @@ router = APIRouter()
 SESSION_EXTENSION_HOURS = 1
 SESSION_MAX_EXTENSIONS = 3
 SESSION_MAX_WALLCLOCK_HOURS = 8
-
-
-def _plan_hourly_rate(plan: str) -> float:
-    """Credits-per-hour for a plan name (session.plan is the enum's string value)."""
-    for vm_plan, res in VM_PLAN_RESOURCES.items():
-        if vm_plan.value == plan:
-            return float(res["credits_per_hour"])
-    return 0.0
 
 
 def _session_to_response(s: PodSession) -> PodResponse:
@@ -80,16 +72,19 @@ def _session_to_response(s: PodSession) -> PodResponse:
 
 
 @router.get("/plans")
-async def list_plans():
-    """List available VM plans with their resource allocations and pricing."""
+async def list_plans(db: AsyncSession = Depends(get_db)):
+    """List available (active) VM plans with their resources and pricing."""
+    plans = await plan_service.list_plans(db)
     return {
-        plan.value: {
-            "cpu": res["cpu"],
-            "memory": res["memory"],
-            "disk": res["disk"],
-            "credits_per_hour": res["credits_per_hour"],
+        p.name: {
+            "display_name": p.display_name,
+            "cpu": p.cpu,
+            "memory": p.memory,
+            "disk": p.disk,
+            "credits_per_hour": float(p.credits_per_hour),
+            "workspace_gb": p.workspace_gb,
         }
-        for plan, res in VM_PLAN_RESOURCES.items()
+        for p in plans
     }
 
 
@@ -122,13 +117,21 @@ async def create_pod(
     This allocates a slice of the host machine's CPU/RAM to the user as an
     isolated container with SSH access. Resources are capped by the chosen plan.
     """
+    # Resolve the plan from the admin-managed catalogue (active plans only).
+    plan_row = await plan_service.get_plan(db, body.plan, active_only=True)
+    if plan_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown or unavailable plan: {body.plan}",
+        )
+    credits_per_hour = float(plan_row.credits_per_hour)
+
     # Check credit balance — need at least 1 hour's worth
-    resources = VM_PLAN_RESOURCES[body.plan]
     balance = await get_balance(db, current_user.sub)
-    if balance < resources["credits_per_hour"]:
+    if balance < credits_per_hour:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Insufficient credits. Need {resources['credits_per_hour']}, have {balance:.2f}",
+            detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
         )
 
     # Check max concurrent pods per user (limit to 3)
@@ -152,10 +155,10 @@ async def create_pod(
     session = PodSession(
         id=pod_id,
         user_id=current_user.sub,
-        plan=body.plan.value,
+        plan=body.plan,
         image=image,
-        cpu=resources["cpu"],
-        memory=resources["memory"],
+        cpu=plan_row.cpu,
+        memory=plan_row.memory,
         namespace=namespace,
         pod_name=f"vm-{pod_id[:8]}",
         state="pending",
@@ -175,22 +178,24 @@ async def create_pod(
 
     # Ensure the user's persistent workspace (FR-HC-28) so the orchestrator can
     # mount it at /workspace — data now survives pod restarts and re-launches.
-    workspace = await get_or_create_workspace(db, current_user.sub, body.plan.value)
+    workspace = await get_or_create_workspace(
+        db, current_user.sub, body.plan, capacity_gb=plan_row.workspace_gb
+    )
 
     # Call orchestrator to create the actual K8s pod
     try:
         resp = await orchestrator_client.create_pod(
             user_id=current_user.sub,
-            plan=body.plan.value,
+            plan=body.plan,
             image=image,
-            cpu=resources["cpu"],
-            memory=resources["memory"],
+            cpu=plan_row.cpu,
+            memory=plan_row.memory,
             pod_id=pod_id,
             authorized_keys=authorized_keys,
             workspace_pvc_name=workspace.pvc_name,
             workspace_capacity_gb=workspace.capacity_gb,
             storage_class=workspace.storage_class or "",
-            credits_per_hour=float(resources["credits_per_hour"]),
+            credits_per_hour=credits_per_hour,
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator
@@ -293,7 +298,11 @@ async def extend_pod(
     if new_expiry > started + timedelta(hours=SESSION_MAX_WALLCLOCK_HOURS):
         raise HTTPException(status_code=409, detail="ttl_cap_reached")
 
-    cost = _plan_hourly_rate(session.plan) * SESSION_EXTENSION_HOURS
+    # Price the extension at the plan's current rate. The plan may have been
+    # deactivated since launch, so look it up regardless of is_active.
+    plan_row = await plan_service.get_plan(db, session.plan)
+    hourly_rate = float(plan_row.credits_per_hour) if plan_row else 0.0
+    cost = hourly_rate * SESSION_EXTENSION_HOURS
     balance = await get_balance(db, current_user.sub)
     if balance < cost:
         raise HTTPException(

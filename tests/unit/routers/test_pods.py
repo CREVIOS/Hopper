@@ -125,8 +125,24 @@ def test_session_to_response_keeps_connection_details_for_running_pod():
     assert response.ssh_password == "secret"
 
 
-async def test_list_plans_returns_all_vm_plans():
-    result = await list_plans()
+async def test_list_plans_returns_all_vm_plans(monkeypatch):
+    from types import SimpleNamespace
+
+    plans = [
+        SimpleNamespace(name="small", display_name="Small", cpu="1", memory="2Gi",
+                        disk="5Gi", credits_per_hour=1.0, workspace_gb=20),
+        SimpleNamespace(name="medium", display_name="Medium", cpu="2", memory="4Gi",
+                        disk="10Gi", credits_per_hour=2.0, workspace_gb=50),
+        SimpleNamespace(name="large", display_name="Large", cpu="4", memory="8Gi",
+                        disk="20Gi", credits_per_hour=4.0, workspace_gb=100),
+    ]
+
+    async def fake_list(db):
+        return plans
+
+    monkeypatch.setattr("app.routers.pods.plan_service.list_plans", fake_list)
+
+    result = await list_plans(db=object())
 
     assert set(result) == {"small", "medium", "large"}
     assert result["small"]["credits_per_hour"] == 1.0
@@ -389,8 +405,18 @@ def _running_session(**over):
     return PodSession(**defaults)
 
 
+def _stub_plan_rate(monkeypatch, rate=1.0):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.routers.pods.plan_service.get_plan",
+        lambda db, name: _async(SimpleNamespace(credits_per_hour=rate)),
+    )
+
+
 async def test_extend_pod_extends_running_session(monkeypatch):
     monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    _stub_plan_rate(monkeypatch, rate=1.0)
     session = _running_session()
     db = FakeDB(execute_results=[session])
 
@@ -429,6 +455,7 @@ async def test_extend_pod_rejects_past_wall_clock_cap(monkeypatch):
 
 async def test_extend_pod_rejects_insufficient_credits(monkeypatch):
     monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(0.0))
+    _stub_plan_rate(monkeypatch, rate=1.0)
     session = _running_session()
     db = FakeDB(execute_results=[session])
 

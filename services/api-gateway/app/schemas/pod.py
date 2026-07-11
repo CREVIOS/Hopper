@@ -42,7 +42,10 @@ DEFAULT_TEMPLATE = "ubuntu"
 
 
 class CreatePodRequest(BaseModel):
-    plan: VmPlan
+    # Plan key, validated against the DB-backed vm_plans catalogue at request
+    # time (was the VmPlan enum; kept as a plain string so admins can add plans
+    # beyond small/medium/large without a code change).
+    plan: str
     template: str = DEFAULT_TEMPLATE
     # `image` is kept for backward-compat / direct image overrides (admin/CLI).
     # When unset, it's resolved from `template` via VM_TEMPLATE_IMAGES.

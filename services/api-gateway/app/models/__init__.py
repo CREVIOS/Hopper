@@ -8,6 +8,7 @@ from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.models.user_setting import UserSetting
 from app.models.user_workspace import UserWorkspace
+from app.models.vm_plan import VmPlanRow
 
 __all__ = [
     "Account",
@@ -22,4 +23,5 @@ __all__ = [
     "User",
     "UserSetting",
     "UserWorkspace",
+    "VmPlanRow",
 ]

@@ -319,3 +319,89 @@ async def test_professor_can_access_read_only_admin_endpoints_but_not_mutations(
     assert stats_response.json() == {"detail": "Admin access required"}
     assert change_role_response.status_code == 403
     assert change_role_response.json() == {"detail": "Admin access required"}
+
+
+# --- VM plan catalogue CRUD ---------------------------------------------------
+
+async def _delete_plan_rows(db_session, *names):
+    """Hard-delete throwaway plans so CRUD tests don't leak into the seeded set."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import VmPlanRow
+
+    for name in names:
+        await db_session.execute(sa_delete(VmPlanRow).where(VmPlanRow.name == name))
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_admin_list_plans_returns_seeded_defaults(client):
+    response = await client.get("/admin/plans")
+
+    assert response.status_code == 200
+    by_name = {p["name"]: p for p in response.json()}
+    assert {"small", "medium", "large"} <= set(by_name)
+    assert by_name["small"]["credits_per_hour"] == 1.0
+    assert by_name["medium"]["credits_per_hour"] == 2.0
+    assert by_name["large"]["credits_per_hour"] == 4.0
+    assert by_name["large"]["workspace_gb"] == 100
+    assert by_name["small"]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_plan_create_update_soft_delete_lifecycle(client, db_session):
+    try:
+        # Create
+        create = await client.post("/admin/plans", json={
+            "name": "test-xl", "display_name": "Test XL", "cpu": "8", "memory": "16Gi",
+            "disk": "40Gi", "credits_per_hour": 8.0, "workspace_gb": 200,
+        })
+        assert create.status_code == 201
+        assert create.json()["credits_per_hour"] == 8.0
+
+        # Duplicate → 409
+        dup = await client.post("/admin/plans", json={
+            "name": "test-xl", "display_name": "dup", "cpu": "1", "memory": "1Gi",
+            "disk": "1Gi", "credits_per_hour": 1.0, "workspace_gb": 1,
+        })
+        assert dup.status_code == 409
+
+        # Update price only
+        upd = await client.put("/admin/plans/test-xl", json={"credits_per_hour": 9.5})
+        assert upd.status_code == 200
+        assert upd.json()["credits_per_hour"] == 9.5
+        assert upd.json()["cpu"] == "8"  # unchanged field preserved
+
+        # Soft-delete → hidden from the student catalogue but row remains inactive
+        delete = await client.delete("/admin/plans/test-xl")
+        assert delete.status_code == 200
+
+        admin_list = {p["name"]: p for p in (await client.get("/admin/plans")).json()}
+        assert admin_list["test-xl"]["is_active"] is False
+
+        student_catalog = (await client.get("/pods/plans")).json()
+        assert "test-xl" not in student_catalog  # inactive plans excluded
+    finally:
+        await _delete_plan_rows(db_session, "test-xl")
+
+
+@pytest.mark.asyncio
+async def test_admin_update_missing_plan_returns_404(client):
+    response = await client.put("/admin/plans/does-not-exist", json={"credits_per_hour": 2.0})
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_plans_forbidden_for_non_admin(client, db_session, current_user_payload):
+    current_user_payload.sub = "prof-1"
+    current_user_payload.role = "professor"
+    current_user_payload.email = "prof@cs.du.ac.bd"
+
+    listing = await client.get("/admin/plans")
+    creating = await client.post("/admin/plans", json={
+        "name": "sneaky", "display_name": "x", "cpu": "1", "memory": "1Gi",
+        "disk": "1Gi", "credits_per_hour": 1.0, "workspace_gb": 1,
+    })
+
+    assert listing.status_code == 403
+    assert creating.status_code == 403

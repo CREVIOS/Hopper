@@ -345,3 +345,89 @@ async def test_vscode_proxy_returns_503_when_vm_not_running(client, db_session, 
 
     assert response.status_code == 503
     assert "VM is creating" in response.json()["detail"]
+
+
+# --- DB-backed plan pricing flows to the orchestrator -------------------------
+
+@pytest.mark.asyncio
+async def test_create_pod_uses_db_plan_and_forwards_rate(
+    client, db_session, current_user_payload, monkeypatch
+):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import VmPlanRow
+
+    # Use a dedicated user so the persistent workspace (idempotent per user and
+    # not truncated between tests) is created fresh from this plan's workspace_gb.
+    current_user_payload.sub = "gpu-user"
+
+    # An admin-created custom plan with a distinct rate/resources.
+    db_session.add(VmPlanRow(
+        name="gpu-x", display_name="GPU X", cpu="16", memory="32Gi", disk="80Gi",
+        credits_per_hour=5.0, workspace_gb=64, is_active=True,
+    ))
+    await db_session.commit()
+
+    captured = {}
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    async def fake_create_pod(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(id="vm-real", state="running", ssh_port=1, vscode_port=2, ssh_password="p")
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    try:
+        response = await client.post("/pods/", json={"plan": "gpu-x"})
+
+        assert response.status_code == 201
+        # The custom plan's resources + rate reached the orchestrator.
+        assert captured["plan"] == "gpu-x"
+        assert captured["cpu"] == "16"
+        assert captured["memory"] == "32Gi"
+        assert captured["credits_per_hour"] == 5.0
+        assert captured["workspace_capacity_gb"] == 64
+    finally:
+        await db_session.execute(sa_delete(VmPlanRow).where(VmPlanRow.name == "gpu-x"))
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_pod_rejects_unknown_plan(client, monkeypatch):
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+
+    response = await client.post("/pods/", json={"plan": "no-such-plan"})
+
+    assert response.status_code == 400
+    assert "Unknown or unavailable plan" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_pod_rejects_inactive_plan(client, db_session, monkeypatch):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import VmPlanRow
+
+    db_session.add(VmPlanRow(
+        name="retired", display_name="Retired", cpu="1", memory="2Gi", disk="5Gi",
+        credits_per_hour=1.0, workspace_gb=20, is_active=False,
+    ))
+    await db_session.commit()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+
+    try:
+        response = await client.post("/pods/", json={"plan": "retired"})
+        assert response.status_code == 400
+    finally:
+        await db_session.execute(sa_delete(VmPlanRow).where(VmPlanRow.name == "retired"))
+        await db_session.commit()

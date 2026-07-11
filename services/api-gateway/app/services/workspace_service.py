@@ -29,11 +29,14 @@ def pvc_name_for(user_id: str) -> str:
     return f"ws-user-{user_id}".lower()
 
 
-async def get_or_create_workspace(db: AsyncSession, user_id: str, plan: str) -> UserWorkspace:
+async def get_or_create_workspace(
+    db: AsyncSession, user_id: str, plan: str, capacity_gb: int | None = None
+) -> UserWorkspace:
     """Return the user's workspace row, creating it on first use.
 
-    Idempotent per user (unique user_id). Capacity is taken from the plan at
-    creation time and not changed here.
+    Idempotent per user (unique user_id). Capacity is taken from ``capacity_gb``
+    when provided (the DB-backed plan's workspace_gb), else falls back to the
+    legacy per-plan map. Set once at creation and not changed here.
     """
     existing = (
         await db.execute(select(UserWorkspace).where(UserWorkspace.user_id == user_id))
@@ -41,12 +44,15 @@ async def get_or_create_workspace(db: AsyncSession, user_id: str, plan: str) -> 
     if existing is not None:
         return existing
 
+    if capacity_gb is None:
+        capacity_gb = PLAN_WORKSPACE_GB.get(plan, DEFAULT_WORKSPACE_GB)
+
     ws = UserWorkspace(
         id=str(uuid.uuid4()),
         user_id=user_id,
         pvc_name=pvc_name_for(user_id),
         storage_class="",
-        capacity_gb=PLAN_WORKSPACE_GB.get(plan, DEFAULT_WORKSPACE_GB),
+        capacity_gb=capacity_gb,
     )
     db.add(ws)
     await db.commit()
