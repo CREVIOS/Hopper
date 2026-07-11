@@ -1,0 +1,25 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: postgres-latency
+  namespace: hopper-system
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces: [hopper-system]
+    labelSelectors:
+      app.kubernetes.io/name: api-gateway
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces: [hopper-system]
+      labelSelectors:
+        app.kubernetes.io/name: postgres
+  delay:
+    latency: 1500ms
+    jitter: 250ms
+    correlation: "75"
+  duration: 5m
+
