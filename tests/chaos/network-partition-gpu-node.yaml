@@ -1,0 +1,21 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: partition-gpu-node
+  namespace: hopper-system
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces: [hopper]
+    labelSelectors:
+      app.kubernetes.io/component: student-pod
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces: [hopper-system]
+      labelSelectors:
+        app.kubernetes.io/component: orchestrator
+  duration: 2m
+
