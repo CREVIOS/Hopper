@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     session_reaper_enabled: bool = True
     session_reaper_interval_seconds: float = 60.0
 
+    # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
+    # user_quotas override row. Admins can override per user.
+    default_max_concurrent_vms: int = 3
+    default_max_workspace_gb: int = 100
+
     # Self-registration email-domain allowlist. Use lowercase, no @.
     # Empty list = allow any valid email (the default). Set a non-empty list
     # (e.g. via HOPPER_ALLOWED_EMAIL_DOMAINS) to restrict signup/login to

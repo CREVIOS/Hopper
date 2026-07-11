@@ -15,8 +15,9 @@ from app.models.session import PodSession
 from app.models.user import User
 from app.schemas.image import ImageCreateRequest, ImageResponse, ImageUpdateRequest
 from app.schemas.plan import PlanCreateRequest, PlanResponse, PlanUpdateRequest
+from app.schemas.quota import QuotaResponse, QuotaSetRequest
 from app.schemas.user import ChangeRoleRequest, TokenPayload
-from app.services import image_service, plan_service
+from app.services import image_service, plan_service, quota_service
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 from app.services.orchestrator_client import orchestrator_client
 
@@ -208,6 +209,49 @@ async def admin_delete_plan(
         raise HTTPException(status_code=404, detail=f"Plan '{name}' not found")
     await plan_service.deactivate_plan(db, plan)
     return {"message": "deactivated", "name": name}
+
+
+# --- Per-user quotas ---------------------------------------------------------
+
+
+@router.get("/users/{user_id}/quota", response_model=QuotaResponse)
+async def admin_get_quota(
+    user_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a user's effective quota (their override or the global default)."""
+    _require_admin(current_user)
+    return QuotaResponse(**await quota_service.get_effective_quota(db, user_id))
+
+
+@router.put("/users/{user_id}/quota", response_model=QuotaResponse)
+async def admin_set_quota(
+    user_id: str,
+    body: QuotaSetRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a per-user quota override."""
+    _require_admin(current_user)
+    await quota_service.set_quota(
+        db, user_id,
+        max_concurrent_vms=body.max_concurrent_vms,
+        max_workspace_gb=body.max_workspace_gb,
+    )
+    return QuotaResponse(**await quota_service.get_effective_quota(db, user_id))
+
+
+@router.delete("/users/{user_id}/quota", response_model=QuotaResponse)
+async def admin_clear_quota(
+    user_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a user's override so they revert to the global default quota."""
+    _require_admin(current_user)
+    await quota_service.clear_quota(db, user_id)
+    return QuotaResponse(**await quota_service.get_effective_quota(db, user_id))
 
 
 # --- VM image / template catalogue (admin CRUD) -----------------------------

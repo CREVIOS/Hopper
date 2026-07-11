@@ -477,3 +477,42 @@ async def test_admin_images_forbidden_for_non_admin(client, current_user_payload
     assert (
         await client.post("/admin/images", json={"template": "x", "display_name": "x", "image": "y"})
     ).status_code == 403
+
+
+# --- Per-user quotas ----------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_admin_quota_get_set_clear(client, db_session):
+    from app.config import settings
+    from app.models import VmPlanRow  # noqa: F401  (ensures models imported)
+
+    db_session.add(User(id="stud-q", email="q@cs.du.ac.bd", name="Q", role="student"))
+    await db_session.commit()
+
+    # Default (no override)
+    default = await client.get("/admin/users/stud-q/quota")
+    assert default.status_code == 200
+    assert default.json() == {
+        "max_concurrent_vms": settings.default_max_concurrent_vms,
+        "max_workspace_gb": settings.default_max_workspace_gb,
+        "is_custom": False,
+    }
+
+    # Set override
+    put = await client.put("/admin/users/stud-q/quota", json={"max_concurrent_vms": 5, "max_workspace_gb": 250})
+    assert put.status_code == 200
+    assert put.json() == {"max_concurrent_vms": 5, "max_workspace_gb": 250, "is_custom": True}
+
+    # Clear → back to default
+    cleared = await client.delete("/admin/users/stud-q/quota")
+    assert cleared.status_code == 200
+    assert cleared.json()["is_custom"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_quota_forbidden_for_non_admin(client, current_user_payload):
+    current_user_payload.role = "professor"
+    assert (await client.get("/admin/users/x/quota")).status_code == 403
+    assert (
+        await client.put("/admin/users/x/quota", json={"max_concurrent_vms": 1, "max_workspace_gb": 1})
+    ).status_code == 403

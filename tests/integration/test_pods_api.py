@@ -478,3 +478,60 @@ async def test_create_pod_resolves_image_from_db_template(client, db_session, cu
     finally:
         await db_session.execute(sa_delete(VmImageRow).where(VmImageRow.template == "rust"))
         await db_session.commit()
+
+
+# --- Quota enforcement --------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_pod_blocks_when_over_storage_quota(client, db_session, current_user_payload, monkeypatch):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import UserQuota
+
+    current_user_payload.sub = "quota-user"
+    # 10 GB storage quota, but 'small' needs a 20 GB workspace.
+    db_session.add(UserQuota(user_id="quota-user", max_concurrent_vms=3, max_workspace_gb=10))
+    await db_session.commit()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+
+    try:
+        response = await client.post("/pods/", json={"plan": "small"})
+        assert response.status_code == 403
+        assert "storage quota" in response.json()["detail"]
+    finally:
+        await db_session.execute(sa_delete(UserQuota).where(UserQuota.user_id == "quota-user"))
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_pod_blocks_when_over_concurrent_quota(client, db_session, current_user_payload, monkeypatch):
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import PodSession as PS
+    from app.models import UserQuota
+
+    current_user_payload.sub = "cc-user"
+    # Concurrent limit of 1, and the user already has a running VM.
+    db_session.add(UserQuota(user_id="cc-user", max_concurrent_vms=1, max_workspace_gb=1000))
+    db_session.add(PS(
+        id="existing", user_id="cc-user", plan="small", image="img", cpu="1", memory="2Gi",
+        namespace="hopper", pod_name="vm-existing", state="running",
+    ))
+    await db_session.commit()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+
+    try:
+        response = await client.post("/pods/", json={"plan": "small"})
+        assert response.status_code == 429
+        assert "Maximum 1 concurrent VM allowed" in response.json()["detail"]
+    finally:
+        await db_session.execute(sa_delete(UserQuota).where(UserQuota.user_id == "cc-user"))
+        await db_session.commit()

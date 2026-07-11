@@ -32,7 +32,7 @@ from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.orchestrator_client import orchestrator_client
-from app.services import image_service, plan_service, port_forward
+from app.services import image_service, plan_service, port_forward, quota_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -141,6 +141,19 @@ async def create_pod(
         )
     credits_per_hour = float(plan_row.credits_per_hour)
 
+    # Resolve the user's quota (their override or the global default).
+    quota = await quota_service.get_effective_quota(db, current_user.sub)
+
+    # Storage quota: refuse a plan whose workspace exceeds the user's cap.
+    if plan_row.workspace_gb > quota["max_workspace_gb"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Plan workspace ({plan_row.workspace_gb} GB) exceeds your storage "
+                f"quota ({quota['max_workspace_gb']} GB)"
+            ),
+        )
+
     # Check credit balance — need at least 1 hour's worth
     balance = await get_balance(db, current_user.sub)
     if balance < credits_per_hour:
@@ -149,7 +162,7 @@ async def create_pod(
             detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
         )
 
-    # Check max concurrent pods per user (limit to 3)
+    # Concurrent-VM quota.
     active_result = await db.execute(
         select(PodSession).where(
             PodSession.user_id == current_user.sub,
@@ -157,10 +170,11 @@ async def create_pod(
         )
     )
     active_pods = active_result.scalars().all()
-    if len(active_pods) >= 3:
+    max_vms = quota["max_concurrent_vms"]
+    if len(active_pods) >= max_vms:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Maximum 3 concurrent VMs allowed",
+            detail=f"Maximum {max_vms} concurrent VM{'s' if max_vms != 1 else ''} allowed",
         )
 
     pod_id = str(uuid.uuid4())
