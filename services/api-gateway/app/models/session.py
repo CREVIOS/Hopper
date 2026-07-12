@@ -29,6 +29,11 @@ class PodSession(Base):
     # kill the VM at the grace deadline and destroy the real TTL. Null unless the
     # user is currently in grace; cleared as soon as they top up.
     credit_grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    # Idle auto-shutdown (FR-HC-31). Set when a VM has looked idle for long
+    # enough and the user has been warned; the VM is terminated once this passes.
+    # Cleared the moment real activity resumes, so it doubles as the "warned"
+    # flag — null means we are not currently counting down on this VM.
+    idle_shutdown_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     state: Mapped[str] = mapped_column(String, default="pending")
     credits_charged: Mapped[float] = mapped_column(Numeric(12, 4), default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

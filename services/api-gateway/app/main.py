@@ -43,8 +43,13 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting credit grace monitor...", flush=True)
     from app.services.credit_alerts import start_credit_grace_monitor
     await start_credit_grace_monitor()
+    print(">>> Startup: starting idle monitor...", flush=True)
+    from app.services.idle_monitor import start_idle_monitor
+    await start_idle_monitor()
     print(">>> Startup: complete.", flush=True)
     yield
+    from app.services.idle_monitor import stop_idle_monitor
+    await stop_idle_monitor()
     from app.services.credit_alerts import stop_credit_grace_monitor
     await stop_credit_grace_monitor()
     from app.services.session_reaper import stop_session_reaper

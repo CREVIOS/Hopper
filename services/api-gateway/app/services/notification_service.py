@@ -20,6 +20,7 @@ VALID_TYPES = {
     "credit_grace",
     "credits_received",
     "vm_ready",
+    "vm_idle",
     "vm_terminated",
     "vm_failed",
 }

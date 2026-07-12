@@ -55,6 +55,18 @@ class Settings(BaseSettings):
     credit_grace_monitor_enabled: bool = True
     credit_grace_monitor_interval_seconds: float = 15.0
 
+    # Idle auto-shutdown. A VM whose CPU stays below idle_cpu_percent for
+    # idle_window_minutes is considered idle: the user is warned and the VM is
+    # terminated idle_grace_minutes later unless activity resumes. CPU is the
+    # only activity signal we collect, and a student reading code in VS Code
+    # looks idle by that measure — hence the warning + grace rather than an
+    # immediate kill. Set enabled=false to turn the whole thing off.
+    idle_shutdown_enabled: bool = True
+    idle_cpu_percent: float = 5.0
+    idle_window_minutes: float = 30.0
+    idle_grace_minutes: float = 10.0
+    idle_monitor_interval_seconds: float = 60.0
+
     # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
     # user_quotas override row. Admins can override per user.
     default_max_concurrent_vms: int = 3
