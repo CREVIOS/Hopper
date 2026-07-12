@@ -66,6 +66,9 @@ test.describe('admin workflows', () => {
   test('lists the seeded student', async ({ page }) => {
     await page.goto('/admin');
     await page.getByRole('tab', { name: 'Users' }).click();
-    await expect(page.getByText('student-1@test.edu')).toBeVisible();
+
+    const studentRow = page.getByRole('row').filter({ hasText: 'student-1@test.edu' }).first();
+    await expect(studentRow).toBeVisible();
+    await expect(studentRow.getByRole('cell', { name: 'student-1@test.edu', exact: true })).toBeVisible();
   });
 });

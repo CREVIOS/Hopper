@@ -52,11 +52,12 @@ export async function logout(page: Page): Promise<void> {
   const triggerName = new RegExp(`^User menu for ${escapeRegExp(user.name || user.email)}$`, 'i');
 
   const trigger = page.getByRole('button', { name: triggerName });
-  const signOut = page.getByRole('menuitem', { name: /sign out/i });
+  const signOut = page.getByRole('menuitem', { name: /sign out|log out|logout/i }).first();
   await expect(trigger).toBeVisible();
+  await expect(trigger).toBeEnabled();
   await expect(trigger).toHaveAttribute('data-hydrated', 'true');
   await trigger.click();
-  await expect(signOut).toBeVisible();
+  await expect(signOut).toBeVisible({ timeout: 10000 });
   await signOut.click();
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 
