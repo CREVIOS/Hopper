@@ -197,7 +197,7 @@ async def test_refresh_rejects_disallowed_origin(monkeypatch):
         {"type": "http", "headers": [(b"origin", b"http://evil.example.com")]}
     )
 
-    response = await auth_router.refresh(request)
+    response = await auth_router.refresh.__wrapped__(request)
 
     assert response.status_code == 403
     assert response.body == b'{"detail":"forbidden origin"}'
@@ -206,7 +206,7 @@ async def test_refresh_rejects_disallowed_origin(monkeypatch):
 async def test_refresh_requires_refresh_cookie():
     request = Request({"type": "http", "headers": []})
 
-    response = await auth_router.refresh(request)
+    response = await auth_router.refresh.__wrapped__(request)
 
     assert response.status_code == 401
     assert response.body == b'{"detail":"No refresh token"}'
@@ -222,7 +222,7 @@ async def test_refresh_clears_cookies_on_failed_token_exchange(monkeypatch):
     fake_client = FakeAsyncClient(FakeHTTPResponse(status_code=401, text="bad refresh"))
     monkeypatch.setattr("app.routers.auth.httpx.AsyncClient", lambda timeout: fake_client)
 
-    response = await auth_router.refresh(request)
+    response = await auth_router.refresh.__wrapped__(request)
 
     assert response.status_code == 401
     set_cookie = response.headers.getlist("set-cookie")
@@ -250,7 +250,7 @@ async def test_refresh_sets_new_session_cookies_on_success(monkeypatch):
     )
     monkeypatch.setattr("app.routers.auth.httpx.AsyncClient", lambda timeout: fake_client)
 
-    response = await auth_router.refresh(request)
+    response = await auth_router.refresh.__wrapped__(request)
 
     assert response.status_code == 200
     assert response.body == b'{"message":"refreshed"}'
