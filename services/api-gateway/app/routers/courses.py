@@ -24,6 +24,7 @@ from app.schemas.course import (
 from app.schemas.user import TokenPayload
 from app.services import course_service
 from app.services.credit_service import allocate_to_many, get_balance
+from app.services.notification_service import create_notification_safely
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,26 @@ async def allocate_to_course(
         "course_allocation course=%s professor=%s students=%d per_student=%s",
         course.code, current_user.sub, len(students), body.amount,
     )
+
+    # Tell each student they've been funded. Best-effort — the ledger transfer
+    # has already committed and must not be rolled back by a notification error.
+    for student in students:
+        await create_notification_safely(
+            db,
+            user_id=student.id,
+            type="credits_received",
+            severity="success",
+            title="Credits received",
+            body=f"{body.amount:g} credits for {course.code}.",
+            action_url="/credits",
+            dedupe_key=f"credits-received:{transfer.id}:{student.id}",
+            metadata={
+                "transfer_id": transfer.id,
+                "amount": body.amount,
+                "course_id": course.id,
+                "course_code": course.code,
+            },
+        )
     return {
         "message": "allocated",
         "transfer_id": transfer.id,

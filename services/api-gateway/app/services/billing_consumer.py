@@ -24,10 +24,13 @@ from nats.errors import NotJSMessageError
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.config import settings
 from app.core import nats as nats_client
 from app.core.database import async_session
 from app.models.session import PodSession
-from app.services.credit_service import deduct_credits
+from app.services import credit_alerts
+from app.services.credit_service import deduct_credits, get_balance
+from app.services.notification_service import create_notification_safely
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +80,44 @@ async def _handle_billing_deducted(msg):
                 "Deducted %.4f credits user=%s pod=%s tx=%s",
                 amount, user_id, pod_id, tx_id,
             )
+            # Warn the user before the lights go out (FR-HC-18). Best-effort:
+            # a failed notification must never fail the billing tick itself.
+            try:
+                session = await credit_alerts.get_billing_session(db, pod_id)
+                if session is not None:
+                    balance = await get_balance(db, user_id)
+                    # They paid this tick, so any earlier grace window is over.
+                    if session.credit_grace_until is not None:
+                        session.credit_grace_until = None
+                        await db.commit()
+                    await credit_alerts.maybe_warn_low_credits(
+                        db, session=session, balance=balance
+                    )
+            except Exception:
+                logger.exception("Low-credit warning failed for pod %s", pod_id)
         await _safe_ack(msg)
     except IntegrityError:
         # Duplicate tx_id — already applied. Safe to ack.
         logger.info("billing tx %s already applied — idempotent skip", tx_id)
         await _safe_ack(msg)
     except ValueError:
+        # Out of credits. Rather than killing the VM on the spot, open a grace
+        # window and tell the user; credit_alerts' monitor terminates it only if
+        # they haven't topped up by the deadline. With credit_grace_minutes = 0
+        # we fall back to the original terminate-immediately behaviour.
         logger.warning("Credits exhausted for user %s, pod %s", user_id, pod_id)
+        try:
+            async with async_session() as db:
+                session = await credit_alerts.get_billing_session(db, pod_id)
+                if session is not None and settings.credit_grace_minutes > 0:
+                    await credit_alerts.start_credit_grace(db, session=session)
+                    await _safe_ack(msg)
+                    return
+        except Exception:
+            # If grace can't be started we must still stop the VM, or it would
+            # keep running for free.
+            logger.exception("Could not start credit grace for pod %s — terminating", pod_id)
+
         nc = nats_client.get_nc()
         await nc.publish(
             "billing.exhausted",
@@ -125,8 +159,23 @@ async def _handle_billing_exhausted(msg):
             session = result.scalars().first()
             if session and session.state not in ("terminated", "failed"):
                 session.state = "terminated"
+                session.credit_grace_until = None
                 await db.commit()
                 logger.info("Pod %s terminated due to credit exhaustion", pod_id)
+
+                # Tell the user why their VM vanished. Deduped per pod, so the
+                # grace monitor and this handler can't both notify twice.
+                await create_notification_safely(
+                    db,
+                    user_id=session.user_id,
+                    type="vm_terminated",
+                    severity="error",
+                    title="VM stopped",
+                    body="Your VM was stopped because you ran out of credits.",
+                    action_url="/credits",
+                    dedupe_key=f"vm-terminated-credits:{session.id}",
+                    metadata={"pod_id": session.id},
+                )
     except Exception:
         logger.exception("Failed to handle billing.exhausted for pod %s", pod_id)
 

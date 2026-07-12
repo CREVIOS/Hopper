@@ -87,6 +87,90 @@ async def test_handle_billing_deducted_publishes_exhausted_on_insufficient_credi
     assert acked["called"] is True
 
 
+async def test_exhausted_credits_open_a_grace_window_instead_of_killing_the_vm(monkeypatch):
+    """FR-HC-18: the user gets a chance to top up before the VM is torn down."""
+    msg = FakeMessage(
+        json.dumps({"pod_id": "vm-123", "user_id": "user-1", "amount": 2.5, "tx_id": "tx-1"}).encode()
+    )
+    graced = {}
+    published = {}
+
+    class FakeDBContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_deduct_credits(db, user_id, amount, description, tx_id):
+        raise ValueError("insufficient")
+
+    async def fake_get_session(db, pod_id):
+        return object()  # the pod exists
+
+    async def fake_start_grace(db, session):
+        graced["called"] = True
+
+    class FakeNC:
+        async def publish(self, subject, payload):
+            published["subject"] = subject
+
+    monkeypatch.setattr("app.services.billing_consumer.async_session", lambda: FakeDBContext())
+    monkeypatch.setattr("app.services.billing_consumer.deduct_credits", fake_deduct_credits)
+    monkeypatch.setattr("app.services.credit_alerts.get_billing_session", fake_get_session)
+    monkeypatch.setattr("app.services.credit_alerts.start_credit_grace", fake_start_grace)
+    monkeypatch.setattr("app.services.billing_consumer.nats_client.get_nc", lambda: FakeNC())
+    monkeypatch.setattr("app.services.billing_consumer._safe_ack", lambda m: _async_noop())
+
+    await billing_module._handle_billing_deducted(msg)
+
+    assert graced["called"] is True
+    assert published == {}  # VM NOT killed — it lives out the grace period
+
+
+async def _async_noop():
+    return None
+
+
+async def test_exhausted_credits_still_kill_the_vm_when_grace_is_disabled(monkeypatch):
+    """credit_grace_minutes = 0 restores the original terminate-immediately path,
+    so a VM can never run for free just because grace is switched off."""
+    msg = FakeMessage(
+        json.dumps({"pod_id": "vm-123", "user_id": "user-1", "amount": 2.5, "tx_id": "tx-1"}).encode()
+    )
+    published = {}
+
+    class FakeDBContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_deduct_credits(db, user_id, amount, description, tx_id):
+        raise ValueError("insufficient")
+
+    async def fake_get_session(db, pod_id):
+        return object()
+
+    class FakeNC:
+        async def publish(self, subject, payload):
+            published["subject"] = subject
+            published["payload"] = json.loads(payload)
+
+    monkeypatch.setattr(billing_module.settings, "credit_grace_minutes", 0)
+    monkeypatch.setattr("app.services.billing_consumer.async_session", lambda: FakeDBContext())
+    monkeypatch.setattr("app.services.billing_consumer.deduct_credits", fake_deduct_credits)
+    monkeypatch.setattr("app.services.credit_alerts.get_billing_session", fake_get_session)
+    monkeypatch.setattr("app.services.billing_consumer.nats_client.get_nc", lambda: FakeNC())
+    monkeypatch.setattr("app.services.billing_consumer._safe_ack", lambda m: _async_noop())
+
+    await billing_module._handle_billing_deducted(msg)
+
+    assert published["subject"] == "billing.exhausted"
+    assert published["payload"] == {"pod_id": "vm-123", "user_id": "user-1"}
+
+
 async def test_handle_billing_deducted_naks_on_operational_error(monkeypatch):
     msg = FakeMessage(
         json.dumps({"pod_id": "pod-1", "user_id": "user-1", "amount": 2.5, "tx_id": "tx-1"}).encode()

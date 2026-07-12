@@ -10,7 +10,9 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin, courses, files, issues, ssh_keys, usage
+from app.routers import (
+    auth, pods, credits, admin, courses, files, issues, notifications, ssh_keys, usage,
+)
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
@@ -38,8 +40,13 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting session reaper...", flush=True)
     from app.services.session_reaper import start_session_reaper
     await start_session_reaper()
+    print(">>> Startup: starting credit grace monitor...", flush=True)
+    from app.services.credit_alerts import start_credit_grace_monitor
+    await start_credit_grace_monitor()
     print(">>> Startup: complete.", flush=True)
     yield
+    from app.services.credit_alerts import stop_credit_grace_monitor
+    await stop_credit_grace_monitor()
     from app.services.session_reaper import stop_session_reaper
     await stop_session_reaper()
     from app.services.audit_retention import stop_audit_retention
@@ -92,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(pods.router, prefix="/pods", tags=["pods"])
     app.include_router(credits.router, prefix="/credits", tags=["credits"])
     app.include_router(courses.router, prefix="/courses", tags=["courses"])
+    app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
     app.include_router(ssh_keys.router, prefix="/ssh-keys", tags=["ssh-keys"])

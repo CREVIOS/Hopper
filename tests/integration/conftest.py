@@ -17,6 +17,7 @@ APP_TABLES = (
     "courses",
     "issue_reports",
     "metrics_samples",
+    "notifications",
     "ssh_keys",
     "pod_sessions",
     "ledger_entries",

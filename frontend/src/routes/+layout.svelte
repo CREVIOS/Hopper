@@ -13,6 +13,7 @@
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import ConfirmHost from '$lib/components/ConfirmHost.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
 
   let {
     data,
@@ -124,6 +125,11 @@
         <div class="flex items-center gap-2 sm:gap-3">
           {#if typeof data.balance === 'number'}
             <CreditBadge balance={data.balance} class="hidden sm:inline-flex" />
+          {/if}
+          {#if data.user}
+            <!-- Gated on an authenticated user: the bell opens an SSE stream on
+                 mount, which would 401 on the public pages. -->
+            <NotificationBell />
           {/if}
           <ThemeToggle />
           {#if data.user}

@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     session_reaper_enabled: bool = True
     session_reaper_interval_seconds: float = 60.0
 
+    # Credit-exhaustion grace period (FR-HC-18). When a billing tick fails for
+    # lack of credits the VM is not killed outright: the user gets a grace
+    # window to top up, and a background monitor terminates the VM only if the
+    # balance is still short when the window closes. Set grace_minutes to 0 to
+    # terminate immediately on exhaustion (the pre-notification behaviour).
+    credit_grace_minutes: float = 5.0
+    credit_grace_monitor_enabled: bool = True
+    credit_grace_monitor_interval_seconds: float = 15.0
+
     # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
     # user_quotas override row. Admins can override per user.
     default_max_concurrent_vms: int = 3

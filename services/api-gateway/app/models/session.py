@@ -24,6 +24,11 @@ class PodSession(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Number of user-initiated TTL extensions applied (FR-HC-27 caps this at 3).
     extension_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    # Credit-exhaustion grace deadline (FR-HC-18). Deliberately NOT expires_at:
+    # that is the session TTL, and overloading it would make the session reaper
+    # kill the VM at the grace deadline and destroy the real TTL. Null unless the
+    # user is currently in grace; cleared as soon as they top up.
+    credit_grace_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     state: Mapped[str] = mapped_column(String, default="pending")
     credits_charged: Mapped[float] = mapped_column(Numeric(12, 4), default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
