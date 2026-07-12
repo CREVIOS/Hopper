@@ -42,7 +42,8 @@ export default defineConfig({
       : [])
   ],
   webServer: {
-    command: 'node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
+    command:
+      'node ./node_modules/@sveltejs/kit/svelte-kit.js sync && node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
     cwd: '../../frontend',
     url: baseURL,
     reuseExistingServer: !process.env.CI,

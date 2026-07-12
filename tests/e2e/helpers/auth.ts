@@ -49,12 +49,13 @@ export async function currentUser(request: APIRequestContext): Promise<Authentic
 
 export async function logout(page: Page): Promise<void> {
   const user = await currentUser(page.context().request);
-  const triggerName = new RegExp(
-    `${escapeRegExp(user.name || user.email)}|${escapeRegExp(user.email)}`,
-    'i'
-  );
+  const triggerName = new RegExp(`^User menu for ${escapeRegExp(user.name || user.email)}$`, 'i');
 
-  await page.getByRole('button', { name: triggerName }).click();
-  await page.getByRole('menuitem', { name: /sign out/i }).click();
+  const trigger = page.getByRole('button', { name: triggerName });
+  const signOut = page.getByRole('menuitem', { name: /sign out/i });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(signOut).toBeVisible();
+  await signOut.click();
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 }

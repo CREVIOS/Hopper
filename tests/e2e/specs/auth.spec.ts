@@ -23,7 +23,11 @@ test.describe('Authentication', () => {
 
     await page.getByLabel('Email').fill('invalid-user@example.com');
     await page.getByLabel('Password').fill('definitely-wrong-password');
+    const loginResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname.endsWith('/auth/login') && response.status() === 401
+    );
     await page.getByRole('button', { name: /^sign in$/i }).click();
+    await loginResponse;
 
     await expect(
       page.getByText(/invalid email or password|login failed|sign-in failed/i)

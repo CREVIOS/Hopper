@@ -17,7 +17,12 @@ const body = async req => {
   let value = ''; for await (const chunk of req) value += chunk;
   return value ? JSON.parse(value) : {};
 };
-const role = req => (req.headers.cookie || '').includes('e2e-admin') ? 'admin' : 'student';
+const session = req => {
+  const cookie = req.headers.cookie || '';
+  if (cookie.includes('session_token=e2e-admin')) return 'admin';
+  if (cookie.includes('session_token=e2e-student')) return 'student';
+  return null;
+};
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://mock');
@@ -28,8 +33,34 @@ http.createServer(async (req, res) => {
     const admin = String(raw).includes('username=admin');
     return json(res, 200, { access_token: admin ? 'e2e-admin' : 'e2e-student', refresh_token: 'e2e-refresh', expires_in: 3600, refresh_expires_in: 3600 });
   }
-  if (url.pathname === '/auth/me') return json(res, 200, users[role(req)]);
-  if (url.pathname === '/auth/logout') return json(res, 200, { ok: true }, { 'set-cookie': 'session_token=; Max-Age=0; Path=/' });
+  if (req.method === 'POST' && url.pathname === '/auth/login') {
+    const input = await body(req);
+    const matched = Object.values(users).find(user => user.email === input.email);
+    if (!matched || input.password !== 'e2e') {
+      return json(res, 401, { detail: 'Invalid email or password.' });
+    }
+    const token = matched.role === 'admin' ? 'e2e-admin' : 'e2e-student';
+    return json(res, 200, matched, {
+      'set-cookie': `session_token=${token}; HttpOnly; SameSite=Lax; Path=/`
+    });
+  }
+  if (url.pathname === '/auth/me') {
+    const authenticatedRole = session(req);
+    return authenticatedRole
+      ? json(res, 200, users[authenticatedRole])
+      : json(res, 401, { detail: 'Not authenticated' });
+  }
+  if (url.pathname === '/auth/logout') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'set-cookie': [
+        'session_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
+        'refresh_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
+        'id_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
+      ]
+    });
+    return res.end(JSON.stringify({ ok: true }));
+  }
   if (url.pathname === '/credits/balance') return json(res, 200, { account_id: 'acct-student-1', balance: state.balance });
   if (url.pathname === '/credits/history') return json(res, 200, state.transactions);
   if (req.method === 'POST' && url.pathname === '/credits/allocate') {

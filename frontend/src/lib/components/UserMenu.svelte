@@ -27,6 +27,7 @@
     {#snippet child({ props })}
       <button
         {...props}
+        aria-label={`User menu for ${user.name || user.email}`}
         class="flex items-center gap-2 rounded-full px-1 py-1 pr-2 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Avatar name={user.name || user.email} />

@@ -36,9 +36,7 @@ test.describe('Student VM Management', () => {
     await expect(page.getByRole('tab', { name: /history/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /^all$/i })).toBeVisible();
 
-    const emptyState = page.getByText(/no active vms|you haven't created any vms yet/i);
-    const vmCard = page.getByText(/^Created /).first();
-
-    await expect(emptyState.or(vmCard)).toBeVisible();
+    const activePanel = page.getByRole('tabpanel', { name: /active/i });
+    await expect(activePanel.getByText(/no active vms/i)).toBeVisible();
   });
 });
