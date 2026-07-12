@@ -118,6 +118,64 @@ async def list_pods(
     return [_session_to_response(s) for s in sessions]
 
 
+async def _provision_pod(
+    db: AsyncSession,
+    session: PodSession,
+    plan_row,
+    image: str,
+    credits_per_hour: float,
+) -> PodSession:
+    """Ask the orchestrator for a real K8s pod backing ``session``, and record it.
+
+    Shared by launch and resume: a resumed VM is a brand-new pod that remounts
+    the same per-user workspace PVC, which is why /workspace survives a stop
+    while anything outside it does not.
+
+    On failure the session is marked ``failed`` rather than raising, matching the
+    original launch behaviour (the caller returns the session either way).
+    """
+    # Registered SSH public keys, injected into the VM's authorized_keys.
+    keys_result = await db.execute(
+        select(SSHKey.public_key).where(SSHKey.user_id == session.user_id)
+    )
+    authorized_keys = list(keys_result.scalars().all())
+
+    # The per-user workspace (FR-HC-28). get_or_create is idempotent, so a resume
+    # resolves the SAME PVC the stopped VM was using and the files come back.
+    workspace = await get_or_create_workspace(
+        db, session.user_id, session.plan, capacity_gb=plan_row.workspace_gb
+    )
+
+    try:
+        resp = await orchestrator_client.create_pod(
+            user_id=session.user_id,
+            plan=session.plan,
+            image=image,
+            cpu=plan_row.cpu,
+            memory=plan_row.memory,
+            pod_id=session.id,
+            authorized_keys=authorized_keys,
+            workspace_pvc_name=workspace.pvc_name,
+            workspace_capacity_gb=workspace.capacity_gb,
+            storage_class=workspace.storage_class or "",
+            credits_per_hour=credits_per_hour,
+        )
+        session.state = resp.state
+        session.pod_name = resp.id  # the actual K8s pod name from the orchestrator
+        session.ssh_port = resp.ssh_port if resp.ssh_port else None
+        session.vscode_port = resp.vscode_port if resp.vscode_port else None
+        session.ssh_password = resp.ssh_password or None
+        await db.commit()
+        await db.refresh(session)
+    except Exception as e:
+        logger.error("Orchestrator CreatePod failed: %s", e)
+        session.state = "failed"
+        await db.commit()
+        await db.refresh(session)
+
+    return session
+
+
 @router.post("/", response_model=PodResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def create_pod(
@@ -207,48 +265,7 @@ async def create_pod(
     await db.commit()
     await db.refresh(session)
 
-    # Fetch the user's registered SSH public keys so the orchestrator can inject
-    # them into the VM's authorized_keys (the key CRUD stored keys that never
-    # reached the VM until now — the UI already promised passwordless SSH).
-    keys_result = await db.execute(
-        select(SSHKey.public_key).where(SSHKey.user_id == current_user.sub)
-    )
-    authorized_keys = list(keys_result.scalars().all())
-
-    # Ensure the user's persistent workspace (FR-HC-28) so the orchestrator can
-    # mount it at /workspace — data now survives pod restarts and re-launches.
-    workspace = await get_or_create_workspace(
-        db, current_user.sub, body.plan, capacity_gb=plan_row.workspace_gb
-    )
-
-    # Call orchestrator to create the actual K8s pod
-    try:
-        resp = await orchestrator_client.create_pod(
-            user_id=current_user.sub,
-            plan=body.plan,
-            image=image,
-            cpu=plan_row.cpu,
-            memory=plan_row.memory,
-            pod_id=pod_id,
-            authorized_keys=authorized_keys,
-            workspace_pvc_name=workspace.pvc_name,
-            workspace_capacity_gb=workspace.capacity_gb,
-            storage_class=workspace.storage_class or "",
-            credits_per_hour=credits_per_hour,
-        )
-        session.state = resp.state
-        session.pod_name = resp.id  # use the actual K8s pod name from orchestrator
-        session.ssh_port = resp.ssh_port if resp.ssh_port else None
-        session.vscode_port = resp.vscode_port if resp.vscode_port else None
-        session.ssh_password = resp.ssh_password or None
-        await db.commit()
-        await db.refresh(session)
-    except Exception as e:
-        logger.error("Orchestrator CreatePod failed: %s", e)
-        session.state = "failed"
-        await db.commit()
-        await db.refresh(session)
-
+    await _provision_pod(db, session, plan_row, image, credits_per_hour)
     return _session_to_response(session)
 
 
@@ -306,6 +323,135 @@ async def terminate_pod(
     session.state = "terminated"
     await db.commit()
     return {"message": "terminated", "pod_id": pod_id}
+
+
+@router.post("/{pod_id}/stop", response_model=PodResponse)
+async def stop_pod(
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stop a VM without losing its workspace.
+
+    The K8s pod is torn down — so billing stops, and the VM stops counting
+    against the concurrent-VM quota — but the session row survives in ``stopped``
+    and the user's /workspace PVC is untouched. ``resume`` builds a fresh pod that
+    remounts it.
+
+    What survives: everything under /workspace. What does NOT: running processes,
+    and anything written outside /workspace (installed packages, home-dir files),
+    because the resumed VM is a new container from the same image.
+    """
+    session = (
+        await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    ).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "running":
+        raise HTTPException(status_code=400, detail="Only a running VM can be stopped")
+
+    try:
+        await orchestrator_client.terminate_pod(session.pod_name)
+    except Exception as e:
+        # The DB row must not be left claiming "running" when the caller was told
+        # the VM stopped — but nor do we want to hide a real orchestrator failure.
+        logger.error("Orchestrator TerminatePod failed on stop: %s", e)
+        raise HTTPException(status_code=502, detail="Could not stop the VM")
+
+    await port_forward.stop(session.pod_name)
+
+    session.state = "stopped"
+    # The pod is gone: its NodePorts are released and may be reassigned, and the
+    # root password belonged to that container. Clear them so nothing stale is
+    # served. A resume issues fresh ones.
+    session.ssh_port = None
+    session.vscode_port = None
+    session.ssh_password = None
+    # Neither countdown applies to a VM that isn't running.
+    session.credit_grace_until = None
+    session.idle_shutdown_at = None
+    await db.commit()
+    await db.refresh(session)
+
+    logger.info("Pod %s stopped by %s (workspace retained)", pod_id, current_user.sub)
+    return _session_to_response(session)
+
+
+@router.post("/{pod_id}/resume", response_model=PodResponse)
+@limiter.limit("10/minute")
+async def resume_pod(
+    request: Request,
+    response: Response,
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bring a stopped VM back, remounting the same /workspace.
+
+    Re-runs the same admission checks as a fresh launch — plan still available,
+    an hour's credits in hand, concurrent-VM quota — because a resumed VM
+    consumes exactly what a new one does. Stopped VMs don't count toward the
+    quota, so resuming is where that limit has to be enforced.
+    """
+    session = (
+        await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    ).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    # Owner only: a resume spends the owner's credits, so an admin can't authorise
+    # it on their behalf (admins can still stop/terminate).
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "stopped":
+        raise HTTPException(status_code=400, detail="Only a stopped VM can be resumed")
+
+    plan_row = await plan_service.get_plan(db, session.plan, active_only=True)
+    if plan_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Plan '{session.plan}' is no longer available — launch a new VM",
+        )
+    credits_per_hour = float(plan_row.credits_per_hour)
+
+    balance = await get_balance(db, current_user.sub)
+    if balance < credits_per_hour:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
+        )
+
+    quota = await quota_service.get_effective_quota(db, current_user.sub)
+    active = (
+        await db.execute(
+            select(PodSession).where(
+                PodSession.user_id == current_user.sub,
+                PodSession.state.in_(["pending", "creating", "running"]),
+            )
+        )
+    ).scalars().all()
+    max_vms = quota["max_concurrent_vms"]
+    if len(active) >= max_vms:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Maximum {max_vms} concurrent VM{'s' if max_vms != 1 else ''} allowed",
+        )
+
+    # A fresh TTL window. This is not a loophole: the session reaper only counts
+    # LIVE states, so a stopped VM burns no TTL — and without the reset a VM
+    # stopped past its old expiry would be reaped the instant it came back.
+    # Extensions reset with it, since this is effectively a new sitting.
+    session.state = "pending"
+    session.started_at = datetime.utcnow()
+    session.expires_at = datetime.utcnow() + timedelta(hours=settings.session_ttl_hours)
+    session.extension_count = 0
+    await db.commit()
+
+    await _provision_pod(db, session, plan_row, session.image, credits_per_hour)
+
+    logger.info("Pod %s resumed by %s (workspace remounted)", pod_id, current_user.sub)
+    return _session_to_response(session)
 
 
 @router.post("/{pod_id}/extend")

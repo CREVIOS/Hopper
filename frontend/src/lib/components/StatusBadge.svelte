@@ -4,6 +4,7 @@
     | 'pending'
     | 'creating'
     | 'stopping'
+    | 'stopped'
     | 'terminated'
     | 'failed'
     | string;
@@ -19,6 +20,9 @@
     pending: { variant: 'warning', pulse: true, label: 'Pending' },
     creating: { variant: 'info', pulse: true, label: 'Creating' },
     stopping: { variant: 'warning', pulse: true, label: 'Stopping' },
+    // Stopped is a resting state, not a dead one — the workspace is intact and
+    // the VM can be resumed, so it reads as "info", distinct from Terminated.
+    stopped: { variant: 'info', pulse: false, label: 'Stopped' },
     terminated: { variant: 'muted', pulse: false, label: 'Terminated' },
     failed: { variant: 'destructive', pulse: false, label: 'Failed' }
   };

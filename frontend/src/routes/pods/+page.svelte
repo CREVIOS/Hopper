@@ -153,8 +153,10 @@
   const filteredPods = $derived.by(() => {
     let list = data.pods.slice();
     if (stateFilter === 'active') {
+      // "stopped" belongs here, not under "past": the VM is resumable and its
+      // workspace is intact. Left out of both filters it would simply vanish.
       list = list.filter((p) =>
-        ['running', 'pending', 'creating', 'stopping'].includes(p.state)
+        ['running', 'pending', 'creating', 'stopping', 'stopped'].includes(p.state)
       );
     } else if (stateFilter === 'past') {
       list = list.filter((p) =>

@@ -23,7 +23,9 @@
     Layers,
     Box,
     Boxes,
-    HardDrive
+    HardDrive,
+    Pause,
+    Play
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { invalidateAll, goto } from '$app/navigation';
@@ -149,6 +151,55 @@
     }
   }
 
+  // Stop / resume (FR-HC-26). Stopping tears the container down — billing stops
+  // and the VM frees a concurrent-VM slot — but /workspace survives and resume
+  // remounts it. Anything written OUTSIDE /workspace does not come back, which
+  // the confirm dialog says plainly.
+  let stopping = $state(false);
+  let resuming = $state(false);
+
+  async function stopPod() {
+    if (!data.pod || stopping) return;
+    const ok = await confirm({
+      title: `Stop VM ${shortId(data.pod.id)}?`,
+      description:
+        'Billing stops and the VM shuts down. Files in /workspace are kept and come ' +
+        'back when you resume — anything outside /workspace (installed packages, ' +
+        'home-directory files) and any running processes are lost.',
+      confirmLabel: 'Stop VM'
+    });
+    if (!ok) return;
+
+    stopping = true;
+    const id = toast.loading('Stopping VM…');
+    try {
+      await api.post(`/pods/${data.pod.id}/stop`);
+      toast.success('VM stopped', { id, description: 'Your /workspace is safe.' });
+      await invalidateAll();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Failed to stop VM';
+      toast.error('Could not stop the VM', { id, description: msg });
+    } finally {
+      stopping = false;
+    }
+  }
+
+  async function resumePod() {
+    if (!data.pod || resuming) return;
+    resuming = true;
+    const id = toast.loading('Resuming VM…');
+    try {
+      await api.post(`/pods/${data.pod.id}/resume`);
+      toast.success('VM resumed', { id, description: '/workspace remounted.' });
+      await invalidateAll();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Failed to resume VM';
+      toast.error('Could not resume the VM', { id, description: msg });
+    } finally {
+      resuming = false;
+    }
+  }
+
   function vscodeUrl(p: Pod): string {
     return `/${data.user?.id ?? ''}/code/${p.id}/`;
   }
@@ -173,6 +224,7 @@
     pending: { variant: 'warning', label: 'Pending', pulse: true },
     creating: { variant: 'info', label: 'Creating', pulse: true },
     stopping: { variant: 'warning', label: 'Stopping', pulse: true },
+    stopped: { variant: 'info', label: 'Stopped' },
     terminated: { variant: 'muted', label: 'Terminated' },
     failed: { variant: 'destructive', label: 'Failed' }
   };
@@ -183,6 +235,7 @@
   {@const podState = data.pod.state}
   {@const cfg = stateBadge[podState] ?? stateBadge.terminated}
   {@const isRunning = podState === 'running'}
+  {@const isStopped = podState === 'stopped'}
   {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
   <div
@@ -231,6 +284,24 @@
                 <MessageSquareWarning class="size-4" /> Report issue
               </Button>
             {/if}
+            {#if isRunning}
+              <Button variant="outline" onclick={stopPod} disabled={stopping}>
+                {#if stopping}
+                  <Spinner class="size-4" /> Stopping…
+                {:else}
+                  <Pause class="size-4" /> Stop
+                {/if}
+              </Button>
+            {/if}
+            {#if isStopped}
+              <Button onclick={resumePod} disabled={resuming}>
+                {#if resuming}
+                  <Spinner class="size-4" /> Resuming…
+                {:else}
+                  <Play class="size-4" /> Resume
+                {/if}
+              </Button>
+            {/if}
             {#if canTerminate}
               <Button variant="destructive" onclick={terminatePod}>
                 <Square class="size-4" /> Terminate
@@ -240,6 +311,27 @@
         {/snippet}
       </PageTitle>
     </div>
+
+    {#if isStopped}
+      <!-- A stopped VM has no container, so the terminal/files/metrics tabs below
+           have nothing to talk to. Say why, and how to get it back. -->
+      <div class="mb-5 rounded-lg border border-info/30 bg-info/5 p-4 text-sm">
+        <div class="font-medium text-foreground">This VM is stopped</div>
+        <p class="mt-1 text-muted-foreground">
+          It isn't using credits and isn't counting against your VM limit. Your files in
+          <code class="rounded bg-muted px-1 py-0.5 font-mono text-xs">/workspace</code>
+          are safe and come back when you resume. The terminal, files and metrics tabs stay
+          empty until then.
+        </p>
+        <Button class="mt-3" size="sm" onclick={resumePod} disabled={resuming}>
+          {#if resuming}
+            <Spinner class="size-4" /> Resuming…
+          {:else}
+            <Play class="size-4" /> Resume VM
+          {/if}
+        </Button>
+      </div>
+    {/if}
 
     <!-- Tabs -->
     <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">

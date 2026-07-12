@@ -9,6 +9,10 @@ class PodState(str, Enum):
     CREATING = "creating"
     RUNNING = "running"
     STOPPING = "stopping"
+    # Stopped, not gone: the K8s pod is torn down (so no billing, and it frees a
+    # concurrent-VM slot) but the session row and the user's /workspace survive,
+    # and POST /pods/{id}/resume brings it back.
+    STOPPED = "stopped"
     TERMINATED = "terminated"
     FAILED = "failed"
 

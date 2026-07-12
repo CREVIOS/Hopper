@@ -585,7 +585,10 @@ async def _terminate_user_pods(db: AsyncSession, user_id: str) -> None:
     result = await db.execute(
         select(PodSession).where(
             PodSession.user_id == user_id,
-            PodSession.state.in_(("running", "pending")),
+            # "stopped" and "creating" included too: a stopped VM has no K8s pod
+            # left to kill, but its session row must not survive the account, and
+            # a creating one must not be allowed to finish coming up.
+            PodSession.state.in_(("running", "pending", "creating", "stopped")),
         )
     )
     for session in result.scalars().all():

@@ -157,7 +157,10 @@ async def _handle_billing_exhausted(msg):
                 )
             )
             session = result.scalars().first()
-            if session and session.state not in ("terminated", "failed"):
+            # "stopped" is excluded deliberately: a stopped VM has no pod and is
+            # not billing, so a late/in-flight exhausted message must not flip it
+            # to terminated and rob the user of the resume they still have.
+            if session and session.state not in ("terminated", "failed", "stopped"):
                 session.state = "terminated"
                 session.credit_grace_until = None
                 await db.commit()
