@@ -61,7 +61,7 @@ async def test_get_credit_balance_returns_account_id_and_balance(monkeypatch):
     async def fake_get_balance(db, user_id):
         return 42.5
 
-    async def fake_get_or_create_account(db, user_id):
+    async def fake_get_or_create_account(db, user_id, **kwargs):
         return account
 
     monkeypatch.setattr("app.routers.credits.get_balance", fake_get_balance)

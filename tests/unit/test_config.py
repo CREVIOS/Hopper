@@ -8,7 +8,7 @@ def test_settings_uses_expected_defaults():
     assert settings.nats_url == "nats://localhost:4222"
     assert settings.keycloak_realm == "hopper"
     assert settings.cors_origins == ["http://localhost:5173"]
-    assert settings.allowed_email_domains == ["cs.du.ac.bd"]
+    assert settings.allowed_email_domains == []
     assert settings.require_email_verified is True
     assert settings.debug is False
     assert settings.code_url_ttl_seconds == 600
