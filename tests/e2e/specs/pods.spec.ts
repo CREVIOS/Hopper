@@ -15,13 +15,13 @@ test.describe('Student VM Management', () => {
     await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Launch a new VM' })).toBeVisible();
 
-    await expect(page.getByRole('button', { name: /small/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /medium/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /large/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^small\b/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^medium\b/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^large\b/i })).toBeVisible();
 
-    await expect(page.getByRole('button', { name: /ubuntu 22\.04/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /python \/ ml/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /c \/ c\+\+/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^ubuntu 22\.04\b/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^python \/ ml\b/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^c \/ c\+\+(?:\s|$)/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /^java/i })).toBeVisible();
 
     await expect(page.getByRole('button', { name: /launch vm/i })).toBeVisible();
