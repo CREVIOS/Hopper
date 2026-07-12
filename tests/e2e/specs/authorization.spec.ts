@@ -22,7 +22,9 @@ test.describe('Authorization', () => {
     await page.goto('/admin');
 
     await expect(page.getByRole('heading', { name: 'Admin' })).toBeVisible();
-    await expect(page.getByText('Admin console')).toBeVisible();
+    await expect(
+      page.getByRole('main').getByText('Admin console', { exact: true })
+    ).toBeVisible();
     await expect(page.getByRole('tab', { name: /users/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /active vms/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /audit log/i })).toBeVisible();

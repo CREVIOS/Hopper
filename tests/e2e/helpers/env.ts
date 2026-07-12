@@ -8,8 +8,8 @@ export const e2eEnv = {
   adminPassword: process.env.E2E_ADMIN_PASSWORD,
   studentEmail: process.env.E2E_STUDENT_EMAIL,
   studentPassword: process.env.E2E_STUDENT_PASSWORD,
-  devAdminPassword: process.env.DEV_LOGIN_PASS,
-  devStudentPassword: process.env.DEV_LOGIN_PASS_ALT,
+  devAdminPassword: process.env.DEV_LOGIN_PASS ?? 'e2e',
+  devStudentPassword: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
   allowMutations: parseBoolean(process.env.E2E_ALLOW_MUTATIONS),
   crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER)
 };

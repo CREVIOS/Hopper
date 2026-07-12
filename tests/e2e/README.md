@@ -13,12 +13,16 @@ pnpm install
 ## Run
 
 ```bash
+docker compose -f ../../docker-compose.test.yml up -d --build
 pnpm test
 pnpm test -- --grep "Authentication"
 pnpm test:headed
 pnpm test:debug
 pnpm report
 ```
+
+The mock API is reset before every test, so pod, credit, metrics, and admin
+workflows are deterministic and never contact the deployed Hopper environment.
 
 ## Auth configuration
 

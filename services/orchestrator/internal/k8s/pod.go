@@ -32,19 +32,19 @@ func generateRandomPassword() (string, error) {
 }
 
 type PodManager struct {
-	client    *kubernetes.Clientset
-	metrics   *metricsv.Clientset
+	client    kubernetes.Interface
+	metrics   metricsv.Interface
 	namespace string
 }
 
-func NewPodManager(client *kubernetes.Clientset, namespace string) *PodManager {
+func NewPodManager(client kubernetes.Interface, namespace string) *PodManager {
 	return &PodManager{client: client, namespace: namespace}
 }
 
 // SetMetricsClient wires in the metrics-server client used by GetPodMetrics.
 // Optional — without it, GetPodMetrics still returns the configured limit
 // (so memory_limit_bytes is correct) but used CPU/memory stay at zero.
-func (pm *PodManager) SetMetricsClient(m *metricsv.Clientset) {
+func (pm *PodManager) SetMetricsClient(m metricsv.Interface) {
 	pm.metrics = m
 }
 

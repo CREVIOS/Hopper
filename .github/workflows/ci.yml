@@ -47,7 +47,7 @@ jobs:
             echo "Skipping eslint (add frontend/eslint.config.* to enable)"
           fi
           pnpm check
-          pnpm exec vitest run --passWithNoTests
+          pnpm exec vitest run
           pnpm build
 
   api-gateway:
@@ -135,8 +135,14 @@ jobs:
               -t hopper/orchestrator:ci-"${GITHUB_SHA}" "${ROOT}"
           fi
 
+      - name: Run orchestrator contract and fake-client integration tests
+        working-directory: tests/orchestrator
+        run: go test ./... -race -count=1
+
   integration:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/services/api-gateway
     steps:
       - uses: actions/checkout@v4
 
@@ -157,7 +163,12 @@ jobs:
       - name: Integration tests (Testcontainers)
         run: |
           set +e
-          poetry --directory services/api-gateway run pytest "${GITHUB_WORKSPACE}/tests/integration" -v --tb=short
+          poetry --directory services/api-gateway run pytest \
+            "${GITHUB_WORKSPACE}/tests/unit" \
+            "${GITHUB_WORKSPACE}/tests/integration" \
+            -v --tb=short --cov=app \
+            --cov-report=term-missing \
+            --cov-report="xml:${GITHUB_WORKSPACE}/integration-coverage.xml"
           code=$?
           set -e
           if [ "$code" -eq 5 ]; then
@@ -196,6 +207,9 @@ jobs:
         working-directory: tests/e2e
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Start deterministic E2E services
+        run: docker compose -f docker-compose.test.yml up -d --build mock-api mock-k8s mock-dcgm postgres nats
+
       - name: Run Playwright E2E tests
         working-directory: tests/e2e
         env:
@@ -210,6 +224,10 @@ jobs:
           path: tests/e2e/playwright-report
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Stop deterministic E2E services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
 
   docker:
     runs-on: ubuntu-latest

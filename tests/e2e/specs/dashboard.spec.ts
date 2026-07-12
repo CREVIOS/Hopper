@@ -17,7 +17,7 @@ test.describe('Student Dashboard', () => {
 
   test('renders the core dashboard stat cards including credit balance', async ({ page }) => {
     await expect(page.getByText('Credit balance')).toBeVisible();
-    await expect(page.getByText('Active VMs')).toBeVisible();
+    await expect(page.getByRole('link', { name: /^Active VMs\b/ })).toBeVisible();
     await expect(page.getByText('Avg CPU (24h)')).toBeVisible();
     await expect(page.getByText('Avg memory (24h)')).toBeVisible();
   });
