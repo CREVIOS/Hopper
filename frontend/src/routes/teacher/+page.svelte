@@ -137,7 +137,9 @@
               <Table.Cell class="w-28 text-right font-semibold tabular-nums">{(s.balance ?? 0).toFixed(2)}</Table.Cell>
               <Table.Cell class="w-32 text-right">
                 <Tooltip content="Allocate credits to this student">
+                  {#snippet children(props)}
                   <Button
+                    {...props}
                     variant="outline"
                     size="sm"
                     class="opacity-70 transition-opacity group-hover:opacity-100"
@@ -146,6 +148,7 @@
                   >
                     <Coins class="size-3.5" /> Allocate
                   </Button>
+                  {/snippet}
                 </Tooltip>
               </Table.Cell>
             </Table.Row>

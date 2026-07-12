@@ -11,7 +11,7 @@
     class: className
   }: {
     content: string;
-    children: Snippet;
+    children: Snippet<[Record<string, unknown>]>;
     side?: 'top' | 'right' | 'bottom' | 'left';
     delay?: number;
     class?: string;
@@ -21,7 +21,9 @@
 <Bits.Provider delayDuration={delay}>
   <Bits.Root>
     <Bits.Trigger>
-      {@render children()}
+      {#snippet child({ props })}
+        {@render children(props)}
+      {/snippet}
     </Bits.Trigger>
     <Bits.Portal>
       <Bits.Content

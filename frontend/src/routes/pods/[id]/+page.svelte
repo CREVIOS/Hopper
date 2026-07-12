@@ -299,13 +299,16 @@
               {/each}
             </div>
             <Tooltip content="New terminal">
+              {#snippet children(props)}
               <button
+                {...props}
                 class="px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 onclick={addTerminal}
                 aria-label="New terminal"
               >
                 <Plus class="size-4" />
               </button>
+              {/snippet}
             </Tooltip>
           </div>
           <div class="relative min-h-0 flex-1 bg-black">

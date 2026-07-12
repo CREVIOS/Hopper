@@ -42,22 +42,25 @@ export default defineConfig({
       : [])
   ],
   webServer: {
-    command: 'node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
+    command:
+      'node ./node_modules/@sveltejs/kit/svelte-kit.js sync && node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
     cwd: '../../frontend',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...process.env,
-      API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? 'https://hopper.farefin.com',
-      API_PROXY_STRIP_PREFIX: process.env.API_PROXY_STRIP_PREFIX ?? 'false',
-      API_PROXY_SECURE: process.env.API_PROXY_SECURE ?? 'true',
-      API_PROXY_ORIGIN: process.env.API_PROXY_ORIGIN ?? 'https://hopper.farefin.com',
-      API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? 'https://hopper.farefin.com/api',
+      API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+      API_PROXY_STRIP_PREFIX: process.env.API_PROXY_STRIP_PREFIX ?? 'true',
+      API_PROXY_SECURE: process.env.API_PROXY_SECURE ?? 'false',
+      API_PROXY_ORIGIN: process.env.API_PROXY_ORIGIN ?? '',
+      API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:8000',
       KEYCLOAK_EXTERNAL_URL:
-        process.env.KEYCLOAK_EXTERNAL_URL ?? 'https://hopper.farefin.com',
+        process.env.KEYCLOAK_EXTERNAL_URL ?? 'http://127.0.0.1:8000',
       KEYCLOAK_REALM: process.env.KEYCLOAK_REALM ?? 'hopper',
-      KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api'
+      KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api',
+      DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
+      DEV_LOGIN_PASS: process.env.DEV_LOGIN_PASS ?? 'e2e'
     }
   }
 });
