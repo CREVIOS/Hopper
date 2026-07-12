@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment: { POSTGRES_DB: hopper_test, POSTGRES_USER: hopper_test, POSTGRES_PASSWORD: test }
+  nats:
+    image: nats:2.10-alpine
+    command: ["--jetstream"]
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev"]
+    environment: { KEYCLOAK_ADMIN: admin, KEYCLOAK_ADMIN_PASSWORD: admin }
+  mock-api:
+    build: ./tests/mocks/api
+    ports: ["8000:8000"]
+  mock-k8s:
+    build: ./tests/mocks/k8s-api
+    ports: ["6443:6443"]
+  mock-dcgm:
+    build: ./tests/mocks/dcgm-exporter
+    ports: ["9400:9400"]

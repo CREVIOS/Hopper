@@ -1,4 +1,4 @@
-import { test as base } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { currentUser, loginAs, logout } from '../helpers/auth';
 
 type AppFixtures = {
@@ -9,6 +9,13 @@ type AppFixtures = {
 };
 
 export const test = base.extend<AppFixtures>({
+  page: async ({ page, request }, use) => {
+    const response = await request.post(
+      `${process.env.E2E_CONTROL_URL ?? 'http://127.0.0.1:8000'}/__test/reset`
+    );
+    expect(response.ok()).toBeTruthy();
+    await use(page);
+  },
   loginAsAdmin: async ({ page }, use) => {
     await use(() => loginAs(page, 'admin'));
   },
@@ -26,4 +33,4 @@ export const test = base.extend<AppFixtures>({
   }
 });
 
-export { expect } from '@playwright/test';
+export { expect };

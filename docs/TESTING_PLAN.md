@@ -106,24 +106,21 @@ func TestPodLifecycle(t *testing.T) {
 }
 ```
 
-### 1.3 GPU Tier Pricing (Python - pytest)
+### 1.3 VM Plan Pricing (Go + TypeScript)
 
 ```python
-class TestGPUPricing:
-    def test_premium_tier_rate(self):
-        """RTX PRO 6000 Blackwell MIG charges 15 credits/hr."""
+class TestVMPlanPricing:
+    def test_small_plan_rate(self):
+        """Small (1 CPU, 2 GB) charges 1 credit/hr."""
 
-    def test_standard_tier_rate(self):
-        """RTX 5090/4090 charges 10 credits/hr."""
+    def test_medium_plan_rate(self):
+        """Medium (2 CPU, 4 GB) charges 2 credits/hr."""
 
-    def test_budget_tier_rate(self):
-        """RTX 4070 charges 5 credits/hr."""
-
-    def test_scavenger_tier_free(self):
-        """Scavenger (preemptible) pods charge 0 credits."""
+    def test_large_plan_rate(self):
+        """Large (4 CPU, 8 GB) charges 4 credits/hr."""
 
     def test_partial_hour_billing(self):
-        """45-minute session on Standard tier charges correctly (per-minute)."""
+        """45-minute session on Medium charges correctly (per-minute)."""
 
     def test_billing_stops_on_termination(self):
         """No credits deducted after pod enters TERMINATED state."""
