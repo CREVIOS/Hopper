@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from app.services import port_forward as port_forward_module
 
@@ -56,7 +57,11 @@ async def test_start_creates_new_forward_when_ready(monkeypatch):
         def connect_ex(self, addr):
             return 0
 
-    monkeypatch.setattr("app.services.port_forward.socket.socket", lambda: FakeSocket())
+    monkeypatch.setattr(
+        port_forward_module,
+        "socket",
+        SimpleNamespace(socket=lambda: FakeSocket()),
+    )
 
     result = await port_forward_module.start("vm-1", "hopper", 8080)
 

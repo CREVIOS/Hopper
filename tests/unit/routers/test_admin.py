@@ -5,7 +5,6 @@ from app.models.session import PodSession
 from app.models.user import User
 from app.routers.admin import (
     _require_admin,
-    _require_admin_only,
     approve_teacher,
     change_user_role,
     get_stats,
@@ -27,29 +26,17 @@ def _payload(role: str) -> TokenPayload:
     )
 
 
-def test_require_admin_allows_admin_and_professor():
+def test_require_admin_allows_admin():
     assert _require_admin(_payload("admin")) is None
-    assert _require_admin(_payload("professor")) is None
 
 
-def test_require_admin_rejects_other_roles():
+@pytest.mark.parametrize("role", ["student", "professor"])
+def test_require_admin_rejects_non_admin_roles(role):
     with pytest.raises(HTTPException) as exc_info:
-        _require_admin(_payload("student"))
+        _require_admin(_payload(role))
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Admin access required"
-
-
-def test_require_admin_only_accepts_admin():
-    assert _require_admin_only(_payload("admin")) is None
-
-
-def test_require_admin_only_rejects_non_admin():
-    with pytest.raises(HTTPException) as exc_info:
-        _require_admin_only(_payload("professor"))
-
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Admin role required"
 
 
 class FakeScalarResult:

@@ -31,7 +31,7 @@ class _FakeAsyncClient:
 
 def test_in_kubernetes_pod_requires_env_and_service_account_token(monkeypatch):
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
-    monkeypatch.setattr(lookup_module._SA_TOKEN, "is_file", lambda: True)
+    monkeypatch.setattr(type(lookup_module._SA_TOKEN), "is_file", lambda self: True)
 
     assert lookup_module.in_kubernetes_pod() is True
 
@@ -46,8 +46,8 @@ async def test_get_pod_ip_returns_pod_ip_on_success(monkeypatch):
     monkeypatch.setattr("app.services.k8s_pod_lookup.in_kubernetes_pod", lambda: True)
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
     monkeypatch.setenv("KUBERNETES_SERVICE_PORT", "8443")
-    monkeypatch.setattr(lookup_module._SA_CA, "is_file", lambda: True)
-    monkeypatch.setattr(lookup_module._SA_TOKEN, "read_text", lambda: "token-value")
+    monkeypatch.setattr(type(lookup_module._SA_CA), "is_file", lambda self: True)
+    monkeypatch.setattr(type(lookup_module._SA_TOKEN), "read_text", lambda self: "token-value")
 
     fake_client = _FakeAsyncClient(_FakeResponse(json_body={"status": {"podIP": "10.42.0.15"}}))
     monkeypatch.setattr("app.services.k8s_pod_lookup.httpx.AsyncClient", lambda **kwargs: fake_client)
@@ -62,8 +62,8 @@ async def test_get_pod_ip_returns_pod_ip_on_success(monkeypatch):
 async def test_get_pod_ip_returns_none_on_http_error(monkeypatch):
     monkeypatch.setattr("app.services.k8s_pod_lookup.in_kubernetes_pod", lambda: True)
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
-    monkeypatch.setattr(lookup_module._SA_CA, "is_file", lambda: True)
-    monkeypatch.setattr(lookup_module._SA_TOKEN, "read_text", lambda: "token-value")
+    monkeypatch.setattr(type(lookup_module._SA_CA), "is_file", lambda self: True)
+    monkeypatch.setattr(type(lookup_module._SA_TOKEN), "read_text", lambda self: "token-value")
 
     class _RaisingClient:
         async def __aenter__(self):
