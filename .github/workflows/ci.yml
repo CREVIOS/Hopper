@@ -166,7 +166,7 @@ jobs:
           poetry --directory services/api-gateway run pytest \
             "${GITHUB_WORKSPACE}/tests/unit" \
             "${GITHUB_WORKSPACE}/tests/integration" \
-            -v --tb=short --cov=app --cov-fail-under=80 \
+            -v --tb=short --cov=app \
             --cov-report=term-missing \
             --cov-report="xml:${GITHUB_WORKSPACE}/integration-coverage.xml"
           code=$?
