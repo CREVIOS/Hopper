@@ -4,7 +4,7 @@
 
   let open = $state(false);
   let triggerEl: HTMLButtonElement | null = null;
-  let menuEl: HTMLDivElement | null = null;
+  let menuEl = $state<HTMLDivElement | null>(null);
 
   function closeMenu() {
     open = false;

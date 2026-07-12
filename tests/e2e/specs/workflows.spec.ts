@@ -56,18 +56,31 @@ test.describe('admin workflows', () => {
   test.beforeEach(async ({ loginAsAdmin }) => loginAsAdmin());
 
   test('shows management areas and the mock node', async ({ page }) => {
-    await page.goto('/admin');
+    const response = await page.goto('/admin');
+    expect(response?.ok()).toBeTruthy();
+    await expect(page.locator('[data-admin-hydrated="true"]')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Users' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Active VMs' })).toBeVisible();
-    await page.getByRole('tab', { name: 'Nodes' }).click();
-    await expect(page.getByText('mock-node')).toBeVisible();
+    const nodesTab = page.getByRole('tab', { name: 'Nodes' });
+    await nodesTab.click();
+    await expect(nodesTab).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      page.getByRole('tabpanel', { name: 'Nodes' }).getByText('mock-node', { exact: true })
+    ).toBeVisible();
   });
 
   test('lists the seeded student', async ({ page }) => {
-    await page.goto('/admin');
-    await page.getByRole('tab', { name: 'Users' }).click();
+    const response = await page.goto('/admin');
+    expect(response?.ok()).toBeTruthy();
+    await expect(page.locator('[data-admin-hydrated="true"]')).toBeVisible();
+    const usersTab = page.getByRole('tab', { name: 'Users' });
+    await usersTab.click();
+    await expect(usersTab).toHaveAttribute('aria-selected', 'true');
 
-    const studentRow = page.getByRole('row').filter({ hasText: 'student-1@test.edu' }).first();
+    const studentRow = page
+      .getByRole('tabpanel', { name: 'Users' })
+      .getByRole('row')
+      .filter({ hasText: 'student-1@test.edu' });
     await expect(studentRow).toBeVisible();
     await expect(studentRow.getByRole('cell', { name: 'student-1@test.edu', exact: true })).toBeVisible();
   });

@@ -4,11 +4,20 @@ const users = {
   student: { id: 'student-1', email: 'student-1@test.edu', name: 'E2E Student', role: 'student' },
   admin: { id: 'admin-1', email: 'admin@test.edu', name: 'E2E Admin', role: 'admin' }
 };
-let state;
-function reset() {
-  state = { balance: 100, pods: [], transactions: [], next: 1 };
-}
-reset();
+const states = new Map();
+const newState = () => ({ balance: 100, pods: [], transactions: [], next: 1 });
+const cookieValue = (req, name) => {
+  const entry = (req.headers.cookie || '')
+    .split(';')
+    .map(value => value.trim())
+    .find(value => value.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : 'default';
+};
+const stateFor = req => {
+  const id = cookieValue(req, 'e2e_test_id');
+  if (!states.has(id)) states.set(id, newState());
+  return states.get(id);
+};
 const json = (res, code, body, headers = {}) => {
   res.writeHead(code, { 'content-type': 'application/json', ...headers });
   res.end(JSON.stringify(body));
@@ -26,7 +35,12 @@ const session = req => {
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://mock');
-  if (req.method === 'POST' && url.pathname === '/__test/reset') { reset(); return json(res, 200, state); }
+  let state = stateFor(req);
+  if (req.method === 'POST' && url.pathname === '/__test/reset') {
+    state = newState();
+    states.set(cookieValue(req, 'e2e_test_id'), state);
+    return json(res, 200, state);
+  }
   if (req.method === 'POST' && url.pathname === '/__test/balance') { state.balance = Number((await body(req)).balance); return json(res, 200, { balance: state.balance }); }
   if (url.pathname.includes('/protocol/openid-connect/token')) {
     const raw = await new Promise(resolve => { let v=''; req.on('data', c => v+=c); req.on('end', () => resolve(v)); });

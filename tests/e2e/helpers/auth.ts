@@ -52,12 +52,12 @@ export async function logout(page: Page): Promise<void> {
   const triggerName = new RegExp(`^User menu for ${escapeRegExp(user.name || user.email)}$`, 'i');
 
   const trigger = page.getByRole('button', { name: triggerName });
-  const signOut = page.getByRole('menuitem', { name: /sign out|log out|logout/i }).first();
+  const signOut = page.getByRole('menuitem', { name: /sign out|log out|logout/i });
   await expect(trigger).toBeVisible();
   await expect(trigger).toBeEnabled();
   await expect(trigger).toHaveAttribute('data-hydrated', 'true');
   await trigger.click();
-  await expect(signOut).toBeVisible({ timeout: 10000 });
+  await expect(signOut).toBeVisible();
   await signOut.click();
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 
@@ -65,7 +65,12 @@ export async function logout(page: Page): Promise<void> {
   expect(cookies.map((cookie) => cookie.name)).not.toEqual(
     expect.arrayContaining(['session_token', 'refresh_token', 'id_token'])
   );
-  await expect
-    .poll(() => page.evaluate(() => [localStorage.length, sessionStorage.length]))
-    .toEqual([0, 0]);
+  const authStorageKeys = await page.evaluate(() => ({
+    local: Object.keys(localStorage).filter((key) => /auth|token|session/i.test(key)),
+    session: Object.keys(sessionStorage).filter((key) => /auth|token|session/i.test(key))
+  }));
+  expect(authStorageKeys).toEqual({ local: [], session: [] });
+
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 }
