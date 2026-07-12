@@ -13,11 +13,12 @@ from app.dependencies import get_current_user, get_db
 from app.models.audit import AuditLog
 from app.models.session import PodSession
 from app.models.user import User
+from app.schemas.course import CourseCreateRequest, CourseResponse, CourseUpdateRequest
 from app.schemas.image import ImageCreateRequest, ImageResponse, ImageUpdateRequest
 from app.schemas.plan import PlanCreateRequest, PlanResponse, PlanUpdateRequest
 from app.schemas.quota import QuotaResponse, QuotaSetRequest
 from app.schemas.user import ChangeRoleRequest, TokenPayload
-from app.services import image_service, plan_service, quota_service
+from app.services import course_service, image_service, plan_service, quota_service
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 from app.services.orchestrator_client import orchestrator_client
 
@@ -139,15 +140,102 @@ async def reject_teacher(
     return {"status": "ok", "user_id": user_id, "role": "student"}
 
 
-@router.get("/courses")
-async def list_courses(current_user: TokenPayload = Depends(get_current_user)):
-    """List courses and their resource quotas.
+# --- Course catalogue (admin CRUD) ------------------------------------------
+# Admins create courses and assign the owning professor; that professor then
+# manages the roster via /courses (see routers/courses.py).
 
-    Not yet implemented — no course model in the DB.
-    Returns an empty list for the POC.
-    """
+
+async def _course_responses(db: AsyncSession, courses: list) -> list[CourseResponse]:
+    """Decorate course rows with professor name + roster size (batched, no N+1)."""
+    counts = await course_service.enrolled_counts(db, [c.id for c in courses])
+    names = await course_service.professor_names(db, [c.professor_id for c in courses])
+    return [
+        CourseResponse(
+            id=c.id,
+            code=c.code,
+            name=c.name,
+            description=c.description,
+            professor_id=c.professor_id,
+            is_active=c.is_active,
+            professor_name=names.get(c.professor_id),
+            enrolled_count=counts.get(c.id, 0),
+        )
+        for c in courses
+    ]
+
+
+@router.get("/courses", response_model=list[CourseResponse])
+async def list_courses(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every course, including inactive ones (admin view)."""
     _require_admin(current_user)
-    return []
+    courses = await course_service.list_courses(db, include_inactive=True)
+    return await _course_responses(db, courses)
+
+
+@router.post("/courses", response_model=CourseResponse, status_code=201)
+async def admin_create_course(
+    body: CourseCreateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a course and assign its owning professor."""
+    _require_admin(current_user)
+    if await course_service.get_course_by_code(db, body.code) is not None:
+        raise HTTPException(status_code=409, detail=f"Course '{body.code}' already exists")
+
+    professor = await db.get(User, body.professor_id)
+    if professor is None:
+        raise HTTPException(status_code=404, detail="Professor not found")
+    if professor.role != "professor":
+        raise HTTPException(status_code=400, detail="Courses can only be owned by a professor")
+
+    course = await course_service.create_course(db, **body.model_dump())
+    return (await _course_responses(db, [course]))[0]
+
+
+@router.put("/courses/{course_id}", response_model=CourseResponse)
+async def admin_update_course(
+    course_id: str,
+    body: CourseUpdateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rename a course, reassign its professor, or (de)activate it. Code is immutable."""
+    _require_admin(current_user)
+    course = await course_service.get_course(db, course_id)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    fields = body.model_dump(exclude_unset=True)
+    if fields.get("professor_id") is not None:
+        professor = await db.get(User, fields["professor_id"])
+        if professor is None:
+            raise HTTPException(status_code=404, detail="Professor not found")
+        if professor.role != "professor":
+            raise HTTPException(
+                status_code=400, detail="Courses can only be owned by a professor"
+            )
+
+    updated = await course_service.update_course(db, course, fields)
+    return (await _course_responses(db, [updated]))[0]
+
+
+@router.delete("/courses/{course_id}")
+async def admin_delete_course(
+    course_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete (deactivate) a course. The roster is preserved."""
+    _require_admin(current_user)
+    course = await course_service.get_course(db, course_id)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    await course_service.deactivate_course(db, course)
+    return {"message": "deactivated", "id": course_id}
 
 
 # --- VM plan catalogue (admin CRUD) -----------------------------------------

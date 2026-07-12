@@ -13,6 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 API_GATEWAY_ROOT = REPO_ROOT / "services" / "api-gateway"
 APP_TABLES = (
     "audit_logs",
+    "course_enrollments",
+    "courses",
     "issue_reports",
     "metrics_samples",
     "ssh_keys",

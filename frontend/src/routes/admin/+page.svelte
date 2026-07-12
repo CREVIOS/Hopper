@@ -22,7 +22,10 @@
     Inbox,
     Plus,
     Pencil,
-    Gauge
+    Gauge,
+    BookOpen,
+    UserPlus,
+    Trash2
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import type { SvelteComponent } from 'svelte';
@@ -106,6 +109,17 @@
     is_active: boolean;
     is_default: boolean;
   };
+  type Course = {
+    id: string;
+    code: string;
+    name: string;
+    description: string;
+    professor_id: string;
+    professor_name: string | null;
+    enrolled_count: number;
+    is_active: boolean;
+  };
+  type RosterMember = { id: string; email: string; name: string; balance: number };
 
   let {
     data
@@ -135,6 +149,7 @@
       }[];
       plans: Plan[];
       images: Image[];
+      courses: Course[];
     };
   } = $props();
 
@@ -370,6 +385,175 @@
       Number(planForm.credits_per_hour) > 0 &&
       Number(planForm.workspace_gb) > 0
   );
+
+  // Course catalogue (admin CRUD). Admins create the course and assign the
+  // owning professor; that professor manages the roster from /teacher.
+  type CourseForm = { code: string; name: string; description: string; professor_id: string };
+  let courseDialogOpen = $state(false);
+  let courseEditing = $state<string | null>(null); // course id when editing, null = creating
+  let courseSaving = $state(false);
+  let courseBusy = $state<string | null>(null);
+  let courseForm = $state<CourseForm>({ code: '', name: '', description: '', professor_id: '' });
+
+  // Only professors can own a course — mirrors the backend's 400 guard.
+  const professors = $derived(data.users.filter((u) => u.role === 'professor'));
+
+  function openCreateCourse() {
+    courseEditing = null;
+    courseForm = { code: '', name: '', description: '', professor_id: professors[0]?.id ?? '' };
+    courseDialogOpen = true;
+  }
+  function openEditCourse(c: Course) {
+    courseEditing = c.id;
+    courseForm = {
+      code: c.code,
+      name: c.name,
+      description: c.description,
+      professor_id: c.professor_id
+    };
+    courseDialogOpen = true;
+  }
+  async function saveCourse() {
+    courseSaving = true;
+    const tid = toast.loading('Saving course…');
+    try {
+      const payload = {
+        name: courseForm.name,
+        description: courseForm.description,
+        professor_id: courseForm.professor_id
+      };
+      if (courseEditing) {
+        await api.put(`/admin/courses/${courseEditing}`, payload);
+      } else {
+        await api.post('/admin/courses', { code: courseForm.code, ...payload });
+      }
+      toast.success('Course saved', { id: tid });
+      courseDialogOpen = false;
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not save course', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      courseSaving = false;
+    }
+  }
+  async function deactivateCourse(c: Course) {
+    if (
+      !confirm(
+        `Deactivate course "${c.code}"?\nThe roster is preserved and existing allocations are untouched.`
+      )
+    )
+      return;
+    courseBusy = c.id;
+    const tid = toast.loading('Deactivating…');
+    try {
+      await api.delete(`/admin/courses/${c.id}`);
+      toast.success('Course deactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not deactivate', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      courseBusy = null;
+    }
+  }
+  async function reactivateCourse(c: Course) {
+    courseBusy = c.id;
+    const tid = toast.loading('Reactivating…');
+    try {
+      await api.put(`/admin/courses/${c.id}`, { is_active: true });
+      toast.success('Course reactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not reactivate', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      courseBusy = null;
+    }
+  }
+  const courseFormValid = $derived(
+    (courseEditing !== null || /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(courseForm.code)) &&
+      courseForm.name.trim().length > 0 &&
+      courseForm.professor_id.trim().length > 0
+  );
+
+  // Roster dialog — the enrolled students for one course. Loaded lazily on open
+  // (same shape as the per-user quota dialog).
+  let rosterOpen = $state(false);
+  let rosterCourse = $state<Course | null>(null);
+  let rosterLoading = $state(false);
+  let roster = $state<RosterMember[]>([]);
+  let rosterBusy = $state<string | null>(null);
+  let enrollId = $state('');
+
+  // Students not already on this roster — the only valid enrolment candidates.
+  const enrollCandidates = $derived(
+    data.users.filter((u) => u.role === 'student' && !roster.some((r) => r.id === u.id))
+  );
+
+  async function loadRoster(courseId: string) {
+    rosterLoading = true;
+    try {
+      roster = await api.get<RosterMember[]>(`/courses/${courseId}/roster`);
+    } catch (e) {
+      toast.error('Could not load roster', {
+        description: e instanceof ApiError ? e.message : ''
+      });
+      roster = [];
+    } finally {
+      rosterLoading = false;
+    }
+  }
+  async function openRoster(c: Course) {
+    rosterCourse = c;
+    rosterOpen = true;
+    roster = [];
+    enrollId = '';
+    await loadRoster(c.id);
+  }
+  async function enrollStudent() {
+    if (!rosterCourse || !enrollId) return;
+    rosterBusy = enrollId;
+    const tid = toast.loading('Enrolling…');
+    try {
+      await api.post(`/courses/${rosterCourse.id}/enrollments`, { user_id: enrollId });
+      toast.success('Student enrolled', { id: tid });
+      enrollId = '';
+      await loadRoster(rosterCourse.id);
+      await invalidateAll(); // refresh enrolled_count in the table behind the dialog
+    } catch (e) {
+      toast.error('Could not enroll', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      rosterBusy = null;
+    }
+  }
+  async function unenrollStudent(member: RosterMember) {
+    if (!rosterCourse) return;
+    rosterBusy = member.id;
+    const tid = toast.loading('Removing…');
+    try {
+      await api.delete(`/courses/${rosterCourse.id}/enrollments/${member.id}`);
+      toast.success(`${member.name} removed`, { id: tid });
+      await loadRoster(rosterCourse.id);
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not remove', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      rosterBusy = null;
+    }
+  }
 
   // Admin force-terminate any user's VM (FR-HC-20).
   let terminatingVm = $state<string | null>(null);
@@ -798,6 +982,7 @@
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="plans"><Coins /> Plans</Tabs.Trigger>
       <Tabs.Trigger value="images"><Database /> Images</Tabs.Trigger>
+      <Tabs.Trigger value="courses"><BookOpen /> Courses</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
       <Tabs.Trigger value="issues"><Inbox /> Issues</Tabs.Trigger>
     </Tabs.List>
@@ -1591,6 +1776,117 @@
       </Card>
     </Tabs.Content>
 
+    <Tabs.Content value="courses" class="mt-5">
+      <Card>
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5 pb-3 pt-5">
+          <SectionHeader
+            icon={BookOpen}
+            title="Courses"
+            description="Each course is owned by a professor, who manages its roster and can fund the whole class at once."
+          />
+          <Button size="sm" onclick={openCreateCourse} disabled={professors.length === 0}>
+            <Plus class="size-4" /> New course
+          </Button>
+        </div>
+        <CardContent class="pt-0">
+          {#if professors.length === 0}
+            <p class="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+              No professors yet — approve a teacher request before creating a course.
+            </p>
+          {/if}
+          <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head class="w-40">Course</Table.Head>
+                <Table.Head class="hidden w-48 md:table-cell">Professor</Table.Head>
+                <Table.Head class="w-28">Students</Table.Head>
+                <Table.Head class="w-24">Status</Table.Head>
+                <Table.Head class="w-36 text-right">Actions</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each data.courses as c (c.id)}
+                <Table.Row class="group {c.is_active ? '' : 'opacity-60'}">
+                  <Table.Cell>
+                    <div class="font-medium">{c.name}</div>
+                    <div class="font-mono text-xs text-muted-foreground">{c.code}</div>
+                  </Table.Cell>
+                  <Table.Cell class="hidden text-sm text-muted-foreground md:table-cell">
+                    {c.professor_name ?? '—'}
+                  </Table.Cell>
+                  <Table.Cell class="font-mono">{c.enrolled_count}</Table.Cell>
+                  <Table.Cell>
+                    {#if c.is_active}
+                      <Badge variant="outline" class="border-success/30 text-success">Active</Badge>
+                    {:else}
+                      <Badge variant="outline" class="text-muted-foreground">Inactive</Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <div class="flex items-center justify-end gap-1">
+                      <Tooltip content="Manage roster">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onclick={() => openRoster(c)}
+                          aria-label={`Manage roster for ${c.code}`}
+                        >
+                          <Users class="size-3.5" />
+                        </Button>
+                      </Tooltip>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onclick={() => openEditCourse(c)}
+                        aria-label={`Edit ${c.code}`}
+                      >
+                        <Pencil class="size-3.5" />
+                      </Button>
+                      {#if c.is_active}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onclick={() => deactivateCourse(c)}
+                          disabled={courseBusy === c.id}
+                          aria-label={`Deactivate ${c.code}`}
+                        >
+                          {#if courseBusy === c.id}
+                            <Spinner class="size-3.5" />
+                          {:else}
+                            <Power class="size-3.5 text-destructive" />
+                          {/if}
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onclick={() => reactivateCourse(c)}
+                          disabled={courseBusy === c.id}
+                          aria-label={`Reactivate ${c.code}`}
+                        >
+                          {#if courseBusy === c.id}
+                            <Spinner class="size-3.5" />
+                          {:else}
+                            <Check class="size-3.5 text-success" />
+                          {/if}
+                        </Button>
+                      {/if}
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                <Table.Row>
+                  <Table.Cell colspan={5} class="py-10 text-center text-sm text-muted-foreground">
+                    No courses yet. Create one to give a professor a roster to fund.
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        </CardContent>
+      </Card>
+    </Tabs.Content>
+
     <Tabs.Content value="audit" class="mt-5">
       <div class="animate-fade-up space-y-3">
         <SectionHeader title="Audit log" icon={ScrollText} />
@@ -1922,5 +2218,130 @@
         <Check class="size-4" /> Save quota
       {/if}
     </Button>
+  {/snippet}
+</Dialog>
+
+<Dialog
+  bind:open={courseDialogOpen}
+  title={courseEditing ? 'Edit course' : 'New course'}
+  description="Courses are owned by a professor, who manages the roster and funds the class."
+>
+  <div class="space-y-4">
+    {#if !courseEditing}
+      <div>
+        <Label for="course-code">Course code</Label>
+        <Input id="course-code" bind:value={courseForm.code} placeholder="CSE-4108" class="mt-1 font-mono" />
+        <p class="mt-1 text-xs text-muted-foreground">
+          Letters, digits and hyphens. Immutable once created.
+        </p>
+      </div>
+    {/if}
+    <div>
+      <Label for="course-name">Name</Label>
+      <Input id="course-name" bind:value={courseForm.name} placeholder="Operating Systems" class="mt-1" />
+    </div>
+    <div>
+      <Label for="course-desc">Description</Label>
+      <Input id="course-desc" bind:value={courseForm.description} placeholder="Optional" class="mt-1" />
+    </div>
+    <div>
+      <Label for="course-prof">Professor</Label>
+      <select
+        id="course-prof"
+        bind:value={courseForm.professor_id}
+        class="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+      >
+        {#each professors as p (p.id)}
+          <option value={p.id}>{p.name} · {p.email}</option>
+        {/each}
+      </select>
+      <p class="mt-1 text-xs text-muted-foreground">
+        Only this professor (and admins) can manage the roster.
+      </p>
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (courseDialogOpen = false)}>Cancel</Button>
+    <Button onclick={saveCourse} disabled={courseSaving || !courseFormValid}>
+      {#if courseSaving}
+        <Spinner class="size-4" /> Saving…
+      {:else}
+        <Check class="size-4" /> Save course
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<Dialog
+  bind:open={rosterOpen}
+  title={rosterCourse ? `Roster — ${rosterCourse.code}` : 'Roster'}
+  description="Students enrolled in this course. Removing a student does not claw back credits already allocated."
+>
+  {#if rosterLoading}
+    <div class="flex justify-center py-8"><Spinner class="size-5" /></div>
+  {:else}
+    <div class="space-y-4">
+      <div class="flex items-end gap-2">
+        <div class="flex-1">
+          <Label for="enroll-student">Add a student</Label>
+          <select
+            id="enroll-student"
+            bind:value={enrollId}
+            class="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Select a student…</option>
+            {#each enrollCandidates as s (s.id)}
+              <option value={s.id}>{s.name} · {s.email}</option>
+            {/each}
+          </select>
+        </div>
+        <Button onclick={enrollStudent} disabled={!enrollId || rosterBusy !== null}>
+          {#if rosterBusy === enrollId && enrollId}
+            <Spinner class="size-4" />
+          {:else}
+            <UserPlus class="size-4" />
+          {/if}
+          Enroll
+        </Button>
+      </div>
+
+      {#if roster.length}
+        <div class="max-h-72 overflow-y-auto rounded-md border border-border">
+          {#each roster as m (m.id)}
+            <div class="flex items-center justify-between gap-3 border-b border-border px-3 py-2 last:border-b-0">
+              <div class="min-w-0">
+                <div class="truncate text-sm font-medium">{m.name}</div>
+                <div class="truncate text-xs text-muted-foreground">{m.email}</div>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="font-mono text-xs text-muted-foreground">{m.balance} cr</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onclick={() => unenrollStudent(m)}
+                  disabled={rosterBusy === m.id}
+                  aria-label={`Remove ${m.name}`}
+                >
+                  {#if rosterBusy === m.id}
+                    <Spinner class="size-3.5" />
+                  {:else}
+                    <Trash2 class="size-3.5 text-destructive" />
+                  {/if}
+                </Button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="py-6 text-center text-sm text-muted-foreground">
+          No students enrolled yet.
+        </p>
+      {/if}
+    </div>
+  {/if}
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (rosterOpen = false)}>Done</Button>
   {/snippet}
 </Dialog>

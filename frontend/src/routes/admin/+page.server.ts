@@ -18,7 +18,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [statsRes, nodesRes, usersRes, activeVmsRes, auditRes, reqRes, issuesRes, plansRes, imagesRes] = await Promise.all([
+  const [statsRes, nodesRes, usersRes, activeVmsRes, auditRes, reqRes, issuesRes, plansRes, imagesRes, coursesRes] = await Promise.all([
     fetch(apiUrl('/admin/stats'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/nodes'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/users'), { headers }).catch(() => null),
@@ -27,7 +27,8 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     fetch(apiUrl('/admin/teacher-requests'), { headers }).catch(() => null),
     fetch(apiUrl('/issues/admin'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/plans'), { headers }).catch(() => null),
-    fetch(apiUrl('/admin/images'), { headers }).catch(() => null)
+    fetch(apiUrl('/admin/images'), { headers }).catch(() => null),
+    fetch(apiUrl('/admin/courses'), { headers }).catch(() => null)
   ]);
 
   const stats = statsRes?.ok ? await statsRes.json() : { total_users: 0, active_vms: 0, total_vms_created: 0 };
@@ -39,6 +40,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const issues = issuesRes?.ok ? await issuesRes.json() : [];
   const plans = plansRes?.ok ? await plansRes.json() : [];
   const images = imagesRes?.ok ? await imagesRes.json() : [];
+  const courses = coursesRes?.ok ? await coursesRes.json() : [];
 
   return {
     currentUserId: user?.id ?? '',
@@ -52,5 +54,6 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     issues,
     plans,
     images,
+    courses,
   };
 };

@@ -84,10 +84,11 @@ class FakeDB:
         self.committed = True
 
 
-async def test_list_courses_returns_empty_list_for_admin():
-    result = await list_courses(current_user=_payload("admin"))
+async def test_list_courses_rejects_non_admin():
+    with pytest.raises(HTTPException) as exc:
+        await list_courses(current_user=_payload("professor"), db=None)
 
-    assert result == []
+    assert exc.value.status_code == 403
 
 
 async def test_list_nodes_formats_orchestrator_nodes(monkeypatch):

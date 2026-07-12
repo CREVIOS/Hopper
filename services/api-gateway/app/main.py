@@ -10,7 +10,7 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin, files, issues, ssh_keys, usage
+from app.routers import auth, pods, credits, admin, courses, files, issues, ssh_keys, usage
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     app.include_router(pods.router, prefix="/pods", tags=["pods"])
     app.include_router(credits.router, prefix="/credits", tags=["credits"])
+    app.include_router(courses.router, prefix="/courses", tags=["courses"])
     app.include_router(admin.router, prefix="/admin", tags=["admin"])
     app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
     app.include_router(ssh_keys.router, prefix="/ssh-keys", tags=["ssh-keys"])

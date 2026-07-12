@@ -1,4 +1,6 @@
 from app.models.audit import AuditLog
+from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment
 from app.models.credit_ledger import Account, LedgerEntry, Transfer
 from app.models.email_code import EmailCode
 from app.models.issue_report import IssueReport
@@ -15,6 +17,8 @@ from app.models.vm_plan import VmPlanRow
 __all__ = [
     "Account",
     "AuditLog",
+    "Course",
+    "CourseEnrollment",
     "EmailCode",
     "IssueReport",
     "LedgerEntry",

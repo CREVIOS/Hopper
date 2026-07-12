@@ -205,6 +205,109 @@ async def allocate_between_users(
     return transfer
 
 
+async def _balance_of_account(db: AsyncSession, account: Account) -> float:
+    """Balance for an already-resolved account.
+
+    Unlike ``get_balance`` this never creates an account, so it is safe to call
+    while holding an advisory xact lock (account creation commits, and a commit
+    would release the lock).
+    """
+    row = await db.execute(
+        select(LedgerEntry.current_balance)
+        .where(LedgerEntry.account_id == account.id)
+        .order_by(LedgerEntry.created_at.desc())
+        .limit(1)
+    )
+    balance = row.scalar_one_or_none()
+    return float(balance) if balance is not None else 0.0
+
+
+async def allocate_to_many(
+    db: AsyncSession,
+    from_user_id: str,
+    to_user_ids: list[str],
+    amount: float,
+    description: str = "course_allocation",
+) -> Transfer:
+    """Allocate ``amount`` credits to each of ``to_user_ids`` from one source, atomically.
+
+    Modelled as a *single* balanced transfer: one consolidated debit on the
+    source for ``amount * len(to_user_ids)``, and one credit entry per recipient.
+
+    Two reasons it isn't a loop over ``allocate_between_users``:
+
+    - **Atomicity.** That helper commits per call, so a source that runs dry
+      part-way would leave some students funded and others not.
+    - **Unambiguous balances.** ``created_at`` defaults to ``now()``, which is
+      the *transaction* timestamp in Postgres — N debit rows on the source would
+      share one timestamp and the ``ORDER BY created_at DESC LIMIT 1`` balance
+      read could pick any of them. One debit row per transfer keeps it exact.
+
+    Raises ValueError on an empty roster, self-allocation, or insufficient funds.
+    """
+    recipients = list(dict.fromkeys(to_user_ids))  # de-dupe, preserve order
+    if not recipients:
+        raise ValueError("no recipients")
+    if from_user_id in recipients:
+        raise ValueError("cannot allocate to yourself")
+
+    total = amount * len(recipients)
+
+    # Resolve every account BEFORE taking the lock: get_or_create_account commits
+    # when it creates a row, and a commit would drop the advisory xact lock.
+    source = await get_or_create_account(db, from_user_id, persist=True)
+    dests = [await get_or_create_account(db, uid, persist=True) for uid in recipients]
+
+    await db.execute(text(f"SELECT pg_advisory_xact_lock(hashtext('{source.id}'))"))
+
+    source_balance = await _balance_of_account(db, source)
+    if source_balance < total:
+        raise ValueError(f"Insufficient credits: have {source_balance}, need {total}")
+
+    now = datetime.utcnow()
+    transfer_id = str(uuid.uuid4())
+    transfer = Transfer(
+        id=transfer_id,
+        type=description,
+        metadata_={
+            "from": from_user_id,
+            "to": recipients,
+            "per_student": amount,
+            "description": description,
+        },
+        event_at=now,
+    )
+    db.add(transfer)
+
+    # Single consolidated debit on the source.
+    db.add(LedgerEntry(
+        id=str(uuid.uuid4()),
+        transfer_id=transfer_id,
+        account_id=source.id,
+        direction=1,
+        amount=total,
+        previous_balance=source_balance,
+        current_balance=source_balance - total,
+        event_at=now,
+    ))
+    # One credit per recipient — each student sees exactly one entry in their history.
+    for dest in dests:
+        dest_balance = await _balance_of_account(db, dest)
+        db.add(LedgerEntry(
+            id=str(uuid.uuid4()),
+            transfer_id=transfer_id,
+            account_id=dest.id,
+            direction=-1,
+            amount=amount,
+            previous_balance=dest_balance,
+            current_balance=dest_balance + amount,
+            event_at=now,
+        ))
+
+    await db.commit()
+    return transfer
+
+
 async def deduct_credits(
     db: AsyncSession, user_id: str, amount: float,
     description: str = "pod_usage",
