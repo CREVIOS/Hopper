@@ -54,8 +54,17 @@ export async function logout(page: Page): Promise<void> {
   const trigger = page.getByRole('button', { name: triggerName });
   const signOut = page.getByRole('menuitem', { name: /sign out/i });
   await expect(trigger).toBeVisible();
+  await expect(trigger).toHaveAttribute('data-hydrated', 'true');
   await trigger.click();
   await expect(signOut).toBeVisible();
   await signOut.click();
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+
+  const cookies = await page.context().cookies();
+  expect(cookies.map((cookie) => cookie.name)).not.toEqual(
+    expect.arrayContaining(['session_token', 'refresh_token', 'id_token'])
+  );
+  await expect
+    .poll(() => page.evaluate(() => [localStorage.length, sessionStorage.length]))
+    .toEqual([0, 0]);
 }

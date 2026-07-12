@@ -1,10 +1,16 @@
 <script lang="ts">
   import { LogOut, KeyRound, ChevronDown, Shield } from 'lucide-svelte';
   import { goto } from '$app/navigation';
-  import { Avatar, DropdownMenu } from '$lib/ui';
+  import { onMount } from 'svelte';
+  import { Avatar, Button, DropdownMenu } from '$lib/ui';
   import type { User } from '$lib/types';
 
   let { user }: { user: User } = $props();
+  let hydrated = $state(false);
+
+  onMount(() => {
+    hydrated = true;
+  });
 
   const isAdmin = $derived(user.role === 'admin' || user.role === 'professor');
 
@@ -25,10 +31,12 @@
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <button
+      <Button
         {...props}
+        variant="ghost"
         aria-label={`User menu for ${user.name || user.email}`}
-        class="flex items-center gap-2 rounded-full px-1 py-1 pr-2 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-hydrated={hydrated}
+        class="h-auto rounded-full px-1 py-1 pr-2"
       >
         <Avatar name={user.name || user.email} />
         <span class="hidden text-left sm:block">
@@ -40,7 +48,7 @@
           >
         </span>
         <ChevronDown class="size-4 text-muted-foreground hidden sm:block" />
-      </button>
+      </Button>
     {/snippet}
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="end" class="min-w-56">
