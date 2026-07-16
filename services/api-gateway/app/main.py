@@ -11,7 +11,7 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin, files, issues, ssh_keys, usage
+from app.routers import auth, pods, credits, admin, files, issues, notifications, ssh_keys, usage
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
@@ -33,6 +33,9 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting metrics consumer...", flush=True)
     from app.services.metrics_consumer import start_metrics_consumer
     await start_metrics_consumer()
+    print(">>> Startup: starting notification consumer...", flush=True)
+    from app.services.notification_service import start_notification_consumer
+    await start_notification_consumer()
     from app.services.session_reaper import run_session_reaper
     reaper_stop = asyncio.Event()
     reaper_task = asyncio.create_task(run_session_reaper(reaper_stop), name="session-reaper")
@@ -92,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(ssh_keys.router, prefix="/ssh-keys", tags=["ssh-keys"])
     app.include_router(files.router, prefix="/files", tags=["files"])
     app.include_router(issues.router, prefix="/issues", tags=["issues"])
+    app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
     app.include_router(usage.router, prefix="/usage", tags=["usage"])
     # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
     # to the GET handler — load balancers and uptime probes that issue HEAD

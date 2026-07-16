@@ -86,6 +86,22 @@ func (m *Manager) Get(id string) (*Pod, bool) {
 	return p, ok
 }
 
+// GetByPodName finds a pod by its Kubernetes pod name. Needed because the
+// manager key differs by registration era: CreatePod keys fresh pods by the
+// orchestrator-internal name (vm-<unixnano>) while Reconcile keys recovered
+// pods by the API UUID label — the K8s watcher only has the K8s name + labels
+// and must be able to find either. O(n) scan; n is small (VMs on one node).
+func (m *Manager) GetByPodName(podName string) (*Pod, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, p := range m.pods {
+		if p.PodName == podName {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
 // SetState force-sets the state without transition validation (for reconciliation only).
 func (m *Manager) SetState(id string, state State) {
 	m.mu.Lock()

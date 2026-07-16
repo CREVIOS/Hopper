@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     email_code_length: int = 6
     email_code_max_attempts: int = 5
 
+    # Low-credit warnings, in minutes of runtime remaining at the user's
+    # current burn rate (sum of their running VMs' hourly rates). A warning
+    # notification fires once per threshold as the balance crosses it;
+    # thresholds re-arm automatically when credits are topped up.
+    credit_warning_minutes: list[int] = [60, 30, 10, 5]
+    # Grace period after credits hit zero before the VM is terminated. The
+    # first failed billing tick starts the countdown and warns the user;
+    # termination happens on the first tick after the deadline.
+    credit_grace_minutes: int = 5
+
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 
