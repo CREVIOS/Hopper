@@ -2,6 +2,7 @@
   import {
     LayoutDashboard,
     Server,
+    ListOrdered,
     CreditCard,
     KeyRound,
     Shield,
@@ -38,6 +39,7 @@
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/pods', label: 'Virtual Machines', icon: Server },
+    { href: '/pods/queue', label: 'Queue', icon: ListOrdered },
     { href: '/credits', label: 'Credits', icon: CreditCard },
     { href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound }
   ];
@@ -56,7 +58,16 @@
   );
 
   function isActive(href: string): boolean {
-    return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
+    const path = page.url.pathname;
+    // "Virtual Machines" (/pods) still lights up on VM detail pages (/pods/{id})
+    // but NOT on the /pods/queue sub-page, which has its own nav entry.
+    if (href === '/pods') {
+      return (
+        (path === '/pods' || path.startsWith('/pods/')) &&
+        !path.startsWith('/pods/queue')
+      );
+    }
+    return path === href || path.startsWith(href + '/');
   }
 </script>
 

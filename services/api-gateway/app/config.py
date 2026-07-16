@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     code_url_signing_secret: str = "change-me-in-production-32bytes-or-more"
     code_url_ttl_seconds: int = 600
 
+    # CPU/RAM admission queue. The gateway computes free cluster capacity
+    # itself; these reserves cover kube-system pods it cannot see. Kubernetes
+    # quantity strings, parsed in app.services.vm_capacity.
+    cluster_reserve_cpu: str = "1"
+    cluster_reserve_memory: str = "2Gi"
+    # Workspace-disk (PVC) pool. Node ephemeral-storage is not reported by
+    # ListNodes, so the total is configured; used = sum of live VMs' plan disk.
+    cluster_storage_total: str = "150Gi"
+    cluster_reserve_storage: str = "10Gi"
+    # How often the background admission loop re-checks the queue, in seconds.
+    scheduler_tick_seconds: int = 5
+
     # Brevo transactional-email HTTPS API (https://api.brevo.com, :443). When
     # set, verification/reset emails go out via Brevo instead of SMTP — pods on
     # the prod cluster can egress :443 but not SMTP ports, and a Brevo sender
