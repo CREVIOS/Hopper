@@ -77,7 +77,17 @@ spec:
             - name: HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: { name: hopper-keycloak-admin, key: client-secret }
-            # SMTP for signup verification + password-reset emails. Sourced from
+            # Brevo transactional-email HTTPS API key (preferred transport):
+            # pods can egress :443 (unlike SMTP ports), and a Brevo sender with
+            # domain authentication keeps verification codes out of spam, which
+            # the personal-Gmail SMTP path could not. Sourced from the
+            # hopper-brevo Secret — see 00-secrets.yaml. Optional: absent Secret
+            # falls back to the SMTP transport below.
+            - name: HOPPER_BREVO_API_KEY
+              valueFrom:
+                secretKeyRef: { name: hopper-brevo, key: api-key, optional: true }
+            # SMTP for signup verification + password-reset emails — fallback
+            # transport when Brevo is unset or a Brevo send fails. Sourced from
             # the hopper-smtp Secret; refs are optional so a missing/empty Secret
             # degrades to DEV mode (codes logged, not sent) instead of breaking
             # the pod. See 00-secrets.yaml.
