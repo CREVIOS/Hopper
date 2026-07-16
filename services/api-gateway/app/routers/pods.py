@@ -28,6 +28,7 @@ from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
+from app.services.notification_service import notify
 from app.services.orchestrator_client import orchestrator_client
 from app.services import port_forward
 
@@ -165,6 +166,20 @@ async def create_pod(
         session.state = "failed"
         await db.commit()
         await db.refresh(session)
+        # This path owns the failure notification — the pod.failed NATS
+        # consumer deliberately only repairs state (see notification_service).
+        try:
+            await notify(
+                db,
+                current_user.sub,
+                type_="error",
+                title="VM failed to create",
+                body="Something went wrong while provisioning your VM. "
+                     "Try again, or contact an admin if it keeps failing.",
+                data={"pod_id": session.id},
+            )
+        except Exception:
+            logger.exception("failed to record VM-creation-failure notification")
 
     return _session_to_response(session)
 
@@ -204,6 +219,15 @@ async def terminate_pod(
     if session.user_id != current_user.sub:
         raise HTTPException(status_code=403, detail="Not your VM")
 
+    # Commit the terminal state BEFORE calling the orchestrator: its
+    # pod.stopped event races this handler, and the notification consumer
+    # uses "row already terminated" to tell a user-initiated delete (no
+    # notification — the user is watching the response) from an unexpected
+    # one. The orchestrator call failing doesn't change the outcome — this
+    # endpoint has always marked the row terminated regardless.
+    session.state = "terminated"
+    await db.commit()
+
     # Call orchestrator to delete the K8s pod
     try:
         await orchestrator_client.terminate_pod(session.pod_name)
@@ -213,8 +237,6 @@ async def terminate_pod(
     # Stop the port-forward if running
     await port_forward.stop(session.pod_name)
 
-    session.state = "terminated"
-    await db.commit()
     return {"message": "terminated", "pod_id": pod_id}
 
 

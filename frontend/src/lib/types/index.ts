@@ -46,6 +46,19 @@ export interface User {
   pending_teacher?: boolean;
 }
 
+export type NotificationType = 'success' | 'warning' | 'error' | 'info';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  // Structured action payload, e.g. { pod_id, action: 'open_vscode' }.
+  data: Record<string, unknown> | null;
+  read: boolean;
+  created_at: string;
+}
+
 export interface Pod {
   id: string;
   user_id: string;
