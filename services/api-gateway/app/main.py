@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.core.database import engine
+from app.core.database import async_session, engine
 from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
@@ -36,11 +36,27 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting notification consumer...", flush=True)
     from app.services.notification_service import start_notification_consumer
     await start_notification_consumer()
+    print(">>> Startup: starting VM admission scheduler...", flush=True)
+    from app.services import vm_scheduler, vm_scheduler_consumer
+    await vm_scheduler_consumer.start(nats_client.get_nc(), async_session)
+    app.state.vm_scheduler_task = asyncio.create_task(
+        vm_scheduler.run_scheduler_forever(async_session, orchestrator_client)
+    )
     from app.services.session_reaper import run_session_reaper
     reaper_stop = asyncio.Event()
     reaper_task = asyncio.create_task(run_session_reaper(reaper_stop), name="session-reaper")
     print(">>> Startup: complete.", flush=True)
     yield
+    # Stop the admission loop before NATS drains so it makes no further NATS or
+    # DB calls, and so it releases leadership while the DB engine is still up.
+    scheduler_task = getattr(app.state, "vm_scheduler_task", None)
+    if scheduler_task is not None:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
+    await vm_scheduler_consumer.stop()
     reaper_stop.set()
     await reaper_task
     await nats_client.disconnect()

@@ -14,8 +14,11 @@
     Terminal,
     Code2,
     Filter,
-    AlertTriangle
+    AlertTriangle,
+    ListOrdered,
+    Gauge
   } from 'lucide-svelte';
+  import { onMount, untrack } from 'svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import {
@@ -23,9 +26,12 @@
     VM_TEMPLATE_INFO,
     type VmPlan,
     type VmTemplate,
-    type Pod
+    type Pod,
+    type Availability,
+    type CreatePodResult
   } from '$lib/types';
   import { api, ApiError } from '$lib/api/client';
+  import StatCard from '$lib/components/StatCard.svelte';
   import {
     Button,
     Card,
@@ -46,7 +52,64 @@
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
-  let { data }: { data: { pods: Pod[]; nodeIp: string; balance: number } } = $props();
+  let {
+    data
+  }: {
+    data: {
+      pods: Pod[];
+      nodeIp: string;
+      balance: number;
+      availability: Availability | null;
+    };
+  } = $props();
+
+  // Live cluster availability readout. Seeded once from SSR (untrack keeps this
+  // to the initial value), then polled so the free-capacity and queue-length
+  // figures stay fresh while the page is open.
+  let availability = $state<Availability | null>(untrack(() => data.availability));
+
+  async function refreshAvailability() {
+    try {
+      availability = await api.get<Availability>('/pods/availability');
+    } catch {
+      // Keep the last known value on a transient failure — the endpoint is
+      // best-effort and must never disrupt the page.
+    }
+  }
+
+  onMount(() => {
+    const timer = setInterval(refreshAvailability, 5000);
+    return () => clearInterval(timer);
+  });
+
+  // "3.2 / 8" style fraction; renders an em dash when a figure is unknown.
+  function fmtNum(n: number | null | undefined): string {
+    if (n === null || n === undefined) return '—';
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  }
+
+  // Tone the free-capacity cards by how much headroom is left.
+  function capacityTone(
+    free: number | null | undefined,
+    total: number | null | undefined
+  ): 'success' | 'warning' | 'destructive' | 'default' {
+    if (free === null || free === undefined || !total) return 'default';
+    const ratio = free / total;
+    if (ratio < 0.15) return 'destructive';
+    if (ratio < 0.35) return 'warning';
+    return 'success';
+  }
+
+  const cpuTone = $derived(
+    capacityTone(availability?.cpu.free_cores, availability?.cpu.total_cores)
+  );
+  const memTone = $derived(
+    capacityTone(availability?.memory.free_gib, availability?.memory.total_gib)
+  );
+  const storageTone = $derived(
+    capacityTone(availability?.storage.free_gib, availability?.storage.total_gib)
+  );
+  const queueLength = $derived(availability?.queue_length ?? 0);
 
   // Modest, vibrant per-image accent — visual only, used on the small icon tile.
   // Kept as static class strings so Tailwind's JIT can detect them.
@@ -140,15 +203,26 @@
     creating = true;
     const id = toast.loading(`Launching ${selectedPlan} VM…`);
     try {
-      await api.post('/pods/', {
+      const res = await api.post<CreatePodResult>('/pods/', {
         plan: selectedPlan,
         template: selectedTemplate
       });
+      // The cluster was full: the request was enqueued (HTTP 202) rather than
+      // started. The API client hides the status code, so we branch on the
+      // `queued` discriminator in the body.
+      if ('queued' in res && res.queued) {
+        toast.info(`Cluster is full — you're queued at position ${res.position}`, {
+          id,
+          description: 'Your VM starts automatically as capacity frees up.'
+        });
+        await goto('/pods/queue');
+        return;
+      }
       toast.success('VM launched', {
         id,
         description: 'It will be running in a few seconds.'
       });
-      await invalidateAll();
+      await Promise.all([invalidateAll(), refreshAvailability()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to launch VM';
       toast.error('Launch failed', { id, description: msg });
@@ -171,7 +245,7 @@
     try {
       await api.delete(`/pods/${pod.id}`);
       toast.success('VM terminated', { id });
-      await invalidateAll();
+      await Promise.all([invalidateAll(), refreshAvailability()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to terminate VM';
       toast.error('Termination failed', { id, description: msg });
@@ -204,6 +278,57 @@
     title="Virtual Machines"
     description="Launch new VMs and manage your existing instances."
   />
+
+  <!-- Cluster availability: free vs total capacity + queue depth. Polls every
+       5s and degrades to em dashes when the orchestrator can't be reached. -->
+  <section class="animate-fade-up" aria-label="Cluster availability">
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <h2 class="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+        <Gauge class="size-4" />
+        Cluster availability
+      </h2>
+      {#if availability?.nodes_ready != null}
+        <span class="text-xs text-muted-foreground">
+          {availability.nodes_ready} node{availability.nodes_ready === 1 ? '' : 's'} ready
+        </span>
+      {/if}
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard
+        compact
+        label="Free CPU"
+        value="{fmtNum(availability?.cpu.free_cores)} / {fmtNum(availability?.cpu.total_cores)}"
+        sub="cores available"
+        icon={Cpu}
+        tone={cpuTone}
+      />
+      <StatCard
+        compact
+        label="Free memory"
+        value="{fmtNum(availability?.memory.free_gib)} / {fmtNum(availability?.memory.total_gib)}"
+        sub="GiB available"
+        icon={MemoryStick}
+        tone={memTone}
+      />
+      <StatCard
+        compact
+        label="Free storage"
+        value="{fmtNum(availability?.storage.free_gib)} / {fmtNum(availability?.storage.total_gib)}"
+        sub="GiB workspace disk"
+        icon={HardDrive}
+        tone={storageTone}
+      />
+      <StatCard
+        compact
+        label="In queue"
+        value={queueLength}
+        sub={queueLength > 0 ? 'waiting for capacity' : 'no waiting requests'}
+        icon={ListOrdered}
+        tone={queueLength > 0 ? 'warning' : 'default'}
+        href="/pods/queue"
+      />
+    </div>
+  </section>
 
   <!-- Launch panel -->
   <Card class="animate-fade-up surface-glow overflow-hidden">

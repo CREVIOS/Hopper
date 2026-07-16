@@ -16,6 +16,22 @@ from app.schemas.pod import CreatePodRequest, VmPlan
 from app.schemas.user import TokenPayload
 
 
+@pytest.fixture(autouse=True)
+def _no_cluster_capacity(monkeypatch):
+    """Keep these router unit tests hermetic: create_pod's admission
+    fast-path starts with a real gRPC ListNodes attempt (vm_scheduler.
+    fetch_nodes). Force the fail-open path (None → synchronous create, the
+    behavior these tests were written against). This also stops the real
+    proto modules from being imported mid-suite, which would bypass the
+    sys.modules fakes test_orchestrator_client.py installs.
+    """
+
+    async def fake_fetch_nodes(orch):
+        return None
+
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+
+
 def _payload() -> TokenPayload:
     return TokenPayload(
         sub="user-1",
