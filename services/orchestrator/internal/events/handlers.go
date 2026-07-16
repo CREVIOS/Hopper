@@ -51,8 +51,9 @@ func SubscribeAll(
 		_ = podMgr.Transition(data.PodID, pod.StateTerminated)
 
 		_ = Publish(nc, SubjectPodStopped, map[string]string{
-			"pod_id": data.PodID,
-			"reason": "credits_exhausted",
+			"pod_id":  data.PodID,
+			"user_id": data.UserID,
+			"reason":  "credits_exhausted",
 		})
 	})
 	if err != nil {

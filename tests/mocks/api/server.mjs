@@ -120,5 +120,30 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/admin/audit-logs' || url.pathname === '/admin/teacher-requests') return json(res, 200, []);
   if (url.pathname === '/usage/summary/me') return json(res, 200, { pod_count:state.pods.length, avg_cpu_percent:42, avg_memory_bytes:1073741824 });
   if (url.pathname.startsWith('/usage/')) return json(res, 200, []);
+
+  // Notifications: the bell in the authenticated layout loads these on every
+  // page. Mirror the gateway shapes (list + SSE stream) so specs that aren't
+  // about notifications don't trip over 404s or a hanging EventSource.
+  if (url.pathname === '/notifications/stream') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+    res.write(`event: connected\ndata: {"user_id":"e2e"}\n\n`);
+    const keepalive = setInterval(() => res.write('event: ping\ndata: \n\n'), 15000);
+    req.on('close', () => clearInterval(keepalive));
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/notifications/') {
+    return json(res, 200, { notifications: state.notifications ?? [], unread_count: (state.notifications ?? []).filter(n => !n.read).length });
+  }
+  if (req.method === 'POST' && url.pathname === '/notifications/read-all') {
+    (state.notifications ?? []).forEach(n => { n.read = true; });
+    return json(res, 200, { message: 'ok' });
+  }
+  const notifReadMatch = url.pathname.match(/^\/notifications\/([^/]+)\/read$/);
+  if (req.method === 'POST' && notifReadMatch) {
+    const target = (state.notifications ?? []).find(n => n.id === notifReadMatch[1]);
+    if (!target) return json(res, 404, { detail: 'Notification not found' });
+    target.read = true;
+    return json(res, 200, { message: 'ok' });
+  }
   json(res, 404, { detail:`No mock route for ${req.method} ${url.pathname}` });
 }).listen(8000, '0.0.0.0');

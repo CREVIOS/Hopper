@@ -219,6 +219,8 @@ async def deduct_credits(
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
         existing_transfer = existing.scalar_one_or_none()
         if existing_transfer is not None:
+            # Note: no balance attributes on this path (see below) — replays
+            # must not re-trigger balance-crossing side effects.
             return existing_transfer
 
     balance = await get_balance(db, user_id)
@@ -268,4 +270,9 @@ async def deduct_credits(
     ))
 
     await db.commit()
+    # Expose the user-balance movement to callers (the billing consumer uses
+    # it to detect low-credit threshold crossings). Plain instance attributes,
+    # not mapped columns — deliberately absent on the idempotent-replay path.
+    transfer.previous_user_balance = balance
+    transfer.new_user_balance = balance - amount
     return transfer
