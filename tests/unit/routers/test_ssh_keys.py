@@ -9,7 +9,7 @@ from app.schemas.user import TokenPayload
 def test_compute_fingerprint_returns_sha256_fingerprint():
     public_key = (
         "ssh-rsa "
-        "AAAAB3NzaC1yc2EAAAADAQABAAABAQC7QJt2hM8l8sM4YqzQ2+6L4Y8r7v3rQxw9fV1a8K"
+        "AAAAB3NzaC1yc2EAAAADAQABAAABAQC7QJt2hM8l8sM4YqzQ2+6L4Y8r7v3rQxw9fV1a8A=="
     )
 
     fingerprint = _compute_fingerprint(public_key)
@@ -113,7 +113,7 @@ async def test_add_key_rejects_invalid_prefix():
 
 async def test_add_key_rejects_duplicate_fingerprint(monkeypatch):
     monkeypatch.setattr("app.routers.ssh_keys._compute_fingerprint", lambda key: "SHA256:abc")
-    db = FakeDB(scalar_results=[object()])
+    db = FakeDB(execute_results=[None], scalar_results=[object()])
 
     with pytest.raises(HTTPException) as exc_info:
         await add_key(
@@ -127,7 +127,7 @@ async def test_add_key_rejects_duplicate_fingerprint(monkeypatch):
 
 async def test_add_key_rejects_when_key_limit_reached(monkeypatch):
     monkeypatch.setattr("app.routers.ssh_keys._compute_fingerprint", lambda key: "SHA256:abc")
-    db = FakeDB(scalar_results=[None, 10])
+    db = FakeDB(execute_results=[None], scalar_results=[None, 10])
 
     with pytest.raises(HTTPException) as exc_info:
         await add_key(
@@ -142,7 +142,7 @@ async def test_add_key_rejects_when_key_limit_reached(monkeypatch):
 
 async def test_add_key_creates_key_record(monkeypatch):
     monkeypatch.setattr("app.routers.ssh_keys._compute_fingerprint", lambda key: "SHA256:abc")
-    db = FakeDB(scalar_results=[None, 0])
+    db = FakeDB(execute_results=[None], scalar_results=[None, 0])
 
     result = await add_key(
         AddKeyRequest(name="Laptop", public_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc"),

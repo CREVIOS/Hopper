@@ -1,0 +1,17 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: gpu-node-disk-pressure
+  namespace: hopper-system
+spec:
+  action: fault
+  mode: one
+  selector:
+    namespaces: [hopper]
+    labelSelectors:
+      app.kubernetes.io/component: student-pod
+  volumePath: /workspace
+  path: "**/*"
+  errno: 28
+  percent: 100
+  duration: 3m

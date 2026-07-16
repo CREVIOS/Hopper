@@ -420,6 +420,7 @@
           {#each Object.entries(VM_TEMPLATE_INFO) as [key, info] (key)}
             <button
               type="button"
+              aria-label={info.name}
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
                 selectedTemplate === key

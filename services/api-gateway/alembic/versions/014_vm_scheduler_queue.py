@@ -6,16 +6,16 @@ A leader-elected background loop drains the queue FCFS by ``seq`` as capacity
 frees. ``scheduler_leader`` is a single-row lease that keeps exactly one loop
 active across uvicorn workers (pooler-safe, no advisory-lock session affinity).
 
-Revision ID: 013
-Revises: 012
+Revision ID: 014
+Revises: 013
 Create Date: 2026-07-10 00:00:00.000000
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "013"
-down_revision = "012"
+revision = "014"
+down_revision = "013"
 branch_labels = None
 depends_on = None
 

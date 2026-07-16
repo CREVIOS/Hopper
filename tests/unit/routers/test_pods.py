@@ -71,6 +71,10 @@ class FakeDB:
         self.commits += 1
 
     async def refresh(self, obj):
+        if getattr(obj, "started_at", None) is None:
+            obj.started_at = datetime(2026, 1, 1, 12, 0, 0)
+        if getattr(obj, "updated_at", None) is None:
+            obj.updated_at = datetime(2026, 1, 1, 12, 0, 0)
         self.refreshed.append(obj)
 
 
@@ -160,7 +164,7 @@ async def test_create_pod_rejects_insufficient_credits(monkeypatch):
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
 
     with pytest.raises(HTTPException) as exc_info:
-        await create_pod(
+        await create_pod.__wrapped__(
             request=None,
             response=None,
             body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -180,7 +184,7 @@ async def test_create_pod_rejects_more_than_three_active_pods(monkeypatch):
     db = FakeDB(execute_results=[[object(), object(), object()]])
 
     with pytest.raises(HTTPException) as exc_info:
-        await create_pod(
+        await create_pod.__wrapped__(
             request=None,
             response=None,
             body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -211,7 +215,7 @@ async def test_create_pod_updates_session_from_orchestrator_response(monkeypatch
 
     db = FakeDB(execute_results=[[]])
 
-    result = await create_pod(
+    result = await create_pod.__wrapped__(
         request=None,
         response=None,
         body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -237,7 +241,7 @@ async def test_create_pod_marks_session_failed_when_orchestrator_raises(monkeypa
 
     db = FakeDB(execute_results=[[]])
 
-    result = await create_pod(
+    result = await create_pod.__wrapped__(
         request=None,
         response=None,
         body=CreatePodRequest(plan=VmPlan.SMALL),

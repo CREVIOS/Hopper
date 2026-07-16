@@ -1,0 +1,149 @@
+import http from 'node:http';
+
+const users = {
+  student: { id: 'student-1', email: 'student-1@test.edu', name: 'E2E Student', role: 'student' },
+  admin: { id: 'admin-1', email: 'admin@test.edu', name: 'E2E Admin', role: 'admin' }
+};
+const states = new Map();
+const newState = () => ({ balance: 100, pods: [], transactions: [], next: 1 });
+const cookieValue = (req, name) => {
+  const entry = (req.headers.cookie || '')
+    .split(';')
+    .map(value => value.trim())
+    .find(value => value.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : 'default';
+};
+const stateFor = req => {
+  const id = cookieValue(req, 'e2e_test_id');
+  if (!states.has(id)) states.set(id, newState());
+  return states.get(id);
+};
+const json = (res, code, body, headers = {}) => {
+  res.writeHead(code, { 'content-type': 'application/json', ...headers });
+  res.end(JSON.stringify(body));
+};
+const body = async req => {
+  let value = ''; for await (const chunk of req) value += chunk;
+  return value ? JSON.parse(value) : {};
+};
+const session = req => {
+  const cookie = req.headers.cookie || '';
+  if (cookie.includes('session_token=e2e-admin')) return 'admin';
+  if (cookie.includes('session_token=e2e-student')) return 'student';
+  return null;
+};
+
+http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://mock');
+  let state = stateFor(req);
+  if (req.method === 'POST' && url.pathname === '/__test/reset') {
+    state = newState();
+    states.set(cookieValue(req, 'e2e_test_id'), state);
+    return json(res, 200, state);
+  }
+  if (req.method === 'POST' && url.pathname === '/__test/balance') { state.balance = Number((await body(req)).balance); return json(res, 200, { balance: state.balance }); }
+  if (url.pathname.includes('/protocol/openid-connect/token')) {
+    const raw = await new Promise(resolve => { let v=''; req.on('data', c => v+=c); req.on('end', () => resolve(v)); });
+    const admin = String(raw).includes('username=admin');
+    return json(res, 200, { access_token: admin ? 'e2e-admin' : 'e2e-student', refresh_token: 'e2e-refresh', expires_in: 3600, refresh_expires_in: 3600 });
+  }
+  if (req.method === 'POST' && url.pathname === '/auth/login') {
+    const input = await body(req);
+    const matched = Object.values(users).find(user => user.email === input.email);
+    if (!matched || input.password !== 'e2e') {
+      return json(res, 401, { detail: 'Invalid email or password.' });
+    }
+    const token = matched.role === 'admin' ? 'e2e-admin' : 'e2e-student';
+    return json(res, 200, matched, {
+      'set-cookie': `session_token=${token}; HttpOnly; SameSite=Lax; Path=/`
+    });
+  }
+  if (url.pathname === '/auth/me') {
+    const authenticatedRole = session(req);
+    return authenticatedRole
+      ? json(res, 200, users[authenticatedRole])
+      : json(res, 401, { detail: 'Not authenticated' });
+  }
+  if (url.pathname === '/auth/logout') {
+    // Mirror the real gateway: a 302 whose Set-Cookie headers clear the
+    // session, pointing at Keycloak's end_session endpoint. The followed
+    // redirect then lands on a non-2xx (prod Keycloak 400s an unregistered
+    // post_logout_redirect_uri), so the UI must not depend on the final
+    // response being ok — only on the cookies being gone.
+    res.writeHead(302, {
+      location: '/api/realms/hopper/protocol/openid-connect/logout?post_logout_redirect_uri=%2Flogin&client_id=hopper-api',
+      'set-cookie': [
+        'session_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
+        'refresh_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
+        'id_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
+      ]
+    });
+    return res.end();
+  }
+  if (url.pathname.includes('/protocol/openid-connect/logout')) {
+    // Faithful to a misconfigured Keycloak: "Invalid redirect uri" error page.
+    res.writeHead(400, { 'content-type': 'text/html;charset=utf-8' });
+    return res.end('<html><body><p class="instruction">Invalid redirect uri</p></body></html>');
+  }
+  if (url.pathname === '/credits/balance') return json(res, 200, { account_id: 'acct-student-1', balance: state.balance });
+  if (url.pathname === '/credits/history') return json(res, 200, state.transactions);
+  if (req.method === 'POST' && url.pathname === '/credits/allocate') {
+    const input = await body(req); state.balance += Number(input.amount || 0);
+    state.transactions.push({ id: `tx-${Date.now()}`, amount: Number(input.amount), direction: 'credit', type: 'allocation', created_at: new Date().toISOString() });
+    return json(res, 201, { balance: state.balance });
+  }
+  if (url.pathname === '/pods/plans') return json(res, 200, { small:{credits_per_hour:1}, medium:{credits_per_hour:2}, large:{credits_per_hour:4} });
+  if (req.method === 'GET' && url.pathname === '/pods/') return json(res, 200, state.pods);
+  if (req.method === 'POST' && url.pathname === '/pods/') {
+    const input = await body(req); const rates = { small:1, medium:2, large:4 };
+    if (state.balance < rates[input.plan || 'small']) return json(res, 402, { detail: 'Insufficient credits' });
+    if (state.pods.filter(p => p.state === 'running').length >= 3) return json(res, 429, { detail: 'Maximum concurrent pods reached (3/3)' });
+    const id = `e2e-pod-${state.next++}`;
+    const pod = { id, user_id:'student-1', state:'running', plan:input.plan || 'small', image:'hopper/vm-ubuntu:22.04', namespace:'hopper', ssh_port:30022, vscode_port:30080, ssh_password:'e2e-secret', created_at:new Date().toISOString(), updated_at:new Date().toISOString() };
+    state.pods.push(pod); return json(res, 201, pod);
+  }
+  const podMatch = url.pathname.match(/^\/pods\/([^/]+)$/);
+  if (podMatch) {
+    const pod = state.pods.find(p => p.id === podMatch[1]);
+    if (!pod) return json(res, 404, { detail:'Not found' });
+    if (req.method === 'DELETE') { pod.state='terminated'; return json(res, 200, { message:'terminated', pod_id:pod.id }); }
+    return json(res, 200, pod);
+  }
+  if (/^\/pods\/[^/]+\/metrics$/.test(url.pathname)) {
+    res.writeHead(200, { 'content-type':'text/event-stream', 'cache-control':'no-cache' });
+    res.end(`event: metrics\ndata: ${JSON.stringify({pod_id:'e2e-pod-1',cpu_percent:42,memory_used_bytes:1073741824,memory_limit_bytes:2147483648})}\n\n`); return;
+  }
+  if (url.pathname === '/admin/stats') return json(res, 200, { total_users:2, active_vms:state.pods.filter(p=>p.state==='running').length, total_vms_created:state.pods.length });
+  if (url.pathname === '/admin/users') return json(res, 200, Object.values(users));
+  if (url.pathname === '/admin/active-vms') return json(res, 200, state.pods.filter(p=>p.state==='running'));
+  if (url.pathname === '/admin/nodes') return json(res, 200, [{name:'mock-node',cpu_capacity:'8',memory_capacity:'32Gi',cpu_allocatable:'7',memory_allocatable:'30Gi',pod_count:state.pods.length,ready:true}]);
+  if (url.pathname === '/admin/audit-logs' || url.pathname === '/admin/teacher-requests') return json(res, 200, []);
+  if (url.pathname === '/usage/summary/me') return json(res, 200, { pod_count:state.pods.length, avg_cpu_percent:42, avg_memory_bytes:1073741824 });
+  if (url.pathname.startsWith('/usage/')) return json(res, 200, []);
+
+  // Notifications: the bell in the authenticated layout loads these on every
+  // page. Mirror the gateway shapes (list + SSE stream) so specs that aren't
+  // about notifications don't trip over 404s or a hanging EventSource.
+  if (url.pathname === '/notifications/stream') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+    res.write(`event: connected\ndata: {"user_id":"e2e"}\n\n`);
+    const keepalive = setInterval(() => res.write('event: ping\ndata: \n\n'), 15000);
+    req.on('close', () => clearInterval(keepalive));
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/notifications/') {
+    return json(res, 200, { notifications: state.notifications ?? [], unread_count: (state.notifications ?? []).filter(n => !n.read).length });
+  }
+  if (req.method === 'POST' && url.pathname === '/notifications/read-all') {
+    (state.notifications ?? []).forEach(n => { n.read = true; });
+    return json(res, 200, { message: 'ok' });
+  }
+  const notifReadMatch = url.pathname.match(/^\/notifications\/([^/]+)\/read$/);
+  if (req.method === 'POST' && notifReadMatch) {
+    const target = (state.notifications ?? []).find(n => n.id === notifReadMatch[1]);
+    if (!target) return json(res, 404, { detail: 'Notification not found' });
+    target.read = true;
+    return json(res, 200, { message: 'ok' });
+  }
+  json(res, 404, { detail:`No mock route for ${req.method} ${url.pathname}` });
+}).listen(8000, '0.0.0.0');

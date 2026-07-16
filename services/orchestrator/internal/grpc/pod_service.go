@@ -113,9 +113,12 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
 		_ = events.Publish(s.server.nc, events.SubjectPodFailed, map[string]string{
-			"pod_id":  p.ID,
-			"user_id": req.UserId,
-			"error":   err.Error(),
+			"pod_id": p.ID,
+			// The gateway's DB row is keyed by the API UUID, not our
+			// internal name — include it so consumers can find the session.
+			"api_pod_id": apiPodID,
+			"user_id":    req.UserId,
+			"error":      err.Error(),
 		})
 		return nil, fmt.Errorf("creating k8s pod: %w", err)
 	}
@@ -128,6 +131,7 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 	// 5. Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]interface{}{
 		"pod_id":      p.ID,
+		"api_pod_id":  apiPodID,
 		"user_id":     req.UserId,
 		"ssh_port":    ports.SSHPort,
 		"vscode_port": ports.VSCodePort,
@@ -191,7 +195,8 @@ func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.Po
 
 	// Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodStopped, map[string]string{
-		"pod_id": req.Id,
+		"pod_id":  req.Id,
+		"user_id": p.UserID,
 	})
 
 	return &podv1.TerminateResponse{Success: true, Message: "pod terminated"}, nil

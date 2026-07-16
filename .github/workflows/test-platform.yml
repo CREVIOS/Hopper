@@ -1,0 +1,88 @@
+name: Test Platform
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+  release:
+    types: [prereleased]
+
+permissions:
+  contents: read
+
+jobs:
+  cross-browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm install --frozen-lockfile
+        working-directory: tests/e2e
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+        working-directory: tests/e2e
+      - run: docker compose -f docker-compose.test.yml up -d --build mock-api mock-k8s mock-dcgm postgres nats
+      - run: pnpm test
+        working-directory: tests/e2e
+        env: { CI: "true", E2E_CROSS_BROWSER: "true" }
+      - if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  load:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - run: docker compose -f docker-compose.test.yml up -d --build mock-api
+      - run: k6 run tests/load/scenarios.js
+        env: { BASE_URL: "http://127.0.0.1:8000", ACCESS_TOKEN: "e2e-student" }
+      - if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
+  chaos-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Chaos Mesh resources
+        run: |
+          for file in tests/chaos/*.yaml; do
+            docker run --rm -v "$PWD:/work" mikefarah/yq:4 e '.' "/work/$file" >/dev/null
+          done
+      - name: Run staging chaos and invariants
+        if: ${{ secrets.STAGING_KUBECONFIG != '' }}
+        env: { KUBECONFIG_DATA: "${{ secrets.STAGING_KUBECONFIG }}" }
+        run: |
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kube/config"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
+          kubectl apply -f tests/chaos/
+          tests/chaos/verify-invariants.sh
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate security scripts and manifests
+        run: |
+          bash -n tests/security/*.sh
+          python -m py_compile tests/security/*.py
+          for file in tests/security/manifests/*.yaml; do
+            docker run --rm -v "$PWD:/work" mikefarah/yq:4 e '.' "/work/$file" >/dev/null
+          done
+      - name: Run staging security checks
+        if: ${{ secrets.STAGING_KUBECONFIG != '' && secrets.STAGING_BASE_URL != '' }}
+        env:
+          BASE_URL: "${{ secrets.STAGING_BASE_URL }}"
+          STUDENT_TOKEN: "${{ secrets.STAGING_STUDENT_TOKEN }}"
+          ADMIN_TOKEN: "${{ secrets.STAGING_ADMIN_TOKEN }}"
+          OTHER_STUDENT_POD_ID: "${{ secrets.STAGING_OTHER_STUDENT_POD_ID }}"
+          KUBECONFIG_DATA: "${{ secrets.STAGING_KUBECONFIG }}"
+        run: |
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kube/config"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
+          tests/security/run-security.sh

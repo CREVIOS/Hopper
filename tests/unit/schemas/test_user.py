@@ -7,12 +7,12 @@ from app.schemas.user import ChangeRoleRequest, LoginRequest, SignupRequest, Tok
 def test_signup_request_accepts_valid_payload_and_default_role():
     request = SignupRequest(
         email="student@example.com",
-        password="password123",
+        password="password1234",
         name="Test Student",
     )
 
     assert request.email == "student@example.com"
-    assert request.password == "password123"
+    assert request.password == "password1234"
     assert request.name == "Test Student"
     assert request.role == "student"
 
@@ -20,7 +20,7 @@ def test_signup_request_accepts_valid_payload_and_default_role():
 def test_signup_request_accepts_teacher_role():
     request = SignupRequest(
         email="teacher@example.com",
-        password="password123",
+        password="password1234",
         name="Test Teacher",
         role="teacher",
     )
@@ -36,14 +36,14 @@ def test_signup_request_rejects_short_password():
             name="Test Student",
         )
 
-    assert "at least 8 characters" in str(exc_info.value)
+    assert "at least 12 characters" in str(exc_info.value)
 
 
 def test_signup_request_rejects_empty_name():
     with pytest.raises(ValidationError) as exc_info:
         SignupRequest(
             email="student@example.com",
-            password="password123",
+            password="password1234",
             name="",
         )
 

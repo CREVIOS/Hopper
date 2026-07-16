@@ -49,10 +49,18 @@ class Settings(BaseSettings):
     # How often the background admission loop re-checks the queue, in seconds.
     scheduler_tick_seconds: int = 5
 
-    # SMTP for email verification + password reset. If smtp_host is empty the
-    # email layer runs in DEV mode: codes are written to the app log instead of
-    # being sent (so the flow is testable without a mail server). In prod these
-    # come from the `hopper-smtp` Secret / env.
+    # Brevo transactional-email HTTPS API (https://api.brevo.com, :443). When
+    # set, verification/reset emails go out via Brevo instead of SMTP — pods on
+    # the prod cluster can egress :443 but not SMTP ports, and a Brevo sender
+    # with domain authentication (DKIM/SPF) keeps codes out of spam, which the
+    # personal-Gmail SMTP path could not. In prod this comes from the
+    # `hopper-brevo` Secret. SMTP below stays as the fallback transport.
+    brevo_api_key: str = ""
+
+    # SMTP for email verification + password reset. If neither Brevo nor SMTP
+    # is configured the email layer runs in DEV mode: codes are written to the
+    # app log instead of being sent (so the flow is testable without a mail
+    # server). In prod these come from the `hopper-smtp` Secret / env.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -63,6 +71,16 @@ class Settings(BaseSettings):
     email_code_ttl_seconds: int = 600  # 10 min
     email_code_length: int = 6
     email_code_max_attempts: int = 5
+
+    # Low-credit warnings, in minutes of runtime remaining at the user's
+    # current burn rate (sum of their running VMs' hourly rates). A warning
+    # notification fires once per threshold as the balance crosses it;
+    # thresholds re-arm automatically when credits are topped up.
+    credit_warning_minutes: list[int] = [60, 30, 10, 5]
+    # Grace period after credits hit zero before the VM is terminated. The
+    # first failed billing tick starts the countdown and warns the user;
+    # termination happens on the first tick after the deadline.
+    credit_grace_minutes: int = 5
 
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 

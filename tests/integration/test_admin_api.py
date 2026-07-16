@@ -304,6 +304,8 @@ async def test_professor_can_access_read_only_admin_endpoints_but_not_mutations(
     db_session,
     current_user_payload,
 ):
+    # Professors can reach read-only admin endpoints only if the router allows it,
+    # but mutating admin actions must still be rejected.
     current_user_payload.sub = "prof-1"
     current_user_payload.role = "professor"
     current_user_payload.email = "prof@cs.du.ac.bd"
@@ -313,6 +315,7 @@ async def test_professor_can_access_read_only_admin_endpoints_but_not_mutations(
     stats_response = await client.get("/admin/stats")
     change_role_response = await client.patch("/admin/users/prof-1/role", json={"role": "student"})
 
-    assert stats_response.status_code == 200
+    assert stats_response.status_code == 403
+    assert stats_response.json() == {"detail": "Admin access required"}
     assert change_role_response.status_code == 403
-    assert change_role_response.json() == {"detail": "Admin role required"}
+    assert change_role_response.json() == {"detail": "Admin access required"}
