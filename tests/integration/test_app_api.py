@@ -42,7 +42,14 @@ async def client():
 
 
 @pytest.mark.asyncio
-async def test_health_and_ready_endpoints_return_success_with_security_headers(client):
+async def test_health_and_ready_endpoints_report_liveness_and_deep_readiness(client):
+    """/healthz is a shallow liveness signal; /readyz deep-checks dependencies.
+
+    This client fixture runs the app without lifespan, so NATS is never
+    connected — the correct /readyz answer here is 503 "degraded" with
+    per-component detail, not a blanket 200 (that was the old, static
+    behavior this test used to encode).
+    """
     health_response = await client.get("/healthz")
     ready_response = await client.get("/readyz")
 
@@ -51,8 +58,12 @@ async def test_health_and_ready_endpoints_return_success_with_security_headers(c
     assert health_response.headers["x-content-type-options"] == "nosniff"
     assert health_response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
 
-    assert ready_response.status_code == 200
-    assert ready_response.json() == {"status": "ready"}
+    assert ready_response.status_code == 503
+    body = ready_response.json()
+    assert body["status"] == "degraded"
+    assert set(body["checks"]) == {"database", "nats", "orchestrator"}
+    assert body["checks"]["nats"] is False
+    assert ready_response.headers["x-content-type-options"] == "nosniff"
 
 
 @pytest.mark.asyncio

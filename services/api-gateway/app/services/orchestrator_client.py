@@ -75,6 +75,25 @@ class OrchestratorClient:
         if self._channel:
             await self._channel.close()
 
+    async def healthy(self, timeout: float = 3.0) -> bool:
+        """Check the orchestrator's gRPC health service (used by /readyz).
+
+        Calls grpc.health.v1.Health/Check with raw (de)serialization to avoid
+        a grpcio-health-checking dependency: an empty HealthCheckRequest
+        (service="") serializes to b"", and HealthCheckResponse{status:
+        SERVING} — field 1, varint 1 — is exactly b"\\x08\\x01". The
+        orchestrator flips this status off when it loses NATS or the K8s API,
+        so this reflects real dependency health, not just an open socket.
+        """
+        if self._channel is None:
+            return False
+        try:
+            check = self._channel.unary_unary("/grpc.health.v1.Health/Check")
+            resp = await check(b"", timeout=timeout)
+            return resp == b"\x08\x01"
+        except Exception:
+            return False
+
     async def create_pod(
         self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "", pod_id: str = ""
     ) -> PodStatusResponse:
