@@ -65,15 +65,25 @@ http.createServer(async (req, res) => {
       : json(res, 401, { detail: 'Not authenticated' });
   }
   if (url.pathname === '/auth/logout') {
-    res.writeHead(200, {
-      'content-type': 'application/json',
+    // Mirror the real gateway: a 302 whose Set-Cookie headers clear the
+    // session, pointing at Keycloak's end_session endpoint. The followed
+    // redirect then lands on a non-2xx (prod Keycloak 400s an unregistered
+    // post_logout_redirect_uri), so the UI must not depend on the final
+    // response being ok — only on the cookies being gone.
+    res.writeHead(302, {
+      location: '/api/realms/hopper/protocol/openid-connect/logout?post_logout_redirect_uri=%2Flogin&client_id=hopper-api',
       'set-cookie': [
         'session_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
         'refresh_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
         'id_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
       ]
     });
-    return res.end(JSON.stringify({ ok: true }));
+    return res.end();
+  }
+  if (url.pathname.includes('/protocol/openid-connect/logout')) {
+    // Faithful to a misconfigured Keycloak: "Invalid redirect uri" error page.
+    res.writeHead(400, { 'content-type': 'text/html;charset=utf-8' });
+    return res.end('<html><body><p class="instruction">Invalid redirect uri</p></body></html>');
   }
   if (url.pathname === '/credits/balance') return json(res, 200, { account_id: 'acct-student-1', balance: state.balance });
   if (url.pathname === '/credits/history') return json(res, 200, state.transactions);
