@@ -100,13 +100,45 @@ def create_app() -> FastAPI:
     # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
     # to the GET handler — load balancers and uptime probes that issue HEAD
     # would see 405 without this. Same body, same status, no payload.
+    #
+    # /healthz is deliberately shallow: it is the LIVENESS signal, and
+    # restarting this pod cannot fix a down database or NATS — deep checks
+    # here would just restart-loop the gateway during an infra outage.
     @app.api_route("/healthz", methods=["GET", "HEAD"])
     async def healthz():
         return {"status": "ok"}
 
+    # /readyz is the READINESS signal: deep checks on every dependency the
+    # gateway needs to serve real traffic. K8s pulls the pod out of the
+    # Service while any of these fail, without killing it.
     @app.api_route("/readyz", methods=["GET", "HEAD"])
     async def readyz():
-        return {"status": "ready"}
+        from sqlalchemy import text
+        from fastapi.responses import JSONResponse
+        from app.services.orchestrator_client import orchestrator_client as orch
+
+        checks: dict[str, bool] = {}
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            checks["database"] = True
+        except Exception:
+            logger.warning("readyz: database check failed", exc_info=True)
+            checks["database"] = False
+
+        checks["nats"] = nats_client.nc is not None and nats_client.nc.is_connected
+
+        # Reported but NOT gating: the orchestrator is only needed for VM
+        # create/terminate. Pulling the whole gateway out of the Service
+        # (auth, dashboard, credits, ...) whenever the orchestrator restarts
+        # would turn every orchestrator deploy into a full site outage.
+        checks["orchestrator"] = await orch.healthy()
+
+        ready = checks["database"] and checks["nats"]
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={"status": "ready" if ready else "degraded", "checks": checks},
+        )
 
     return app
 

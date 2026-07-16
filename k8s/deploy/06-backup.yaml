@@ -1,0 +1,89 @@
+##############################################################################
+# Nightly Postgres backups (HOP-21 §24.2)
+#
+# Teaching: the ledger is append-only and every credit/VM record lives in
+# Postgres — losing it means losing who owns what. A CronJob runs pg_dump
+# every night into a PersistentVolumeClaim on the node (k3s local-path),
+# keeping the last 14 days. Custom format (-Fc) dumps are compressed and
+# restore selectively with pg_restore.
+#
+# NOTE: publish.yml only does `kubectl set image` — apply this manifest
+# out-of-band once:  kubectl apply -f k8s/deploy/06-backup.yaml
+#
+# Run an on-demand backup (e.g. before a risky migration):
+#   kubectl create job --from=cronjob/pg-backup pg-backup-manual-$(date +%s) -n hopper
+#
+# Restore runbook (DESTRUCTIVE — restores over the live database):
+#   1. Scale writers down:  kubectl scale deploy/api-gateway --replicas=0 -n hopper
+#   2. Find the dump:       kubectl exec deploy/postgres -n hopper -- ls /backups
+#      (the backup PVC must be mounted, or copy the file from
+#       /var/lib/rancher/k3s/storage/<pvc-dir>/ on the node)
+#   3. Restore:  pg_restore --clean --if-exists -d "$DB_URL" /backups/<file>.dump
+#   4. Scale the gateway back up and smoke-test /readyz + login.
+##############################################################################
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-backups
+  namespace: hopper
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+  namespace: hopper
+spec:
+  # 21:00 UTC = 03:00 Dhaka — quietest hours for a university platform.
+  schedule: "0 21 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # Don't let a wedged dump hang forever (DB is a few MB; 30 min is generous).
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: pg-dump
+              # Client major version matches the server (timescale/timescaledb
+              # latest-pg16): pg_dump must be >= the server major to run.
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  # The secret stores the SQLAlchemy URL (postgresql+asyncpg://…);
+                  # strip the driver suffix for libpq.
+                  DB_URL=$(printf '%s' "$HOPPER_DATABASE_URL" | sed 's/+asyncpg//')
+                  STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+                  echo "dumping to hopper-${STAMP}.dump"
+                  pg_dump --format=custom --file="/backups/hopper-${STAMP}.dump" "$DB_URL"
+                  # Retention: keep 14 days of nightlies.
+                  find /backups -name 'hopper-*.dump' -mtime +14 -delete
+                  echo "done:"; ls -lh /backups | tail -5
+              env:
+                - name: HOPPER_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef: { name: hopper-db, key: database-url }
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "256Mi"
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: pg-backups

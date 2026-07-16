@@ -25,6 +25,7 @@ type Server struct {
 	ticker     *billing.Ticker
 	logger     *zap.Logger
 	nc         *nats.Conn
+	healthSrv  *health.Server
 }
 
 func New(cfg *config.Config, logger *zap.Logger, nc *nats.Conn, k8sPods *k8s.PodManager) (*Server, error) {
@@ -37,9 +38,14 @@ func New(cfg *config.Config, logger *zap.Logger, nc *nats.Conn, k8sPods *k8s.Pod
 		nc:         nc,
 	}
 
-	// Register health service
-	healthSrv := health.NewServer()
-	healthpb.RegisterHealthServer(srv.grpcServer, healthSrv)
+	// Register health service. The default ("") status is driven by the
+	// dependency checker in main (NATS + K8s API reachability) — the K8s
+	// readiness probe and the gateway's /readyz read it. The "liveness"
+	// service stays SERVING for as long as the process runs, so the K8s
+	// liveness probe never restart-loops the pod over a dependency outage.
+	srv.healthSrv = health.NewServer()
+	srv.healthSrv.SetServingStatus("liveness", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(srv.grpcServer, srv.healthSrv)
 
 	// Register PodOrchestrator service
 	podSvc := NewPodOrchestratorService(srv)
@@ -74,4 +80,13 @@ func (s *Server) PodManager() *pod.Manager {
 
 func (s *Server) Ticker() *billing.Ticker {
 	return s.ticker
+}
+
+// SetServing flips the gRPC health status for all services ("" = overall).
+func (s *Server) SetServing(ok bool) {
+	status := healthpb.HealthCheckResponse_SERVING
+	if !ok {
+		status = healthpb.HealthCheckResponse_NOT_SERVING
+	}
+	s.healthSrv.SetServingStatus("", status)
 }
