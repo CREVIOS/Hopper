@@ -37,10 +37,18 @@ class Settings(BaseSettings):
     code_url_signing_secret: str = "change-me-in-production-32bytes-or-more"
     code_url_ttl_seconds: int = 600
 
-    # SMTP for email verification + password reset. If smtp_host is empty the
-    # email layer runs in DEV mode: codes are written to the app log instead of
-    # being sent (so the flow is testable without a mail server). In prod these
-    # come from the `hopper-smtp` Secret / env.
+    # Brevo transactional-email HTTPS API (https://api.brevo.com, :443). When
+    # set, verification/reset emails go out via Brevo instead of SMTP — pods on
+    # the prod cluster can egress :443 but not SMTP ports, and a Brevo sender
+    # with domain authentication (DKIM/SPF) keeps codes out of spam, which the
+    # personal-Gmail SMTP path could not. In prod this comes from the
+    # `hopper-brevo` Secret. SMTP below stays as the fallback transport.
+    brevo_api_key: str = ""
+
+    # SMTP for email verification + password reset. If neither Brevo nor SMTP
+    # is configured the email layer runs in DEV mode: codes are written to the
+    # app log instead of being sent (so the flow is testable without a mail
+    # server). In prod these come from the `hopper-smtp` Secret / env.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
