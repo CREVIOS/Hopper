@@ -1,9 +1,11 @@
 import { test as base, expect } from '@playwright/test';
 import { currentUser, loginAs, logout } from '../helpers/auth';
+import { e2eEnv } from '../helpers/env';
 
 const controlURL =
   process.env.E2E_CONTROL_URL ??
-  `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`;
+  `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '8000'}`;
+const baseURL = process.env.BASE_URL ?? 'http://127.0.0.1:5173';
 
 type AppFixtures = {
   loginAsAdmin: () => Promise<void>;
@@ -15,19 +17,19 @@ type AppFixtures = {
 
 export const test = base.extend<AppFixtures>({
   page: async ({ page }, use, testInfo) => {
-    const testId = `${testInfo.workerIndex}-${testInfo.parallelIndex}-${testInfo.testId}-${testInfo.retry}`;
-    await page.context().addCookies([
-      {
-        name: 'e2e_test_id',
-        value: encodeURIComponent(testId),
-        url: 'http://127.0.0.1:5173',
-        sameSite: 'Lax'
-      }
-    ]);
-    const response = await page.context().request.post(
-      `${controlURL}/__test/reset`
-    );
-    expect(response.ok()).toBeTruthy();
+    if (e2eEnv.useMockServer) {
+      const testId = `${testInfo.workerIndex}-${testInfo.parallelIndex}-${testInfo.testId}-${testInfo.retry}`;
+      await page.context().addCookies([
+        {
+          name: 'e2e_test_id',
+          value: encodeURIComponent(testId),
+          url: baseURL,
+          sameSite: 'Lax'
+        }
+      ]);
+      const response = await page.context().request.post(`${controlURL}/__test/reset`);
+      expect(response.ok()).toBeTruthy();
+    }
     await use(page);
   },
   request: async ({ page }, use) => {

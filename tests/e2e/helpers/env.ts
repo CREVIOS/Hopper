@@ -6,7 +6,7 @@ export const e2eEnv = {
   baseURL: process.env.BASE_URL ?? 'http://127.0.0.1:5173',
   controlURL:
     process.env.E2E_CONTROL_URL ??
-    `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`,
+    `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '8000'}`,
   adminEmail: process.env.E2E_ADMIN_EMAIL ?? 'admin@test.edu',
   adminPassword: process.env.E2E_ADMIN_PASSWORD ?? 'e2e',
   professorEmail: process.env.E2E_PROFESSOR_EMAIL ?? 'professor@test.edu',
@@ -16,7 +16,8 @@ export const e2eEnv = {
   devAdminPassword: process.env.DEV_LOGIN_PASS ?? 'e2e',
   devStudentPassword: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
   allowMutations: parseBoolean(process.env.E2E_ALLOW_MUTATIONS),
-  crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER)
+  crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER),
+  useMockServer: !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true')
 };
 
 export type AuthRole = 'admin' | 'professor' | 'student';
