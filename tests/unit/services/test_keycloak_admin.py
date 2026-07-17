@@ -2,7 +2,12 @@ import types
 
 import pytest
 
-from app.services.keycloak_admin import KeycloakAdminClient, KeycloakAdminError
+from app.services.keycloak_admin import (
+    KeycloakAdminClient,
+    KeycloakAdminError,
+    KeycloakPasswordPolicyError,
+    KeycloakUserExistsError,
+)
 
 
 class FakeResponse:
@@ -273,3 +278,131 @@ async def test_request_retries_once_on_5xx(monkeypatch):
 
     assert resp.status_code == 200
     assert len(fake_client.request_calls) == 2
+
+
+# --------------------------------------------------------------------------
+# Password-policy error translation.
+#
+# The realm (scripts/keycloak-harden.sh) rejects a non-compliant password with
+# a 400 naming the failed rule. That used to surface as a plain
+# KeycloakAdminError, which routers/auth.py turned into a 502 "Could not create
+# the account. Try again later." — telling the user nothing. These pin the
+# typed translation so a policy rejection stays distinguishable from Keycloak
+# actually being down.
+#
+# Bodies are copied verbatim from a real Keycloak 25 running that policy. Note
+# the two shapes: password rejections arrive as `error`/`error_description`,
+# conflicts as `errorMessage`. Both must be read.
+# --------------------------------------------------------------------------
+
+KC_ALL_DIGITS = {
+    "error": "invalidPasswordMinUpperCaseCharsMessage",
+    "error_description": "Invalid password: must contain at least 1 upper case characters.",
+}
+KC_TOO_SHORT = {
+    "error": "invalidPasswordMinLengthMessage",
+    "error_description": "Invalid password: minimum length 12.",
+}
+KC_NO_DIGITS = {
+    "error": "invalidPasswordMinDigitsMessage",
+    "error_description": "Invalid password: must contain at least 1 numerical digits.",
+}
+KC_HISTORY = {
+    "error": "invalidPasswordHistoryMessage",
+    "error_description": "Invalid password: must not be equal to any of last 3 passwords.",
+}
+
+CREATE_KW = dict(email="jane@cs.du.ac.bd", name="Jane Doe", password="111111111111111")
+
+
+def _client_returning(monkeypatch, response):
+    """A KeycloakAdminClient whose every admin call returns `response`."""
+    client = KeycloakAdminClient()
+
+    async def fake_request(method, path, **kwargs):
+        return response
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    return client
+
+
+@pytest.mark.parametrize("body", [KC_ALL_DIGITS, KC_TOO_SHORT, KC_NO_DIGITS])
+async def test_create_user_types_password_policy_rejections(monkeypatch, body):
+    client = _client_returning(monkeypatch, FakeResponse(status_code=400, json_body=body))
+
+    with pytest.raises(KeycloakPasswordPolicyError) as exc_info:
+        await client.create_user(**CREATE_KW)
+
+    # Keycloak's own reason is preserved — it names the rule the user missed.
+    assert str(exc_info.value) == body["error_description"]
+
+
+async def test_create_user_reads_legacy_error_message_field(monkeypatch):
+    # Other Keycloak versions/paths report the reason as `errorMessage`; keep
+    # reading it so an upgrade can't silently regress this to a 502.
+    client = _client_returning(
+        monkeypatch,
+        FakeResponse(status_code=400, json_body={"errorMessage": "Invalid password: minimum length 12."}),
+    )
+
+    with pytest.raises(KeycloakPasswordPolicyError):
+        await client.create_user(**CREATE_KW)
+
+
+async def test_password_policy_error_is_still_a_keycloak_admin_error(monkeypatch):
+    # routers/admin.py catches the base class — the subclass must not escape it.
+    client = _client_returning(monkeypatch, FakeResponse(status_code=400, json_body=KC_ALL_DIGITS))
+
+    with pytest.raises(KeycloakAdminError):
+        await client.create_user(**CREATE_KW)
+
+
+async def test_create_user_types_the_duplicate_conflict(monkeypatch):
+    client = _client_returning(
+        monkeypatch,
+        FakeResponse(status_code=409, json_body={"errorMessage": "User exists with same email"}),
+    )
+
+    with pytest.raises(KeycloakUserExistsError) as exc_info:
+        await client.create_user(**CREATE_KW)
+
+    # The router used to match on `"exists" in str(e)`; keep that true.
+    assert "exists" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        # A 400 that isn't about the password must not be shown as one.
+        FakeResponse(status_code=400, json_body={"error": "invalid_request", "error_description": "Bad realm role"}),
+        FakeResponse(status_code=400, json_body={"errorMessage": "User profile validation failed"}),
+        # Non-JSON body (a proxy error page, say) must not crash the parser.
+        FakeResponse(status_code=400, json_body=None, text="<html>gateway error</html>"),
+        FakeResponse(status_code=500, json_body=None, text="upstream boom"),
+    ],
+)
+async def test_non_password_failures_stay_generic(monkeypatch, response):
+    client = _client_returning(monkeypatch, response)
+
+    with pytest.raises(KeycloakAdminError) as exc_info:
+        await client.create_user(**CREATE_KW)
+
+    assert not isinstance(exc_info.value, KeycloakPasswordPolicyError)
+
+
+async def test_reset_password_types_password_history_rejection(monkeypatch):
+    # passwordHistory(3) is the rule app.services.password_policy cannot
+    # mirror — only Keycloak knows previous hashes — so this typed error is
+    # the ONLY way the user learns they reused a password.
+    client = _client_returning(monkeypatch, FakeResponse(status_code=400, json_body=KC_HISTORY))
+
+    with pytest.raises(KeycloakPasswordPolicyError) as exc_info:
+        await client.reset_password("user-id", "Recycled9Password")
+
+    assert "last 3 passwords" in str(exc_info.value)
+
+
+async def test_reset_password_succeeds_silently(monkeypatch):
+    client = _client_returning(monkeypatch, FakeResponse(status_code=204))
+
+    await client.reset_password("user-id", "Fresh9Password")  # must not raise

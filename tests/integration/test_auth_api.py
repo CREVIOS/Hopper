@@ -134,8 +134,13 @@ async def test_auth_signup_creates_pending_teacher_user_and_audit_log(client, db
     response = await client.post(
         "/auth/signup",
         json={
+            # Must satisfy the realm password policy that app.services.
+            # password_policy mirrors — "strongpass123" has no uppercase, so
+            # signup now rejects it with a 400 before create_user is reached.
+            # Keycloak is mocked here, which is exactly why this test used to
+            # pass with a password the real realm would have refused.
             "email": "teacher@cs.du.ac.bd",
-            "password": "strongpass123",
+            "password": "StrongPass123",
             "name": "Teacher One",
             "role": "teacher",
         },
