@@ -13,8 +13,8 @@ export const e2eEnv = {
   professorPassword: process.env.E2E_PROFESSOR_PASSWORD ?? 'e2e',
   studentEmail: process.env.E2E_STUDENT_EMAIL ?? 'student-1@test.edu',
   studentPassword: process.env.E2E_STUDENT_PASSWORD ?? 'e2e',
-  devAdminPassword: process.env.DEV_LOGIN_PASS ?? 'e2e',
-  devStudentPassword: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
+  devAdminPassword: process.env.DEV_LOGIN_PASS ?? '',
+  devStudentPassword: process.env.DEV_LOGIN_PASS_ALT ?? '',
   allowMutations: parseBoolean(process.env.E2E_ALLOW_MUTATIONS),
   crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER),
   useMockServer: !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true')
@@ -25,8 +25,8 @@ export type AuthMode = 'password' | 'dev-login' | 'missing';
 
 export function resolveAuthMode(role: AuthRole): AuthMode {
   if (role === 'admin') {
-    if (e2eEnv.devAdminPassword) return 'dev-login';
     if (e2eEnv.adminEmail && e2eEnv.adminPassword) return 'password';
+    if (e2eEnv.devAdminPassword) return 'dev-login';
     return 'missing';
   }
 
@@ -35,8 +35,8 @@ export function resolveAuthMode(role: AuthRole): AuthMode {
     return 'missing';
   }
 
-  if (e2eEnv.devStudentPassword) return 'dev-login';
   if (e2eEnv.studentEmail && e2eEnv.studentPassword) return 'password';
+  if (e2eEnv.devStudentPassword) return 'dev-login';
   return 'missing';
 }
 

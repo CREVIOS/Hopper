@@ -56,8 +56,8 @@ if (manageFrontendServer) {
       KEYCLOAK_EXTERNAL_URL: process.env.KEYCLOAK_EXTERNAL_URL ?? controlURL,
       KEYCLOAK_REALM: process.env.KEYCLOAK_REALM ?? 'hopper',
       KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api',
-      DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
-      DEV_LOGIN_PASS: process.env.DEV_LOGIN_PASS ?? 'e2e'
+      DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? '',
+      DEV_LOGIN_PASS: process.env.DEV_LOGIN_PASS ?? ''
     }
   });
 }
