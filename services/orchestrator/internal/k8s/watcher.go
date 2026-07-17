@@ -33,7 +33,7 @@ type PodWatcher struct {
 	lastPhase map[string]corev1.PodPhase
 }
 
-func NewPodWatcher(client *kubernetes.Clientset, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
+func NewPodWatcher(client kubernetes.Interface, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
 	return &PodWatcher{
 		client:    client,
 		namespace: namespace,
@@ -64,6 +64,7 @@ func (w *PodWatcher) observePhase(p *corev1.Pod) {
 		"pod_id":   podID,
 		"user_id":  userID,
 		"pod_name": p.Name,
+		"node_name": p.Spec.NodeName,
 	})
 	w.logger.Info("pod started (container running)",
 		zap.String("pod_id", podID),
@@ -258,4 +259,3 @@ func k8sPhaseToState(phase corev1.PodPhase) pod.State {
 		return pod.StatePending
 	}
 }
-
