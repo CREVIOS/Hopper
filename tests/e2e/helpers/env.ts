@@ -4,7 +4,9 @@ function parseBoolean(value: string | undefined): boolean {
 
 export const e2eEnv = {
   baseURL: process.env.BASE_URL ?? 'http://127.0.0.1:5173',
-  controlURL: process.env.E2E_CONTROL_URL ?? 'http://127.0.0.1:8000',
+  controlURL:
+    process.env.E2E_CONTROL_URL ??
+    `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`,
   adminEmail: process.env.E2E_ADMIN_EMAIL ?? 'admin@test.edu',
   adminPassword: process.env.E2E_ADMIN_PASSWORD ?? 'e2e',
   professorEmail: process.env.E2E_PROFESSOR_EMAIL ?? 'professor@test.edu',

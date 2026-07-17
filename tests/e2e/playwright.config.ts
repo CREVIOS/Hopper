@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.BASE_URL || 'http://127.0.0.1:5173';
+const controlHost = process.env.E2E_CONTROL_HOST || '127.0.0.1';
+const controlPort = process.env.E2E_CONTROL_PORT || '18000';
+const controlURL = process.env.E2E_CONTROL_URL || `http://${controlHost}:${controlPort}`;
 const enableCrossBrowser = /^(1|true|yes)$/i.test(process.env.E2E_CROSS_BROWSER ?? '');
 
 export default defineConfig({
@@ -45,11 +48,16 @@ export default defineConfig({
     {
       command: 'node tests/mocks/api/server.mjs',
       cwd: '../..',
-      url: process.env.E2E_CONTROL_URL ?? 'http://127.0.0.1:8000/healthz',
+      url: `${controlURL}/healthz`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
       env: {
-        ...process.env
+        ...process.env,
+        HOST: controlHost,
+        PORT: controlPort,
+        E2E_CONTROL_HOST: controlHost,
+        E2E_CONTROL_PORT: controlPort,
+        E2E_CONTROL_URL: controlURL
       }
     },
     {
@@ -61,13 +69,15 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...process.env,
-        API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8000',
+        E2E_CONTROL_HOST: controlHost,
+        E2E_CONTROL_PORT: controlPort,
+        E2E_CONTROL_URL: controlURL,
+        API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? controlURL,
         API_PROXY_STRIP_PREFIX: process.env.API_PROXY_STRIP_PREFIX ?? 'true',
         API_PROXY_SECURE: process.env.API_PROXY_SECURE ?? 'false',
         API_PROXY_ORIGIN: process.env.API_PROXY_ORIGIN ?? '',
-        API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:8000',
-        KEYCLOAK_EXTERNAL_URL:
-          process.env.KEYCLOAK_EXTERNAL_URL ?? 'http://127.0.0.1:8000',
+        API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? controlURL,
+        KEYCLOAK_EXTERNAL_URL: process.env.KEYCLOAK_EXTERNAL_URL ?? controlURL,
         KEYCLOAK_REALM: process.env.KEYCLOAK_REALM ?? 'hopper',
         KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api',
         DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',

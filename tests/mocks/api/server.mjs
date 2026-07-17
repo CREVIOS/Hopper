@@ -779,4 +779,6 @@ server.on('upgrade', (req, socket) => {
   });
 });
 
-server.listen(8000, '0.0.0.0');
+const port = Number(process.env.PORT || process.env.E2E_CONTROL_PORT || 18000);
+const host = process.env.HOST || process.env.E2E_CONTROL_HOST || '127.0.0.1';
+server.listen(port, host);

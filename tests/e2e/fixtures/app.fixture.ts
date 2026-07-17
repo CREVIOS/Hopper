@@ -1,6 +1,10 @@
 import { test as base, expect } from '@playwright/test';
 import { currentUser, loginAs, logout } from '../helpers/auth';
 
+const controlURL =
+  process.env.E2E_CONTROL_URL ??
+  `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`;
+
 type AppFixtures = {
   loginAsAdmin: () => Promise<void>;
   loginAsProfessor: () => Promise<void>;
@@ -21,7 +25,7 @@ export const test = base.extend<AppFixtures>({
       }
     ]);
     const response = await page.context().request.post(
-      `${process.env.E2E_CONTROL_URL ?? 'http://127.0.0.1:8000'}/__test/reset`
+      `${controlURL}/__test/reset`
     );
     expect(response.ok()).toBeTruthy();
     await use(page);
