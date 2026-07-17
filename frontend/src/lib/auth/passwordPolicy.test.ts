@@ -1,8 +1,27 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { MIN_LENGTH, PASSWORD_RULES, explainFailures, isCompliant, unmetRules } from './passwordPolicy';
 
 const EMAIL = 'jane@cs.du.ac.bd';
 const GOOD = 'CorrectHorse9Battery';
+
+interface Vector {
+  name: string;
+  password: string;
+  username?: string;
+  unmet: string[];
+  message: string;
+}
+
+// Read rather than import: the fixture lives outside the Vite project root,
+// and it is shared with the gateway's suite (tests/unit/services/test_password_policy.py).
+const vectorsPath = fileURLToPath(
+  new URL('../../../../tests/fixtures/password_policy_vectors.json', import.meta.url)
+);
+const vectors: { defaultUsername: string; cases: Vector[] } = JSON.parse(
+  readFileSync(vectorsPath, 'utf-8')
+);
 
 describe('password policy mirror', () => {
   it('accepts a compliant password', () => {
@@ -88,20 +107,22 @@ describe('explainFailures', () => {
     expect(msg).toBe('Password must contain at least one uppercase letter.');
   });
 
-  it('matches the gateway wording so client and server agree', () => {
-    // app/services/password_policy.py renders the identical sentence.
-    expect(explainFailures(unmetRules('111111111111111', EMAIL))).toBe(
-      'Password must contain at least one lowercase letter and at least one uppercase letter.'
-    );
-    expect(explainFailures(unmetRules('Ab1', EMAIL))).toBe(
-      'Password must contain at least 12 characters.'
-    );
-    expect(explainFailures(unmetRules(EMAIL, EMAIL))).toContain(
-      'Password must not be the same as your email address.'
-    );
-  });
-
   it('is empty for a compliant password', () => {
     expect(explainFailures(unmetRules(GOOD, EMAIL))).toBe('');
+  });
+});
+
+describe('shared vectors with the gateway', () => {
+  // The contract with services/api-gateway/app/services/password_policy.py.
+  // Both mirrors assert against the same fixture, so a predicate or wording
+  // change on either side fails the other's suite instead of quietly letting
+  // this checklist and the server's error message disagree.
+  it.each(vectors.cases)('$name', (vector) => {
+    const username = vector.username ?? vectors.defaultUsername;
+
+    const unmet = unmetRules(vector.password, username);
+
+    expect(unmet.map((r) => r.id)).toEqual(vector.unmet);
+    expect(explainFailures(unmet)).toBe(vector.message);
   });
 });

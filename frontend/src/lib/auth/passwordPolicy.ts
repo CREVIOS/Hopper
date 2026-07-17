@@ -43,21 +43,21 @@ export const PASSWORD_RULES: readonly PasswordRule[] = [
   // and the realm both accept it, leaving the checklist unsatisfiable.
   {
     id: 'digits',
-    text: 'At least one digit (0-9)',
+    text: 'At least one number',
     clause: 'at least one digit',
     test: (pw) => /\p{Nd}/u.test(pw)
   },
   {
     id: 'lowercase',
-    text: 'At least one lowercase letter (a-z)',
+    text: 'At least one lowercase letter',
     clause: 'at least one lowercase letter',
-    test: (pw) => /\p{Ll}/u.test(pw)
+    test: (pw) => /\p{Lowercase}/u.test(pw)
   },
   {
     id: 'uppercase',
-    text: 'At least one uppercase letter (A-Z)',
+    text: 'At least one uppercase letter',
     clause: 'at least one uppercase letter',
-    test: (pw) => /\p{Lu}/u.test(pw)
+    test: (pw) => /\p{Uppercase}/u.test(pw)
   },
   {
     id: 'not_username',

@@ -29,7 +29,7 @@ request schemas is an input-size guard, not a policy rule.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 MIN_LENGTH = 12
@@ -60,7 +60,7 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         id="digits",
-        text="At least one digit (0-9)",
+        text="At least one number",
         # isdecimal(), not isdigit(): Keycloak counts digits with Java's
         # Character.isDigit, which is category Nd. isdigit() also accepts No
         # characters like "²", so it would pass a password the realm rejects.
@@ -69,13 +69,13 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         id="lowercase",
-        text="At least one lowercase letter (a-z)",
+        text="At least one lowercase letter",
         check=lambda pw, _u: any(c.islower() for c in pw),
         clause="at least one lowercase letter",
     ),
     Rule(
         id="uppercase",
-        text="At least one uppercase letter (A-Z)",
+        text="At least one uppercase letter",
         check=lambda pw, _u: any(c.isupper() for c in pw),
         clause="at least one uppercase letter",
     ),
@@ -99,17 +99,12 @@ RULES: tuple[Rule, ...] = (
 )
 
 
-def describe_requirements() -> tuple[Rule, ...]:
-    """Every requirement, for rendering the UI checklist."""
-    return RULES
-
-
 def unmet_requirements(password: str, *, username: str = "") -> list[Rule]:
     """Return the rules `password` does not satisfy, in declaration order."""
     return [r for r in RULES if not r.check(password, username)]
 
 
-def explain_failures(rules: list[Rule]) -> str:
+def explain_failures(rules: Sequence[Rule]) -> str:
     """Render unmet rules as user-facing copy naming every failure."""
     sentences: list[str] = []
     clauses = [r.clause for r in rules if r.clause]

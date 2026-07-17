@@ -12,6 +12,9 @@ scripts/keycloak-harden.sh. If that policy changes, these tests are the
 tripwire for app.services.password_policy having drifted from it.
 """
 
+import re
+from pathlib import Path
+
 import httpx
 import pytest
 from testcontainers.core.container import DockerContainer
@@ -24,14 +27,28 @@ from app.services.keycloak_admin import (
 )
 from app.services.password_policy import unmet_requirements
 
-# Verbatim from scripts/keycloak-harden.sh — the whole point is to test the
-# real thing, so this string must not be "simplified" for the test.
-REALM_PASSWORD_POLICY = (
-    "length(12) and digits(1) and lowerCase(1) and upperCase(1) "
-    "and notUsername(undefined) and passwordHistory(3)"
-)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+HARDEN_SCRIPT = REPO_ROOT / "scripts" / "keycloak-harden.sh"
 REALM = "hopper-policy-test"
 STRONG = "CorrectHorse9Battery"
+
+
+def _deployed_password_policy() -> str:
+    """The policy we actually deploy, read out of scripts/keycloak-harden.sh.
+
+    Copying the string into this file would defeat the purpose: the copy would
+    keep passing after someone edits the script, and a mirror that has silently
+    drifted from the deployed realm is exactly what produced the original bug.
+    Reading it makes the script the single source of truth — add a rule there
+    and test_mirror_and_realm_agree_on_a_sample_of_passwords fails until
+    app.services.password_policy learns it too.
+    """
+    match = re.search(r"-s 'passwordPolicy=([^']+)'", HARDEN_SCRIPT.read_text())
+    assert match, f"no passwordPolicy found in {HARDEN_SCRIPT} — did the flag change?"
+    return match.group(1)
+
+
+REALM_PASSWORD_POLICY = _deployed_password_policy()
 
 
 def _docker_available() -> bool:

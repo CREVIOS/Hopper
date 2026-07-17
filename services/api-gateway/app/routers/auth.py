@@ -383,9 +383,6 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
             await db.commit()
             raise HTTPException(status_code=404, detail="Account not found.")
         await keycloak_admin.reset_password(ku["id"], body.password)
-        # A reset also confirms control of the mailbox — mark verified.
-        if not ku.get("emailVerified", False):
-            await keycloak_admin.set_email_verified(ku["id"], True)
     except KeycloakPasswordPolicyError as e:
         # Reachable on a rule our mirror can't check — passwordHistory(3) —
         # so this is the normal path for "you already used that password",
@@ -398,6 +395,21 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
     except KeycloakAdminError as e:
         logger.error("reset-password failed for %s: %s", email, e)
         raise HTTPException(status_code=502, detail="Could not reset the password. Try again later.")
+
+    # A reset also confirms control of the mailbox — mark verified. Kept OUT of
+    # the try above on purpose: the password is already changed by this point,
+    # so failing the whole request here would tell the user the reset failed
+    # when it actually succeeded, and send them back to re-enter a password
+    # that is now their real one. Log it and report the truth instead.
+    if not ku.get("emailVerified", False):
+        try:
+            await keycloak_admin.set_email_verified(ku["id"], True)
+        except KeycloakAdminError as e:
+            logger.error(
+                "reset-password: password reset for %s but marking the email "
+                "verified failed; sign-in will require verification: %s",
+                email, e,
+            )
     await db.commit()
     return JSONResponse({"status": "reset", "email": email})
 

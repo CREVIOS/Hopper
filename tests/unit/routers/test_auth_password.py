@@ -38,6 +38,22 @@ class StubDb:
         raise AssertionError("no query should run on a rejected password")
 
 
+class RecordingDb:
+    """Records commits, for the paths that must NOT commit."""
+
+    def __init__(self):
+        self.commits = 0
+
+    def add(self, _obj):
+        pass
+
+    async def commit(self):
+        self.commits += 1
+
+    async def execute(self, *_a, **_kw):
+        raise AssertionError("unexpected query")
+
+
 @pytest.fixture(autouse=True)
 def fresh_rate_limit_bucket():
     """Signup is capped at 5/minute per IP and slowapi's buckets are in-memory
@@ -156,3 +172,67 @@ class TestResetPasswordWeakPassword:
                 json={"email": EMAIL, "code": "123456", "password": WEAK},
             )
         assert r.status_code == 400
+
+
+class TestResetPasswordRealmRejection:
+    """The passwordHistory(3) path: the mirror passes, verify_code consumes the
+    code in-session, and only THEN does Keycloak reject.
+
+    The handler must not commit there — verification.verify_code just sets
+    `consumed_at` on the ORM row and leaves committing to the caller, so
+    rolling back keeps the emailed code usable for another try. That invariant
+    is invisible at the call site and easy to break by adding a db.commit();
+    these pin it.
+    """
+
+    @pytest.fixture
+    def recording_db(self):
+        return RecordingDb()
+
+    @pytest.fixture
+    def client(self, recording_db, monkeypatch):
+        limiter.reset()
+
+        # The code is valid: verify_code marks it consumed and returns True.
+        async def code_accepted(_db, _email, _purpose, _code):
+            return True
+
+        async def realm_rejects(_user_id, _password):
+            raise KeycloakPasswordPolicyError(
+                "Invalid password: must not be equal to any of last 3 passwords."
+            )
+
+        async def user_exists(_email):
+            return {"id": "user-1", "emailVerified": True}
+
+        monkeypatch.setattr(auth.verification, "verify_code", code_accepted)
+        monkeypatch.setattr(auth.keycloak_admin, "get_user_by_email", user_exists)
+        monkeypatch.setattr(auth.keycloak_admin, "reset_password", realm_rejects)
+
+        app = FastAPI()
+        app.state.limiter = limiter
+        app.include_router(auth.router, prefix="/auth")
+        app.dependency_overrides[get_db] = lambda: recording_db
+        return httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        )
+
+    async def test_reused_password_is_400_with_keycloaks_reason(self, client):
+        async with client as c:
+            r = await c.post(
+                "/auth/reset-password",
+                json={"email": EMAIL, "code": "123456", "password": STRONG},
+            )
+        assert r.status_code == 400
+        assert "last 3 passwords" in r.json()["detail"]
+        assert "Try again later" not in r.json()["detail"]
+
+    async def test_the_one_time_code_is_not_committed_as_consumed(self, client, recording_db):
+        async with client as c:
+            await c.post(
+                "/auth/reset-password",
+                json={"email": EMAIL, "code": "123456", "password": STRONG},
+            )
+        # Any commit here would persist verify_code's consumed_at and force the
+        # user to request a fresh code just to pick a different password.
+        assert recording_db.commits == 0

@@ -5,15 +5,27 @@ The policy here must stay in lockstep with the Keycloak `hopper` realm
 enforces so a drift shows up as a test failure rather than as a 502 in
 the user's face.
 """
+import json
+from pathlib import Path
+
 import pytest
 
 from app.services.password_policy import (
     MIN_LENGTH,
-    describe_requirements,
     explain_failures,
     unmet_requirements,
     validate,
 )
+
+VECTORS = json.loads(
+    (Path(__file__).resolve().parents[2] / "fixtures" / "password_policy_vectors.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+def _vector_ids() -> list[str]:
+    return [case["name"] for case in VECTORS["cases"]]
 
 # Satisfies every rule: 12+ chars, a digit, a lower, an upper.
 GOOD = "CorrectHorse9Battery"
@@ -125,11 +137,26 @@ class TestExplainFailures:
         assert f"at least {MIN_LENGTH} characters" in msg
 
 
-class TestDescribeRequirements:
-    def test_requirements_are_exposed_for_the_ui(self):
-        ids = {r.id for r in describe_requirements()}
-        assert ids == {"length", "digits", "lowercase", "uppercase", "not_username"}
+class TestSharedVectors:
+    """The contract between this module and frontend/src/lib/auth/passwordPolicy.ts.
 
-    def test_every_requirement_has_human_copy(self):
-        for r in describe_requirements():
-            assert r.text and r.text[0].isupper()
+    Both mirrors are checked against tests/fixtures/password_policy_vectors.json,
+    so a predicate or a wording change on either side fails the other's suite
+    rather than quietly letting the UI checklist and the server error disagree.
+    """
+
+    @pytest.mark.parametrize("case", VECTORS["cases"], ids=_vector_ids())
+    def test_unmet_rules_match_the_shared_vectors(self, case):
+        username = case.get("username", VECTORS["defaultUsername"])
+
+        unmet = unmet_requirements(case["password"], username=username)
+
+        assert [r.id for r in unmet] == case["unmet"]
+
+    @pytest.mark.parametrize("case", VECTORS["cases"], ids=_vector_ids())
+    def test_messages_match_the_shared_vectors(self, case):
+        username = case.get("username", VECTORS["defaultUsername"])
+
+        unmet = unmet_requirements(case["password"], username=username)
+
+        assert explain_failures(unmet) == case["message"]
