@@ -111,7 +111,7 @@ async def test_fetch_nodes_returns_none_on_failure():
 
 
 async def test_free_from_nodes_and_current_capacity(monkeypatch):
-    rows = [("1", "2Gi", "small", None), ("2", "4Gi", "medium", "node-1")]
+    rows = [("1", "2Gi", "small"), ("2", "4Gi", "medium")]
     db = FakeDB(execute_results=[ExecuteResult(rows=rows)])
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_cpu", "500m")
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_memory", "1Gi")
@@ -154,12 +154,11 @@ async def test_reserve_sync_slot_branches(monkeypatch):
         return None
 
     monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
-    async def fake_capacity(db, nodes):
-        return SimpleNamespace(), [SimpleNamespace(ready=True, free_cpu_m=10_000, free_mem_b=10_000)]
+    async def fake_free_from_nodes(db, nodes):
+        return SimpleNamespace()
 
-    monkeypatch.setattr(vm_scheduler, "_capacity", fake_capacity)
+    monkeypatch.setattr(vm_scheduler, "_free_from_nodes", fake_free_from_nodes)
     monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
-    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.fits_on_some_node", lambda node_caps, cpu, mem: True)
 
     async def fake_user_live_count_zero(db, user_id):
         return 0
@@ -250,8 +249,8 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
     async def fake_backfill(db, orch):
         return 0
 
-    async def fake_capacity(db, nodes):
-        return Capacity(), [SimpleNamespace(ready=True, free_cpu_m=10_000, free_mem_b=10_000)]
+    async def fake_free_from_nodes(db, nodes):
+        return Capacity()
 
     counts = {"user-1": 0, "user-2": 0}
 
@@ -272,12 +271,10 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
         return ExecuteResult()
 
     monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_nodes)
-    monkeypatch.setattr(vm_scheduler, "_backfill_node_names", fake_backfill)
     monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
-    monkeypatch.setattr(vm_scheduler, "_capacity", fake_capacity)
+    monkeypatch.setattr(vm_scheduler, "_free_from_nodes", fake_free_from_nodes)
     monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_count)
     monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve)
-    monkeypatch.setattr(vm_scheduler, "_first_fit_node", lambda node_free, cpu, mem: 0)
     db = FakeDB(
         execute_results=[
             execute_result,
