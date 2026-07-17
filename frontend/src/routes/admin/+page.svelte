@@ -435,10 +435,10 @@
     <Tabs.List
       class="max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      <Tabs.Trigger value="overview" onclick={() => (tab = 'overview')}><Activity /> Overview</Tabs.Trigger>
-      <Tabs.Trigger value="users" onclick={() => (tab = 'users')}><Users /> Users</Tabs.Trigger>
+      <Tabs.Trigger value="overview"><Activity /> Overview</Tabs.Trigger>
+      <Tabs.Trigger value="users"><Users /> Users</Tabs.Trigger>
       {#if data.currentUserRole === 'admin'}
-        <Tabs.Trigger value="requests" onclick={() => (tab = 'requests')}>
+        <Tabs.Trigger value="requests">
           <GraduationCap /> Requests
           {#if data.teacherRequests.length}
             <span class="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-warning/15 px-1.5 text-[11px] font-semibold text-warning">
@@ -447,9 +447,9 @@
           {/if}
         </Tabs.Trigger>
       {/if}
-      <Tabs.Trigger value="vms" onclick={() => (tab = 'vms')}><Server /> Active VMs</Tabs.Trigger>
-      <Tabs.Trigger value="nodes" onclick={() => (tab = 'nodes')}><HardDrive /> Nodes</Tabs.Trigger>
-      <Tabs.Trigger value="audit" onclick={() => (tab = 'audit')}><ScrollText /> Audit log</Tabs.Trigger>
+      <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
+      <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
+      <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
     </Tabs.List>
 
     <!-- Overview -->

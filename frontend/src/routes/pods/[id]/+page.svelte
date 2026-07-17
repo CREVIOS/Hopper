@@ -244,19 +244,19 @@
     <!-- Tabs -->
     <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
       <Tabs.List class="mb-4 mt-1 self-start">
-        <Tabs.Trigger value="terminal" onclick={() => (activeTab = 'terminal')}>
+        <Tabs.Trigger value="terminal">
           <TerminalIcon class="size-3.5" /> Terminal
         </Tabs.Trigger>
-        <Tabs.Trigger value="metrics" onclick={() => (activeTab = 'metrics')}>
+        <Tabs.Trigger value="metrics">
           <Activity class="size-3.5" /> Metrics
         </Tabs.Trigger>
-        <Tabs.Trigger value="usage" onclick={() => (activeTab = 'usage')}>
+        <Tabs.Trigger value="usage">
           <LineChart class="size-3.5" /> Usage
         </Tabs.Trigger>
-        <Tabs.Trigger value="files" onclick={() => (activeTab = 'files')}>
+        <Tabs.Trigger value="files">
           <FileUp class="size-3.5" /> Files
         </Tabs.Trigger>
-        <Tabs.Trigger value="details" onclick={() => (activeTab = 'details')}>
+        <Tabs.Trigger value="details">
           <Info class="size-3.5" /> Details
         </Tabs.Trigger>
       </Tabs.List>
