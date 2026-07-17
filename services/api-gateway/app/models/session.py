@@ -27,10 +27,6 @@ class PodSession(Base):
     # and a later tick succeeds). NULL = not in grace.
     grace_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     state: Mapped[str] = mapped_column(String, default="pending")
-    # Node the scheduler placed this VM on, learned from the pod.started event.
-    # NULL until placed. Used by per-node capacity accounting to attribute this
-    # VM's CPU/memory requests to the right machine (multi-node fragmentation).
-    node_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # Network isolation group (HOP-19 18.3). VMs sharing a group can reach
     # each other over the pod network; NULL = fully isolated (the default).
     network_group: Mapped[str | None] = mapped_column(String(32), nullable=True)

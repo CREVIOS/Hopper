@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	billingpkg "github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/events"
 	"github.com/hopper/orchestrator/internal/k8s"
 	"github.com/hopper/orchestrator/internal/pod"
@@ -131,14 +132,10 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		return nil, fmt.Errorf("creating k8s pod: %w", err)
 	}
 
-	// 4. Record ports + per-pod ssh password. The pod stays `creating` here:
-	// CreatePod returns as soon as the API server accepts the object, which is
-	// long before the scheduler places it and the kubelet starts it — and on a
-	// multi-node cluster it may never be placed at all (no node with room).
-	// The K8s watcher owns the transition to running, and starts billing, when
-	// the container is actually observed Running.
+	// 4. Record ports + per-pod ssh password and transition to running
 	s.server.podManager.SetPorts(p.ID, ports.SSHPort, ports.VSCodePort)
 	s.server.podManager.SetSshPassword(p.ID, ports.SSHPassword)
+	_ = s.server.podManager.Transition(p.ID, pod.StateRunning)
 
 	// 5. Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]interface{}{
@@ -149,6 +146,25 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		"vscode_port": ports.VSCodePort,
 		"plan":        req.Plan,
 	})
+
+	// 6. Start billing ticker
+	plan, ok := billingpkg.Plans[req.Plan]
+	if ok {
+		s.server.ticker.Start(p.ID, plan, func(ev billingpkg.TickEvent) {
+			s.server.logger.Info("billing tick",
+				zap.String("pod_id", ev.PodID),
+				zap.Float64("amount", ev.Amount),
+				zap.String("tx_id", ev.TxID),
+			)
+			_ = events.Publish(s.server.nc, events.SubjectBillDeduct, map[string]interface{}{
+				"pod_id":  ev.PodID,
+				"amount":  ev.Amount,
+				"user_id": req.UserId,
+				"tx_id":   ev.TxID,
+				"seq":     ev.Seq,
+			})
+		})
+	}
 
 	// Refresh the pod to include ssh_port
 	p, _ = s.server.podManager.Get(p.ID)

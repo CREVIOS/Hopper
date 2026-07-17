@@ -1,0 +1,29 @@
+---
+# GPU Node Setup - NVIDIA Driver Installation
+# Requires: Ubuntu 22.04+ with NVIDIA GPU hardware
+
+- name: Add NVIDIA GPG key
+  ansible.builtin.apt_key:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    state: present
+
+- name: Add NVIDIA container toolkit repo
+  ansible.builtin.apt_repository:
+    repo: "deb https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /"
+    state: present
+
+- name: Install NVIDIA container toolkit
+  ansible.builtin.apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+
+- name: Configure containerd for NVIDIA runtime
+  ansible.builtin.command: nvidia-ctk runtime configure --runtime=containerd
+  notify: Restart containerd
+
+- name: Ensure gVisor runtime class exists
+  ansible.builtin.template:
+    src: templates/gvisor-runtimeclass.yaml.j2
+    dest: /tmp/gvisor-runtimeclass.yaml
+  # TODO: Apply with kubectl
