@@ -37,10 +37,30 @@ class Settings(BaseSettings):
     code_url_signing_secret: str = "change-me-in-production-32bytes-or-more"
     code_url_ttl_seconds: int = 600
 
-    # SMTP for email verification + password reset. If smtp_host is empty the
-    # email layer runs in DEV mode: codes are written to the app log instead of
-    # being sent (so the flow is testable without a mail server). In prod these
-    # come from the `hopper-smtp` Secret / env.
+    # CPU/RAM admission queue. The gateway computes free cluster capacity
+    # itself; these reserves cover kube-system pods it cannot see. Kubernetes
+    # quantity strings, parsed in app.services.vm_capacity.
+    cluster_reserve_cpu: str = "1"
+    cluster_reserve_memory: str = "2Gi"
+    # Workspace-disk (PVC) pool. Node ephemeral-storage is not reported by
+    # ListNodes, so the total is configured; used = sum of live VMs' plan disk.
+    cluster_storage_total: str = "150Gi"
+    cluster_reserve_storage: str = "10Gi"
+    # How often the background admission loop re-checks the queue, in seconds.
+    scheduler_tick_seconds: int = 5
+
+    # Brevo transactional-email HTTPS API (https://api.brevo.com, :443). When
+    # set, verification/reset emails go out via Brevo instead of SMTP — pods on
+    # the prod cluster can egress :443 but not SMTP ports, and a Brevo sender
+    # with domain authentication (DKIM/SPF) keeps codes out of spam, which the
+    # personal-Gmail SMTP path could not. In prod this comes from the
+    # `hopper-brevo` Secret. SMTP below stays as the fallback transport.
+    brevo_api_key: str = ""
+
+    # SMTP for email verification + password reset. If neither Brevo nor SMTP
+    # is configured the email layer runs in DEV mode: codes are written to the
+    # app log instead of being sent (so the flow is testable without a mail
+    # server). In prod these come from the `hopper-smtp` Secret / env.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
@@ -51,6 +71,35 @@ class Settings(BaseSettings):
     email_code_ttl_seconds: int = 600  # 10 min
     email_code_length: int = 6
     email_code_max_attempts: int = 5
+
+    # Rate limiting (HOP-19 18.2). Buckets are in-memory per worker process,
+    # so the effective ceiling scales with workers × replicas — these are
+    # abuse guards, not precise quotas. Format: the `limits` notation, e.g.
+    # "5/minute", "3/5minutes".
+    #
+    # Per-user ceiling on authenticated session traffic, keyed by the
+    # verified JWT subject (enforced post-auth in get_current_user).
+    rate_limit_user_default: str = "120/minute"
+    # Programmatic access via API keys is limited separately from session
+    # auth, per key (18.1 "rate limited separately").
+    rate_limit_api_key: str = "30/minute"
+    # VM creates per user.
+    rate_limit_pod_create: str = "5/minute"
+    # FAILED sign-in attempts per (client IP, email) before /auth/login
+    # returns 429. Counting failures (not calls) means a shared university
+    # NAT can't lock out a whole lab, but 3 wrong passwords for one account
+    # from one address trips it.
+    rate_limit_login_failures: str = "3/5minutes"
+
+    # Low-credit warnings, in minutes of runtime remaining at the user's
+    # current burn rate (sum of their running VMs' hourly rates). A warning
+    # notification fires once per threshold as the balance crosses it;
+    # thresholds re-arm automatically when credits are topped up.
+    credit_warning_minutes: list[int] = [60, 30, 10, 5]
+    # Grace period after credits hit zero before the VM is terminated. The
+    # first failed billing tick starts the countdown and warns the user;
+    # termination happens on the first tick after the deadline.
+    credit_grace_minutes: int = 5
 
     model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 

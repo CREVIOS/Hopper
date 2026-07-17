@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -24,15 +24,24 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
+from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
+from app.services.notification_service import notify
 from app.services.orchestrator_client import orchestrator_client
-from app.services import port_forward
+from app.services import port_forward, vm_queue, vm_scheduler
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Live PodSession states that occupy real cluster capacity (mirrors the
+# per-user concurrency check below and vm_scheduler._LIVE_VM_STATES).
+_LIVE_VM_STATES = ("pending", "creating", "running")
+# Queue entry states that still hold a slot (mirrors vm_queue._LIVE_QUEUE_STATES).
+_LIVE_QUEUE_STATES = ("queued", "admitting")
+_BYTES_PER_GIB = 1024**3
 
 
 def _session_to_response(s: PodSession) -> PodResponse:
@@ -53,6 +62,7 @@ def _session_to_response(s: PodSession) -> PodResponse:
         ssh_port=s.ssh_port if is_live else None,
         vscode_port=s.vscode_port if is_live else None,
         ssh_password=s.ssh_password if is_live else None,
+        network_group=s.network_group,
         created_at=s.started_at,
         updated_at=s.updated_at,
     )
@@ -88,7 +98,10 @@ async def list_pods(
 
 
 @router.post("/", response_model=PodResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("10/minute")
+# Keyed by verified user (request.state.rate_key from get_current_user), not
+# client IP — see app.core.limiter. Limit configurable via
+# HOPPER_RATE_LIMIT_POD_CREATE.
+@limiter.limit(settings.rate_limit_pod_create)
 async def create_pod(
     request: Request,
     response: Response,
@@ -101,6 +114,15 @@ async def create_pod(
     This allocates a slice of the host machine's CPU/RAM to the user as an
     isolated container with SSH access. Resources are capped by the chosen plan.
     """
+    # Network groups (HOP-19 18.3) are teacher/admin-only: there is no course
+    # -membership model yet, so letting a student pick an arbitrary group name
+    # would let them join (and reach) any other group's VMs.
+    if body.network_group and current_user.role not in ("professor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers and admins can place VMs in a network group",
+        )
+
     # Check credit balance — need at least 1 hour's worth
     resources = VM_PLAN_RESOURCES[body.plan]
     balance = await get_balance(db, current_user.sub)
@@ -124,24 +146,65 @@ async def create_pod(
             detail="Maximum 3 concurrent VMs allowed",
         )
 
-    pod_id = str(uuid.uuid4())
-    namespace = "hopper"
+    # Cluster admission fork. The reservation is serialized under a DB advisory
+    # lock (reserve_sync_slot), so two concurrent creates can never both take the
+    # last slot. If the cluster has room AND nobody is already waiting, reserve a
+    # slot and create synchronously as before. Otherwise enqueue and return 202.
+    # If capacity cannot be computed (orchestrator unreachable) we fail OPEN and
+    # create synchronously so the queue never makes us worse than today.
     image = body.resolved_image()
+    nodes = await vm_scheduler.fetch_nodes(orchestrator_client)
 
-    session = PodSession(
-        id=pod_id,
-        user_id=current_user.sub,
-        plan=body.plan.value,
-        image=image,
-        cpu=resources["cpu"],
-        memory=resources["memory"],
-        namespace=namespace,
-        pod_name=f"vm-{pod_id[:8]}",
-        state="pending",
-    )
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
+    pod_id: str | None = None
+    if nodes is not None:
+        pod_id = await vm_scheduler.reserve_sync_slot(
+            db, nodes, current_user.sub, body.plan.value, image,
+            resources["cpu"], resources["memory"],
+            network_group=body.network_group,
+        )
+        if pod_id is None:
+            # Cluster full, or someone is already waiting -> join the queue.
+            try:
+                entry = await vm_queue.enqueue_vm_request(
+                    db, current_user, body.plan.value, body.template,
+                    network_group=body.network_group,
+                )
+            except vm_queue.EnqueueError as exc:
+                raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+            position = await vm_queue.queue_position(db, entry)
+            vm_scheduler.nudge()
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content={
+                    "id": entry.id,
+                    "state": entry.state,
+                    "plan": entry.plan,
+                    "position": position,
+                    "queued": True,
+                },
+            )
+
+    # Synchronous create: either a reserved fast-path slot (pod_id set under the
+    # lock) or fail-open (orchestrator unreachable -> no capacity gate, as today).
+    if pod_id is None:
+        pod_id = str(uuid.uuid4())
+        session = PodSession(
+            id=pod_id,
+            user_id=current_user.sub,
+            plan=body.plan.value,
+            image=image,
+            cpu=resources["cpu"],
+            memory=resources["memory"],
+            namespace="hopper",
+            pod_name=f"vm-{pod_id[:8]}",
+            state="pending",
+            network_group=body.network_group,
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+    else:
+        session = await db.get(PodSession, pod_id)  # the reserved pending row
 
     # Call orchestrator to create the actual K8s pod
     try:
@@ -152,6 +215,7 @@ async def create_pod(
             cpu=resources["cpu"],
             memory=resources["memory"],
             pod_id=pod_id,
+            network_group=body.network_group or "",
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator
@@ -165,8 +229,141 @@ async def create_pod(
         session.state = "failed"
         await db.commit()
         await db.refresh(session)
+        # This path owns the failure notification — the pod.failed NATS
+        # consumer deliberately only repairs state (see notification_service).
+        try:
+            await notify(
+                db,
+                current_user.sub,
+                type_="error",
+                title="VM failed to create",
+                body="Something went wrong while provisioning your VM. "
+                     "Try again, or contact an admin if it keeps failing.",
+                data={"pod_id": session.id},
+            )
+        except Exception:
+            logger.exception("failed to record VM-creation-failure notification")
 
     return _session_to_response(session)
+
+
+# NOTE: these static routes MUST be declared before "/{pod_id}" so that
+# "/availability" and "/queue" are not captured by the pod_id path parameter.
+@router.get("/availability")
+async def get_availability(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Best-effort cluster capacity readout for the VM create UI.
+
+    Never 500s: if the orchestrator is unreachable the capacity fields come
+    back null while the queue length (read straight from the DB) stays real.
+    """
+    queue_length = await vm_queue.live_queue_count(db)
+
+    try:
+        nodes = await orchestrator_client.list_nodes()
+        nodes_ready = sum(1 for n in nodes if n.ready)
+    except Exception as exc:
+        logger.warning("Availability: ListNodes failed: %s", exc)
+        nodes_ready = None
+
+    cap = await vm_scheduler.current_capacity(db, orchestrator_client)
+    if cap is None:
+        return {
+            "cpu": {"total_cores": None, "used_cores": None, "free_cores": None},
+            "memory": {"total_gib": None, "used_gib": None, "free_gib": None},
+            "storage": {"total_gib": None, "used_gib": None, "free_gib": None},
+            "nodes_ready": nodes_ready,
+            "queue_length": queue_length,
+        }
+
+    # "used" is derived as total - free so the three values always reconcile
+    # (it folds in both live-VM requests and the system reserve).
+    free_cpu_m = cap.free_cpu_m()
+    free_mem_b = cap.free_mem_b()
+    free_storage_b = cap.free_storage_b()
+    return {
+        "cpu": {
+            "total_cores": round(cap.total_cpu_m / 1000, 2),
+            "used_cores": round((cap.total_cpu_m - free_cpu_m) / 1000, 2),
+            "free_cores": round(free_cpu_m / 1000, 2),
+        },
+        "memory": {
+            "total_gib": round(cap.total_mem_b / _BYTES_PER_GIB, 2),
+            "used_gib": round((cap.total_mem_b - free_mem_b) / _BYTES_PER_GIB, 2),
+            "free_gib": round(free_mem_b / _BYTES_PER_GIB, 2),
+        },
+        # Workspace-disk pool (configured total; used = sum of live VMs' plan disk).
+        "storage": {
+            "total_gib": round(cap.total_storage_b / _BYTES_PER_GIB, 2),
+            "used_gib": round((cap.total_storage_b - free_storage_b) / _BYTES_PER_GIB, 2),
+            "free_gib": round(free_storage_b / _BYTES_PER_GIB, 2),
+        },
+        "nodes_ready": nodes_ready,
+        "queue_length": queue_length,
+    }
+
+
+@router.get("/queue")
+async def list_queue(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the caller's own pending queue entries (queued/admitting)."""
+    result = await db.execute(
+        select(VmQueueEntry)
+        .where(
+            VmQueueEntry.user_id == current_user.sub,
+            VmQueueEntry.state.in_(_LIVE_QUEUE_STATES),
+        )
+        .order_by(VmQueueEntry.seq.asc())
+    )
+    entries = result.scalars().all()
+    return [
+        {
+            "id": entry.id,
+            "plan": entry.plan,
+            "template": entry.template,
+            "state": entry.state,
+            "position": await vm_queue.queue_position(db, entry),
+            "created_at": entry.created_at,
+        }
+        for entry in entries
+    ]
+
+
+@router.delete("/queue/{entry_id}")
+async def cancel_queue_entry(
+    entry_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a still-queued VM request owned by the caller.
+
+    Only a 'queued' entry can be cancelled: once it is 'admitting' the
+    orchestrator create is already in flight, so we refuse with 409.
+    """
+    result = await db.execute(
+        select(VmQueueEntry).where(VmQueueEntry.id == entry_id)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    if entry.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your queue entry")
+    if entry.state != "queued":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel a queue entry in state '{entry.state}'",
+        )
+
+    entry.state = "cancelled"
+    await db.commit()
+    # Freeing a queue slot may let a smaller entry behind it fit (once the
+    # head clears); nudge the loop to re-evaluate.
+    vm_scheduler.nudge()
+    return {"message": "cancelled", "id": entry_id}
 
 
 @router.get("/{pod_id}", response_model=PodResponse)
@@ -204,6 +401,15 @@ async def terminate_pod(
     if session.user_id != current_user.sub:
         raise HTTPException(status_code=403, detail="Not your VM")
 
+    # Commit the terminal state BEFORE calling the orchestrator: its
+    # pod.stopped event races this handler, and the notification consumer
+    # uses "row already terminated" to tell a user-initiated delete (no
+    # notification — the user is watching the response) from an unexpected
+    # one. The orchestrator call failing doesn't change the outcome — this
+    # endpoint has always marked the row terminated regardless.
+    session.state = "terminated"
+    await db.commit()
+
     # Call orchestrator to delete the K8s pod
     try:
         await orchestrator_client.terminate_pod(session.pod_name)
@@ -213,8 +419,12 @@ async def terminate_pod(
     # Stop the port-forward if running
     await port_forward.stop(session.pod_name)
 
-    session.state = "terminated"
-    await db.commit()
+    # Freed capacity may now admit the next queued VM. Nudge the local loop;
+    # the orchestrator's pod.stopped NATS event covers the cross-worker case.
+    # (The terminated state itself was committed above, BEFORE the
+    # orchestrator call, so the notification consumer can tell user-initiated
+    # deletes from unexpected ones.)
+    vm_scheduler.nudge()
     return {"message": "terminated", "pod_id": pod_id}
 
 

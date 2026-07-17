@@ -1,0 +1,63 @@
+# Production overlay — hopper.farefin.com. This is a faithful render of the
+# live cluster state (k8s/deploy/*.yaml as applied + the out-of-band env
+# fixes documented there).
+#
+#   helm install hopper ./charts/hopper -n hopper --create-namespace \
+#     -f charts/hopper/values-prod.yaml
+#
+# ADOPTION WARNING: prod was originally created with kubectl from
+# k8s/deploy/. Installing this chart OVER the live namespace requires
+# adopting the existing resources (helm's ownership metadata) — do NOT
+# `helm install` blindly; see charts/hopper/README.md.
+
+global:
+  host: hopper.farefin.com
+  scheme: https
+  # CI (publish.yml) deploys by SHA tag; bump on adoption to the current
+  # main deploy tag.
+  imageTag: b19bbd699a03
+
+# NEVER true on prod: the live Secrets (hopper-keycloak-admin, hopper-brevo,
+# hopper-smtp, ...) were provisioned out-of-band and must not be overwritten
+# by placeholder values from a public repo.
+secrets:
+  create: false
+
+keycloak:
+  # The manifest (and this chart) say production `start`; NOTE the live
+  # cluster still runs `start-dev` (bootstrap drift, works but unhardened).
+  # Flipping it needs a careful hostname/proxy test window.
+  startDev: false
+
+apiGateway:
+  replicas: 2
+  # HOPPER_DEBUG=true matches the live env (SQL echo on; useful while the
+  # platform is young — flip off when log volume becomes a problem).
+  debug: true
+  smtpRelay:
+    # socat relay on the node — pods cannot egress SMTP ports on this
+    # cluster. Brevo (HTTPS) is the primary transport; SMTP is fallback.
+    enabled: true
+    nodeIP: 10.0.0.6
+    port: 2525
+
+frontend:
+  nodeIP: hopper.farefin.com
+
+ingress:
+  tlsSecretName: hopper-farefin-tls
+
+certManager:
+  enabled: true
+  email: asif@askturing.ai
+  clusterIssuer: letsencrypt-prod
+
+networkPolicies:
+  enabled: true
+  podCIDR: 10.42.0.0/16
+  serviceCIDR: 10.43.0.0/16
+  cilium: true
+
+backup:
+  enabled: true
+  storageClassName: local-path
