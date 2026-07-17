@@ -74,19 +74,62 @@ class KeycloakAdminClient:
     async def _admin_url(self, path: str) -> str:
         return f"{self._base}/admin/realms/{self._realm}{path}"
 
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: object | None = None,
+        params: dict | None = None,
+        timeout: float = 10.0,
+    ) -> httpx.Response:
+        """Make an authenticated admin REST call, retrying once on a transient
+        failure so a stale-but-not-locally-expired token doesn't surface as a
+        hard error.
+
+        This client is a process-lifetime singleton, so its cached bearer token
+        can be rejected by Keycloak (401) while still looking un-expired here —
+        e.g. after Keycloak restarts or rotates realm keys. It can also hit a
+        transient 5xx while Keycloak is briefly busy (dev-mode restarts, GC).
+        Both otherwise bubble up as an intermittent 5xx to the user that
+        "works on retry". On the first 401 we drop the cached token and fetch a
+        fresh one; on a 5xx we simply retry. Genuine 4xx (401 twice, 403, 404,
+        409, ...) are returned to the caller unchanged.
+        """
+        url = await self._admin_url(path)
+        resp: httpx.Response | None = None
+        for attempt in (1, 2):
+            headers = await self._headers()
+            if json is not None:
+                headers = {**headers, "Content-Type": "application/json"}
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.request(
+                    method, url, headers=headers, json=json, params=params
+                )
+            if attempt == 1 and (resp.status_code == 401 or resp.status_code >= 500):
+                if resp.status_code == 401:
+                    # Cached token was rejected server-side — force a refresh.
+                    self._token = None
+                    self._token_exp = 0.0
+                logger.warning(
+                    "keycloak admin %s %s -> %s; retrying once",
+                    method, path, resp.status_code,
+                )
+                continue
+            break
+        assert resp is not None  # loop always runs at least once
+        return resp
+
     async def list_realm_roles(self) -> list[dict]:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(await self._admin_url("/roles"), headers=await self._headers())
+        resp = await self._request("GET", "/roles", timeout=5.0)
         if resp.status_code != 200:
             raise KeycloakAdminError(f"list roles failed: {resp.text}")
         return resp.json()
 
     async def get_user_realm_roles(self, user_id: str) -> list[dict]:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                await self._admin_url(f"/users/{user_id}/role-mappings/realm"),
-                headers=await self._headers(),
-            )
+        resp = await self._request(
+            "GET", f"/users/{user_id}/role-mappings/realm", timeout=5.0
+        )
         if resp.status_code != 200:
             raise KeycloakAdminError(f"get user roles failed: {resp.text}")
         return resp.json()
@@ -109,26 +152,24 @@ class KeycloakAdminClient:
         app_role_set = {"admin", "professor", "student"}
         to_remove = [r for r in existing if r.get("name") in app_role_set and r.get("name") != new_role]
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            if to_remove:
-                resp = await client.request(
-                    "DELETE",
-                    await self._admin_url(f"/users/{user_id}/role-mappings/realm"),
-                    headers={**(await self._headers()), "Content-Type": "application/json"},
-                    json=[{"id": r["id"], "name": r["name"]} for r in to_remove],
-                )
-                if resp.status_code not in (204, 200):
-                    raise KeycloakAdminError(f"remove old roles failed: {resp.text}")
+        if to_remove:
+            resp = await self._request(
+                "DELETE",
+                f"/users/{user_id}/role-mappings/realm",
+                json=[{"id": r["id"], "name": r["name"]} for r in to_remove],
+            )
+            if resp.status_code not in (204, 200):
+                raise KeycloakAdminError(f"remove old roles failed: {resp.text}")
 
-            already_has = any(r.get("name") == new_role for r in existing)
-            if not already_has:
-                resp = await client.post(
-                    await self._admin_url(f"/users/{user_id}/role-mappings/realm"),
-                    headers={**(await self._headers()), "Content-Type": "application/json"},
-                    json=[{"id": wanted["id"], "name": wanted["name"]}],
-                )
-                if resp.status_code not in (204, 200):
-                    raise KeycloakAdminError(f"add new role failed: {resp.text}")
+        already_has = any(r.get("name") == new_role for r in existing)
+        if not already_has:
+            resp = await self._request(
+                "POST",
+                f"/users/{user_id}/role-mappings/realm",
+                json=[{"id": wanted["id"], "name": wanted["name"]}],
+            )
+            if resp.status_code not in (204, 200):
+                raise KeycloakAdminError(f"add new role failed: {resp.text}")
 
     async def create_user(
         self,
@@ -166,12 +207,7 @@ class KeycloakAdminClient:
                 {"type": "password", "value": password, "temporary": False}
             ],
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                await self._admin_url("/users"),
-                headers={**(await self._headers()), "Content-Type": "application/json"},
-                json=payload,
-            )
+        resp = await self._request("POST", "/users", json=payload)
         if resp.status_code == 409:
             raise KeycloakAdminError("user exists")
         if resp.status_code not in (201, 204):
@@ -182,12 +218,9 @@ class KeycloakAdminClient:
         user_id = location.rstrip("/").rsplit("/", 1)[-1]
         if not user_id:
             # Fallback: look it up by exact username.
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                lookup = await client.get(
-                    await self._admin_url("/users"),
-                    headers=await self._headers(),
-                    params={"username": email, "exact": "true"},
-                )
+            lookup = await self._request(
+                "GET", "/users", params={"username": email, "exact": "true"}
+            )
             rows = lookup.json() if lookup.status_code == 200 else []
             if not rows:
                 raise KeycloakAdminError("created user but could not resolve id")
@@ -199,12 +232,9 @@ class KeycloakAdminClient:
 
     async def get_user_by_email(self, email: str) -> dict | None:
         """Return the Keycloak user dict for an exact email, or None."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                await self._admin_url("/users"),
-                headers=await self._headers(),
-                params={"email": email, "exact": "true"},
-            )
+        resp = await self._request(
+            "GET", "/users", params={"email": email, "exact": "true"}
+        )
         if resp.status_code != 200:
             raise KeycloakAdminError(f"user lookup failed: {resp.text}")
         rows = resp.json() or []
@@ -212,33 +242,25 @@ class KeycloakAdminClient:
 
     async def set_email_verified(self, user_id: str, verified: bool = True) -> None:
         """Flip a user's emailVerified flag."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.put(
-                await self._admin_url(f"/users/{user_id}"),
-                headers={**(await self._headers()), "Content-Type": "application/json"},
-                json={"emailVerified": verified},
-            )
+        resp = await self._request(
+            "PUT", f"/users/{user_id}", json={"emailVerified": verified}
+        )
         if resp.status_code not in (204, 200):
             raise KeycloakAdminError(f"set email verified failed: {resp.text}")
 
     async def reset_password(self, user_id: str, new_password: str) -> None:
         """Set a permanent (non-temporary) password for a user."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.put(
-                await self._admin_url(f"/users/{user_id}/reset-password"),
-                headers={**(await self._headers()), "Content-Type": "application/json"},
-                json={"type": "password", "value": new_password, "temporary": False},
-            )
+        resp = await self._request(
+            "PUT",
+            f"/users/{user_id}/reset-password",
+            json={"type": "password", "value": new_password, "temporary": False},
+        )
         if resp.status_code not in (204, 200):
             raise KeycloakAdminError(f"reset password failed: {resp.text}")
 
     async def logout_user(self, user_id: str) -> None:
         """Force-revoke all of the user's Keycloak sessions and refresh tokens."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                await self._admin_url(f"/users/{user_id}/logout"),
-                headers=await self._headers(),
-            )
+        resp = await self._request("POST", f"/users/{user_id}/logout")
         if resp.status_code not in (204, 200):
             raise KeycloakAdminError(f"force logout failed: {resp.text}")
 
