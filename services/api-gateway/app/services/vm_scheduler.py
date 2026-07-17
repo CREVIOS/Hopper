@@ -206,7 +206,8 @@ async def _user_live_count(db: AsyncSession, user_id: str) -> int:
 
 
 async def _reserve_pod_session(
-    db: AsyncSession, user_id: str, plan: str, image: str, cpu: str, memory: str
+    db: AsyncSession, user_id: str, plan: str, image: str, cpu: str, memory: str,
+    network_group: str | None = None,
 ) -> str:
     """Insert a PodSession(pending) that RESERVES capacity (it is immediately
     counted by _free_from_nodes). Returns its pod_id. Must run inside the
@@ -216,6 +217,7 @@ async def _reserve_pod_session(
         PodSession(
             id=pod_id, user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
             namespace=_NAMESPACE, pod_name=f"vm-{pod_id[:8]}", state="pending",
+            network_group=network_group,
         )
     )
     await db.flush()
@@ -223,7 +225,8 @@ async def _reserve_pod_session(
 
 
 async def reserve_sync_slot(
-    db: AsyncSession, nodes, user_id: str, plan: str, image: str, cpu: str, memory: str
+    db: AsyncSession, nodes, user_id: str, plan: str, image: str, cpu: str, memory: str,
+    network_group: str | None = None,
 ) -> str | None:
     """POST /pods/ fast-path: under the admission lock, reserve a slot IFF the
     queue is empty AND the plan fits AND the user is under cap. Returns the
@@ -248,7 +251,9 @@ async def reserve_sync_slot(
     if await _user_live_count(db, user_id) >= MAX_CONCURRENT_VMS_PER_USER:
         await db.rollback()
         return None
-    pod_id = await _reserve_pod_session(db, user_id, plan, image, cpu, memory)
+    pod_id = await _reserve_pod_session(
+        db, user_id, plan, image, cpu, memory, network_group=network_group
+    )
     await db.commit()  # releases the advisory lock; persists the reservation
     return pod_id
 
@@ -336,8 +341,8 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
         )
     ).scalars().all()
 
-    # (entry_id, pod_id, user_id, plan, image, cpu, memory) captured BEFORE commit
-    # so Phase 2 never touches a possibly-expired ORM object.
+    # (entry_id, pod_id, user_id, plan, image, cpu, memory, network_group)
+    # captured BEFORE commit so Phase 2 never touches a possibly-expired ORM object.
     reserved: list[tuple] = []
     user_counts: dict[str, int] = {}
     for entry in entries:
@@ -363,14 +368,16 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
         if claimed is None:
             continue  # cancelled or claimed by another admitter since the select
         pod_id = await _reserve_pod_session(
-            db, entry.user_id, entry.plan, entry.image, entry.cpu, entry.memory
+            db, entry.user_id, entry.plan, entry.image, entry.cpu, entry.memory,
+            network_group=entry.network_group,
         )
         await db.execute(
             text("UPDATE vm_queue_entries SET pod_session_id=:pid WHERE id=:id"),
             {"pid": pod_id, "id": entry.id},
         )
         reserved.append(
-            (entry.id, pod_id, entry.user_id, entry.plan, entry.image, entry.cpu, entry.memory)
+            (entry.id, pod_id, entry.user_id, entry.plan, entry.image, entry.cpu,
+             entry.memory, entry.network_group)
         )
         free_cpu_m -= req_cpu_m
         free_mem_b -= req_mem_b
@@ -381,10 +388,11 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
 
     # ---- Phase 2: materialize each reservation (gRPC, unlocked) ----
     admitted = 0
-    for entry_id, pod_id, user_id, plan, image, cpu, memory in reserved:
+    for entry_id, pod_id, user_id, plan, image, cpu, memory, network_group in reserved:
         try:
             resp = await orch.create_pod(
-                user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory, pod_id=pod_id
+                user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
+                pod_id=pod_id, network_group=network_group or "",
             )
         except Exception as exc:
             logger.error("Admission create_pod failed entry=%s: %s", entry_id, exc)
