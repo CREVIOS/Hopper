@@ -2,7 +2,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
-const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || '';
+const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || 'e2e-student-1';
 const MAX_LIVE_PODS = Number(__ENV.K6_MAX_LIVE_PODS || 2);
 const CLASS_START_VUS = Number(__ENV.K6_CLASS_START_VUS || 6);
 const CLASS_START_ITERATIONS = Number(__ENV.K6_CLASS_START_ITERATIONS || 6);

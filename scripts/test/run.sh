@@ -169,7 +169,8 @@ mock_services_wait() {
 real_services_wait() {
   wait_for_container_health "$REAL_COMPOSE_FILE" postgres
   wait_for_container_health "$REAL_COMPOSE_FILE" nats
-  wait_for_http "http://127.0.0.1:8080/health/ready" "Keycloak"
+  wait_for_container_health "$REAL_COMPOSE_FILE" keycloak 120 2
+  wait_for_http "http://127.0.0.1:8080/health/ready" "Keycloak" 30 2
 }
 
 collect_compose_logs() {
@@ -476,7 +477,7 @@ e2e_real_stack_tests() {
 load_smoke() {
   require_cmd k6
   BASE_URL="${BASE_URL:-http://127.0.0.1:8000}" \
-  ACCESS_TOKEN="${ACCESS_TOKEN:-e2e-student}" \
+  ACCESS_TOKEN="${ACCESS_TOKEN:-e2e-student-1}" \
     k6 run \
       --summary-export "$REPORT_ROOT/load/class-start-summary.json" \
       "$ROOT/tests/load/class-start.js"
@@ -485,7 +486,7 @@ load_smoke() {
 load_full() {
   require_cmd k6
   BASE_URL="${BASE_URL:-http://127.0.0.1:8000}" \
-  ACCESS_TOKEN="${ACCESS_TOKEN:-e2e-student}" \
+  ACCESS_TOKEN="${ACCESS_TOKEN:-e2e-student-1}" \
     k6 run \
       --summary-export "$REPORT_ROOT/load/scenarios-summary.json" \
       "$ROOT/tests/load/scenarios.js"
