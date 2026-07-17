@@ -5,13 +5,18 @@ from fastapi import HTTPException
 
 from app.models.session import PodSession
 from app.routers.pods import (
+    _safe_send,
+    cancel_queue_entry,
     _session_to_response,
     create_pod,
+    get_availability,
     get_pod,
+    list_queue,
     list_plans,
     list_pods,
     terminate_pod,
 )
+from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import CreatePodRequest, VmPlan
 from app.schemas.user import TokenPayload
 
@@ -405,3 +410,180 @@ def test_create_pod_request_rejects_bad_group_names():
     for bad in ("UPPER", "has_underscore", "-lead", "trail-", "a" * 33):
         with pytest.raises(ValueError):
             CreatePodRequest(plan=VmPlan.SMALL, network_group=bad)
+
+
+async def test_create_pod_returns_queued_response_when_capacity_full(monkeypatch):
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    async def fake_fetch_nodes(_orch):
+        return [object()]
+
+    async def fake_reserve_sync_slot(*args, **kwargs):
+        return None
+
+    class EnqueueResult:
+        id = "queue-1"
+        state = "queued"
+        plan = "small"
+
+    async def fake_enqueue(*args, **kwargs):
+        return EnqueueResult()
+
+    async def fake_queue_position(db, entry):
+        return 2
+
+    nudged = {}
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.reserve_sync_slot", fake_reserve_sync_slot)
+    monkeypatch.setattr("app.routers.pods.vm_queue.enqueue_vm_request", fake_enqueue)
+    monkeypatch.setattr("app.routers.pods.vm_queue.queue_position", fake_queue_position)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.nudge", lambda: nudged.setdefault("called", True))
+
+    result = await create_pod.__wrapped__(
+        request=None,
+        response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL),
+        current_user=_payload(),
+        db=FakeDB(execute_results=[[]]),
+    )
+
+    assert result.status_code == 202
+    assert b'"queued":true' in result.body
+    assert nudged["called"] is True
+
+
+async def test_get_availability_returns_null_capacity_when_orchestrator_fails(monkeypatch):
+    async def fake_live_queue_count(db):
+        return 4
+
+    async def fake_list_nodes():
+        raise RuntimeError("down")
+
+    async def fake_current_capacity(db, orch):
+        return None
+
+    monkeypatch.setattr("app.routers.pods.vm_queue.live_queue_count", fake_live_queue_count)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.list_nodes", fake_list_nodes)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity", fake_current_capacity)
+
+    result = await get_availability(current_user=_payload(), db=FakeDB())
+
+    assert result["queue_length"] == 4
+    assert result["nodes_ready"] is None
+    assert result["cpu"]["total_cores"] is None
+
+
+async def test_get_availability_returns_reconciled_capacity(monkeypatch):
+    class FakeNode:
+        def __init__(self, ready):
+            self.ready = ready
+
+    class FakeCapacity:
+        total_cpu_m = 4000
+        total_mem_b = 8 * 1024**3
+        total_storage_b = 100 * 1024**3
+
+        def free_cpu_m(self):
+            return 2500
+
+        def free_mem_b(self):
+            return 5 * 1024**3
+
+        def free_storage_b(self):
+            return 70 * 1024**3
+
+    async def fake_live_queue_count(db):
+        return 1
+
+    async def fake_list_nodes():
+        return [FakeNode(True), FakeNode(False)]
+
+    async def fake_current_capacity(db, orch):
+        return FakeCapacity()
+
+    monkeypatch.setattr("app.routers.pods.vm_queue.live_queue_count", fake_live_queue_count)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.list_nodes", fake_list_nodes)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity", fake_current_capacity)
+
+    result = await get_availability(current_user=_payload(), db=FakeDB())
+
+    assert result["nodes_ready"] == 1
+    assert result["cpu"]["total_cores"] == 4.0
+    assert result["cpu"]["free_cores"] == 2.5
+    assert result["storage"]["free_gib"] == 70.0
+
+
+async def test_list_queue_returns_positions_for_live_entries(monkeypatch):
+    first = VmQueueEntry(
+        id="q1", user_id="user-1", plan="small", template="ubuntu", image="img",
+        cpu="1", memory="2Gi", state="queued", network_group=None, seq=1
+    )
+    second = VmQueueEntry(
+        id="q2", user_id="user-1", plan="medium", template="pytorch", image="img",
+        cpu="2", memory="4Gi", state="admitting", network_group=None, seq=2
+    )
+    db = FakeDB(execute_results=[[first, second]])
+
+    async def fake_queue_position(db_obj, entry):
+        return {"q1": 1, "q2": 2}[entry.id]
+
+    monkeypatch.setattr("app.routers.pods.vm_queue.queue_position", fake_queue_position)
+
+    result = await list_queue(current_user=_payload(), db=db)
+
+    assert [item["position"] for item in result] == [1, 2]
+    assert result[0]["id"] == "q1"
+
+
+async def test_cancel_queue_entry_rejects_wrong_owner():
+    entry = VmQueueEntry(
+        id="q1", user_id="other-user", plan="small", template="ubuntu", image="img",
+        cpu="1", memory="2Gi", state="queued", network_group=None, seq=1
+    )
+    db = FakeDB(execute_results=[entry])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_queue_entry("q1", current_user=_payload(), db=db)
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_cancel_queue_entry_rejects_non_queued_state():
+    entry = VmQueueEntry(
+        id="q1", user_id="user-1", plan="small", template="ubuntu", image="img",
+        cpu="1", memory="2Gi", state="admitting", network_group=None, seq=1
+    )
+    db = FakeDB(execute_results=[entry])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await cancel_queue_entry("q1", current_user=_payload(), db=db)
+
+    assert exc_info.value.status_code == 409
+
+
+async def test_cancel_queue_entry_marks_cancelled_and_nudges(monkeypatch):
+    entry = VmQueueEntry(
+        id="q1", user_id="user-1", plan="small", template="ubuntu", image="img",
+        cpu="1", memory="2Gi", state="queued", network_group=None, seq=1
+    )
+    db = FakeDB(execute_results=[entry])
+    nudged = {}
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.nudge", lambda: nudged.setdefault("called", True))
+
+    result = await cancel_queue_entry("q1", current_user=_payload(), db=db)
+
+    assert result == {"message": "cancelled", "id": "q1"}
+    assert entry.state == "cancelled"
+    assert db.commits == 1
+    assert nudged["called"] is True
+
+
+async def test_safe_send_ignores_runtime_error():
+    class FakeWebSocket:
+        async def send_text(self, text):
+            raise RuntimeError("closed")
+
+    await _safe_send(FakeWebSocket(), "hello")

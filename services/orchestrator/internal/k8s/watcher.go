@@ -18,7 +18,7 @@ import (
 type PublishFunc func(subject string, data any) error
 
 type PodWatcher struct {
-	client    *kubernetes.Clientset
+	client    kubernetes.Interface
 	namespace string
 	logger    *zap.Logger
 	publish   PublishFunc
@@ -33,7 +33,7 @@ type PodWatcher struct {
 	lastPhase map[string]corev1.PodPhase
 }
 
-func NewPodWatcher(client *kubernetes.Clientset, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
+func NewPodWatcher(client kubernetes.Interface, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
 	return &PodWatcher{
 		client:    client,
 		namespace: namespace,
@@ -258,4 +258,3 @@ func k8sPhaseToState(phase corev1.PodPhase) pod.State {
 		return pod.StatePending
 	}
 }
-
