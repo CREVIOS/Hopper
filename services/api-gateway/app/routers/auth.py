@@ -16,15 +16,26 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.limiter import limiter
+from app.core.limiter import (
+    clear_login_failures,
+    limiter,
+    login_blocked,
+    record_login_failure,
+)
 from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
 from app.models.audit import AuditLog
 from app.models.user import User
+from app.schemas.api_key import (
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
+    CreateApiKeyRequest,
+)
 from app.schemas.user import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -35,7 +46,7 @@ from app.schemas.user import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import verification
+from app.services import api_key_service, verification
 from app.services.credit_service import get_or_create_account
 from app.services.email import send_code_email
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
@@ -355,7 +366,23 @@ async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = 
     """Themed email + password login (direct grant). The GET /login above keeps
     the OIDC redirect flow for SSO."""
     email = (body.email or "").lower().strip()
-    tokens = await _password_grant(email, body.password)
+    # Failed-attempt throttle (HOP-19 18.2): 3 wrong passwords per (IP, email)
+    # per window → 429. Counting only FAILURES keeps a shared campus NAT from
+    # locking out everyone at once; keying on the pair still stops both
+    # single-source credential stuffing and per-account brute force.
+    ip = get_remote_address(request)
+    if login_blocked(ip, email):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-in attempts. Try again in a few minutes.",
+        )
+    try:
+        tokens = await _password_grant(email, body.password)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            record_login_failure(ip, email)
+        raise
+    clear_login_failures(ip, email)
     payload = await verify_token(tokens["access_token"])
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -575,3 +602,96 @@ async def logout(request: Request):
     _clear_session_cookies(resp)
     resp.delete_cookie("id_token", path="/", secure=True, samesite="lax", httponly=True)
     return resp
+
+
+# ---------------------------------------------------------------------------
+# API keys for programmatic access (HOP-19 18.1)
+# ---------------------------------------------------------------------------
+
+def _require_session_auth(request: Request) -> None:
+    """Key management always requires a real (cookie) session. A leaked API
+    key must not be able to mint new keys or destroy existing ones."""
+    if getattr(request.state, "api_key_auth", False):
+        raise HTTPException(
+            status_code=403,
+            detail="API keys cannot manage API keys — sign in required",
+        )
+
+
+@router.post("/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
+@limiter.limit("10/minute")
+async def create_api_key(
+    request: Request,
+    response: Response,  # slowapi needs it to attach X-RateLimit-* headers
+    body: CreateApiKeyRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a scoped API key. The plaintext key is returned ONCE here and
+    only its SHA-256 hash is stored — copy it now or revoke and re-create."""
+    _require_session_auth(request)
+    try:
+        row, token = await api_key_service.create_key(
+            db, current_user.sub, body.name, body.scope
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.add(
+        AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.sub,
+            action="api_key.created",
+            resource_type="api_key",
+            resource_id=row.id,
+            ip_address=get_remote_address(request) or "-",
+            status_code=201,
+            metadata_={"name": row.name, "scope": row.scope},
+        )
+    )
+    await db.commit()
+    return ApiKeyCreatedResponse(
+        id=row.id,
+        name=row.name,
+        prefix=row.prefix,
+        scope=row.scope,
+        created_at=row.created_at,
+        last_used_at=row.last_used_at,
+        revoked_at=row.revoked_at,
+        key=token,
+    )
+
+
+@router.get("/api-keys", response_model=list[ApiKeyResponse])
+async def list_api_keys(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the caller's API keys (prefix only — secrets are never stored)."""
+    return await api_key_service.list_keys(db, current_user.sub)
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+async def revoke_api_key(
+    key_id: str,
+    request: Request,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke one of the caller's API keys (soft delete, idempotent)."""
+    _require_session_auth(request)
+    found = await api_key_service.revoke_key(db, current_user.sub, key_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="API key not found")
+    db.add(
+        AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.sub,
+            action="api_key.revoked",
+            resource_type="api_key",
+            resource_id=key_id,
+            ip_address=get_remote_address(request) or "-",
+            status_code=204,
+        )
+    )
+    await db.commit()
+    return Response(status_code=204)

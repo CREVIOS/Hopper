@@ -206,6 +206,11 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update"]
+  # Same-group VM NetworkPolicies (HOP-19 18.3): the orchestrator creates
+  # one `vm-net-group-<g>` policy per network group at VM create time.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "create"]
 ---
 # ClusterRole for reading node info (needed for admin /nodes endpoint)
 apiVersion: rbac.authorization.k8s.io/v1

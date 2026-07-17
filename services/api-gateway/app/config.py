@@ -72,6 +72,25 @@ class Settings(BaseSettings):
     email_code_length: int = 6
     email_code_max_attempts: int = 5
 
+    # Rate limiting (HOP-19 18.2). Buckets are in-memory per worker process,
+    # so the effective ceiling scales with workers × replicas — these are
+    # abuse guards, not precise quotas. Format: the `limits` notation, e.g.
+    # "5/minute", "3/5minutes".
+    #
+    # Per-user ceiling on authenticated session traffic, keyed by the
+    # verified JWT subject (enforced post-auth in get_current_user).
+    rate_limit_user_default: str = "120/minute"
+    # Programmatic access via API keys is limited separately from session
+    # auth, per key (18.1 "rate limited separately").
+    rate_limit_api_key: str = "30/minute"
+    # VM creates per user.
+    rate_limit_pod_create: str = "5/minute"
+    # FAILED sign-in attempts per (client IP, email) before /auth/login
+    # returns 429. Counting failures (not calls) means a shared university
+    # NAT can't lock out a whole lab, but 3 wrong passwords for one account
+    # from one address trips it.
+    rate_limit_login_failures: str = "3/5minutes"
+
     # Low-credit warnings, in minutes of runtime remaining at the user's
     # current burn rate (sum of their running VMs' hourly rates). A warning
     # notification fires once per threshold as the balance crosses it;

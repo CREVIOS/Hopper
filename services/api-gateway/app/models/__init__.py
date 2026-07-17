@@ -1,3 +1,4 @@
+from app.models.api_key import ApiKey
 from app.models.audit import AuditLog
 from app.models.credit_ledger import Account, LedgerEntry, Transfer
 from app.models.email_code import EmailCode
@@ -12,6 +13,7 @@ from app.models.vm_queue_entry import VmQueueEntry
 
 __all__ = [
     "Account",
+    "ApiKey",
     "AuditLog",
     "EmailCode",
     "IssueReport",

@@ -95,13 +95,18 @@ class OrchestratorClient:
             return False
 
     async def create_pod(
-        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "", pod_id: str = ""
+        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
+        pod_id: str = "", network_group: str = "",
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
         from app.proto.hopper.pod.v1 import pod_pb2, pod_pb2_grpc
 
         stub = pod_pb2_grpc.PodOrchestratorStub(self._channel)
+        # The network group travels in the existing labels map (no proto
+        # change): the orchestrator turns it into a pod label + a same-group
+        # NetworkPolicy (HOP-19 18.3).
+        labels = {"hopper.dev/network-group": network_group} if network_group else {}
         req = pod_pb2.CreatePodRequest(
             user_id=user_id,
             plan=plan,
@@ -110,6 +115,7 @@ class OrchestratorClient:
             memory=memory,
             disk=disk,
             pod_id=pod_id,
+            labels=labels,
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(
