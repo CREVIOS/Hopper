@@ -44,6 +44,9 @@ services/orchestrator/orchestrator
 htmlcov/
 .coverage
 .pytest_cache/
+coverage/
+test-results/
+.cache/go-test/
 
 # Pulumi
 infrastructure/pulumi/.pulumi/
