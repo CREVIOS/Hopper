@@ -189,15 +189,12 @@ def compute_capacity(
 
 
 def plan_fits(cap: Capacity, cpu_limit: str, mem_limit: str, disk_limit: str | None = None) -> bool:
-    """Whether a VM plan's scheduling request fits the free AGGREGATE capacity
+    """Whether a VM plan's scheduling request fits the free aggregate capacity
     (CPU, memory, and -- when ``disk_limit`` is given -- workspace storage).
 
-    Aggregate fit is necessary but not sufficient on a multi-node cluster: it
-    does not model per-node bin-packing, so a plan can pass here yet fail to
-    schedule because no single node has room (fragmentation). Pair it with
-    :func:`fits_on_some_node`, which adds the per-node check. Storage stays an
-    aggregate/logical pool (node ephemeral-storage is not reported), so it is
-    only checked here.
+    This is an AGGREGATE fit only: it does not model per-node bin-packing, so a
+    plan can pass here yet fail to schedule on any single node due to
+    fragmentation. Per-node placement is a documented v2 limitation.
     """
     if cpu_request_millis(cpu_limit) > cap.free_cpu_m():
         return False
@@ -206,80 +203,3 @@ def plan_fits(cap: Capacity, cpu_limit: str, mem_limit: str, disk_limit: str | N
     if disk_limit and parse_mem_bytes(disk_limit) > cap.free_storage_b():
         return False
     return True
-
-
-@dataclass(frozen=True)
-class NodeCapacity:
-    """Per-node free CPU/memory, in scheduling units. Storage is deliberately
-    absent: it is a cluster-wide logical pool, checked only in ``plan_fits``."""
-
-    name: str
-    ready: bool
-    free_cpu_m: int
-    free_mem_b: int
-
-
-def compute_node_capacities(
-    nodes: Iterable[_NodeLike],
-    vms_by_node: dict[str, Iterable[_VmLike]],
-    reserve_cpu_m: int,
-    reserve_mem_b: int,
-) -> list[NodeCapacity]:
-    """Free CPU/memory per Ready node.
-
-    ``vms_by_node`` maps a node name to the VMs the gateway knows are placed
-    there (live PodSessions with a recorded ``node_name``). Each node's free is
-    its allocatable minus those VMs' scheduling requests minus the reserve.
-
-    The reserve is applied PER NODE, not once cluster-wide: it stands in for the
-    kube-system pods the gateway cannot see (kube-proxy, the CNI agent, ...),
-    and those run on every node. This is intentionally more conservative than
-    the aggregate reserve in :func:`compute_capacity`.
-
-    VMs that are reserved but not yet placed (``node_name`` is NULL) are not in
-    ``vms_by_node`` and so are not attributed to any node here. They still count
-    against the aggregate via :func:`compute_capacity`, so admission as a whole
-    does not over-commit; the per-node view is briefly optimistic about them
-    until they schedule, which the orchestrator's Pending watchdog backstops.
-    """
-    result: list[NodeCapacity] = []
-    for node in nodes:
-        if not node.ready:
-            result.append(NodeCapacity(name=node_name(node), ready=False, free_cpu_m=0, free_mem_b=0))
-            continue
-        total_cpu_m = parse_cpu_millis(node.cpu_allocatable)
-        total_mem_b = parse_mem_bytes(node.memory_allocatable)
-        used_cpu_m = 0
-        used_mem_b = 0
-        for vm in vms_by_node.get(node_name(node), ()):
-            used_cpu_m += cpu_request_millis(vm.cpu)
-            used_mem_b += mem_request_bytes(vm.memory)
-        free_cpu_m = max(0, total_cpu_m - used_cpu_m - reserve_cpu_m)
-        free_mem_b = max(0, total_mem_b - used_mem_b - reserve_mem_b)
-        result.append(
-            NodeCapacity(name=node_name(node), ready=True, free_cpu_m=free_cpu_m, free_mem_b=free_mem_b)
-        )
-    return result
-
-
-def node_name(node: _NodeLike) -> str:
-    """A node's name, tolerating node-like objects that omit it (e.g. the pure
-    capacity-math tests use minimal stand-ins)."""
-    return getattr(node, "name", "") or ""
-
-
-def fits_on_some_node(node_caps: Iterable[NodeCapacity], cpu_limit: str, mem_limit: str) -> bool:
-    """Whether at least one Ready node can hold a VM plan's CPU+memory request.
-
-    This is the per-node (bin-packing) half of admission. It rejects the
-    fragmentation case aggregate fit misses: e.g. 8Gi requested, 4Gi free on
-    each of two nodes -- aggregate says yes, no single node fits, so this says
-    no. When there are no nodes (orchestrator unreachable, handled fail-open by
-    the caller) this returns False.
-    """
-    req_cpu_m = cpu_request_millis(cpu_limit)
-    req_mem_b = mem_request_bytes(mem_limit)
-    return any(
-        nc.ready and req_cpu_m <= nc.free_cpu_m and req_mem_b <= nc.free_mem_b
-        for nc in node_caps
-    )

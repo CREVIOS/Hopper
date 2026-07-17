@@ -96,25 +96,6 @@ export interface Availability {
     free_gib: number | null;
   };
   nodes_ready: number | null;
-  /**
-   * Largest headroom on any single machine. A VM only schedules if ONE node can
-   * hold it, so this bounds the biggest VM startable right now — which can be
-   * smaller than the cluster-wide free totals when capacity is split across
-   * machines (fragmentation). Null when the orchestrator is unreachable.
-   */
-  largest_node_free: {
-    cpu_cores: number;
-    memory_gib: number;
-  } | null;
-  /** Per-node free capacity; null when the orchestrator is unreachable. */
-  nodes:
-    | {
-        name: string;
-        ready: boolean;
-        free_cores: number;
-        free_gib: number;
-      }[]
-    | null;
   queue_length: number;
 }
 

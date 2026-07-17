@@ -19,25 +19,6 @@ import (
 // a separate secret store.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
 
-// VMReadyLabel marks a node as prepared to host user VMs. A node only earns it
-// once the things a VM pod needs from its host are actually in place:
-//   - the lxcfs daemon, whose /var/lib/lxcfs/proc/* files every VM hostPath-mounts
-//     with type File (a missing file fails the pod outright), and
-//   - the VM template images in the node's container runtime, since VM pods are
-//     IfNotPresent against image names with no registry host.
-//
-// Neither is installed by joining a cluster, so an unlabeled node is assumed
-// unprepared. VM pods select on this label and capacity accounting only counts
-// nodes that carry it (see schedulableForVMs), which makes adding a machine
-// fail-closed: an unprepared node quietly receives nothing instead of
-// swallowing VMs that then fail in ways that look random.
-//
-// infrastructure/ansible/roles/k3s-agent applies it as its last step.
-const (
-	VMReadyLabel = "hopper.dev/vm-ready"
-	VMReadyValue = "true"
-)
-
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
 // of entropy). Used for the per-pod SSH root password. (code-server runs with
 // auth disabled — the platform gates VS Code access, so no code-server
@@ -227,13 +208,6 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		},
 		Spec: corev1.PodSpec{
 			TerminationGracePeriodSeconds: &gracePeriod,
-			// Only schedule onto nodes prepared to host VMs (lxcfs running, VM
-			// images imported). Without this, the scheduler could place a VM on
-			// a freshly joined node that has neither, and the pod would fail on
-			// the missing lxcfs hostPath or ErrImagePull. Kept in lockstep with
-			// schedulableForVMs so capacity accounting counts exactly the nodes
-			// this selects. See VMReadyLabel.
-			NodeSelector: map[string]string{VMReadyLabel: VMReadyValue},
 			// Don't expose the orchestrator's K8s API token inside user VMs —
 			// otherwise a user with shell access can hit the cluster API.
 			AutomountServiceAccountToken: &automount,
@@ -461,16 +435,8 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 	return result, nil
 }
 
-// schedulableForVMs reports whether a VM pod could actually be scheduled onto
-// the node: not cordoned, free of NoSchedule/NoExecute taints (VM pods carry no
-// tolerations), and carrying the vm-ready label the VM pod spec selects on.
-//
-// This MUST stay in lockstep with the VM pod spec's NodeSelector. Capacity
-// accounting sums exactly the nodes this returns true for, so any node the spec
-// refuses to schedule on must also be refused here — counting a node VMs can't
-// land on inflates free capacity and admits VMs that then sit Pending. That is
-// the bug the control-plane taint check above already fixes; the vm-ready label
-// is the same rule applied to unprepared nodes.
+// schedulableForVMs reports whether a VM pod (which carries no tolerations) could
+// be scheduled onto the node: not cordoned and free of NoSchedule/NoExecute taints.
 func schedulableForVMs(n *corev1.Node) bool {
 	if n.Spec.Unschedulable {
 		return false
@@ -480,7 +446,7 @@ func schedulableForVMs(n *corev1.Node) bool {
 			return false
 		}
 	}
-	return n.Labels[VMReadyLabel] == VMReadyValue
+	return true
 }
 
 type NodeInfo struct {

@@ -261,33 +261,28 @@ async def get_availability(
     """
     queue_length = await vm_queue.live_queue_count(db)
 
-    cap, node_caps = await vm_scheduler.current_capacity_and_nodes(db, orchestrator_client)
-    if cap is None or node_caps is None:
+    try:
+        nodes = await orchestrator_client.list_nodes()
+        nodes_ready = sum(1 for n in nodes if n.ready)
+    except Exception as exc:
+        logger.warning("Availability: ListNodes failed: %s", exc)
+        nodes_ready = None
+
+    cap = await vm_scheduler.current_capacity(db, orchestrator_client)
+    if cap is None:
         return {
             "cpu": {"total_cores": None, "used_cores": None, "free_cores": None},
             "memory": {"total_gib": None, "used_gib": None, "free_gib": None},
             "storage": {"total_gib": None, "used_gib": None, "free_gib": None},
-            "nodes_ready": None,
-            "largest_node_free": None,
-            "nodes": None,
+            "nodes_ready": nodes_ready,
             "queue_length": queue_length,
         }
-
-    nodes_ready = sum(1 for nc in node_caps if nc.ready)
 
     # "used" is derived as total - free so the three values always reconcile
     # (it folds in both live-VM requests and the system reserve).
     free_cpu_m = cap.free_cpu_m()
     free_mem_b = cap.free_mem_b()
     free_storage_b = cap.free_storage_b()
-
-    # Largest headroom on any single node. A VM only schedules if ONE machine
-    # can hold it, so this is what actually bounds the biggest VM a user can
-    # start right now — distinct from the cluster-wide free totals, which can be
-    # larger yet fragmented across machines. The UI reads this to explain "8 GiB
-    # free overall, but no single machine has room for a Large VM".
-    ready = [nc for nc in node_caps if nc.ready]
-    largest = max(ready, key=lambda nc: nc.free_mem_b, default=None)
     return {
         "cpu": {
             "total_cores": round(cap.total_cpu_m / 1000, 2),
@@ -306,19 +301,6 @@ async def get_availability(
             "free_gib": round(free_storage_b / _BYTES_PER_GIB, 2),
         },
         "nodes_ready": nodes_ready,
-        "largest_node_free": None if largest is None else {
-            "cpu_cores": round(largest.free_cpu_m / 1000, 2),
-            "memory_gib": round(largest.free_mem_b / _BYTES_PER_GIB, 2),
-        },
-        "nodes": [
-            {
-                "name": nc.name,
-                "ready": nc.ready,
-                "free_cores": round(nc.free_cpu_m / 1000, 2),
-                "free_gib": round(nc.free_mem_b / _BYTES_PER_GIB, 2),
-            }
-            for nc in node_caps
-        ],
         "queue_length": queue_length,
     }
 

@@ -96,17 +96,6 @@ def _storage_reserves() -> tuple[int, int]:
     return total, reserve
 
 
-def _first_fit_node(node_free: list[list[int]], req_cpu_m: int, req_mem_b: int) -> int:
-    """Index of the first node whose remaining [cpu_m, mem_b] can hold the
-    request, or -1 if none can. First-fit over the running per-node tallies is a
-    greedy bin-pack: if every VM in a pass places this way, a real placement
-    exists; a failure conservatively stops the pass (see reconcile_pass)."""
-    for i, (free_cpu_m, free_mem_b) in enumerate(node_free):
-        if req_cpu_m <= free_cpu_m and req_mem_b <= free_mem_b:
-            return i
-    return -1
-
-
 async def acquire_or_renew_leadership(
     db: AsyncSession, instance_id: str, ttl_s: int
 ) -> bool:
@@ -167,53 +156,26 @@ async def fetch_nodes(orch: OrchestratorClient):
         return None
 
 
-async def _fetch_live_vms(db: AsyncSession) -> tuple[list[_LiveVm], dict[str, list[_LiveVm]]]:
-    """Every live PodSession as (all_vms, vms_by_node). A VM appears in
-    ``vms_by_node`` only once it has a recorded ``node_name`` (i.e. it has been
-    placed); reserved-but-unplaced VMs are in ``all_vms`` only, so they weigh on
-    the aggregate total but not yet on any single node."""
+async def _free_from_nodes(db: AsyncSession, nodes) -> vm_capacity.Capacity:
+    """Free capacity = pre-fetched node allocatable minus the scheduling requests
+    of every live PodSession minus the configured reserve. Call while holding the
+    admission lock so the live-VM sum is consistent with the reservation about to
+    be written."""
     rows = await db.execute(
-        select(
-            PodSession.cpu, PodSession.memory, PodSession.plan, PodSession.node_name
-        ).where(PodSession.state.in_(_LIVE_VM_STATES))
+        select(PodSession.cpu, PodSession.memory, PodSession.plan).where(
+            PodSession.state.in_(_LIVE_VM_STATES)
+        )
     )
-    all_vms: list[_LiveVm] = []
-    by_node: dict[str, list[_LiveVm]] = {}
-    for cpu, memory, plan, node in rows.all():
-        vm = _LiveVm(cpu=cpu, memory=memory, disk=_plan_disk(plan))
-        all_vms.append(vm)
-        if node:
-            by_node.setdefault(node, []).append(vm)
-    return all_vms, by_node
-
-
-async def _capacity(
-    db: AsyncSession, nodes
-) -> tuple[vm_capacity.Capacity, list[vm_capacity.NodeCapacity]]:
-    """Aggregate free capacity AND per-node free capacity from one live-VM read.
-
-    Aggregate: Σ node allocatable − Σ every live VM's request − reserve (this is
-    what gates over-commit, and counts reserved-but-unplaced VMs). Per-node: each
-    node's allocatable − the requests of VMs placed on it − per-node reserve.
-
-    Call while holding the admission lock so the live-VM sum is consistent with
-    the reservation about to be written."""
-    all_vms, by_node = await _fetch_live_vms(db)
+    live_vms = [
+        _LiveVm(cpu=cpu, memory=memory, disk=_plan_disk(plan)) for cpu, memory, plan in rows.all()
+    ]
     reserve_cpu_m = vm_capacity.parse_cpu_millis(settings.cluster_reserve_cpu)
     reserve_mem_b = vm_capacity.parse_mem_bytes(settings.cluster_reserve_memory)
     total_storage_b, reserve_storage_b = _storage_reserves()
-    cap = vm_capacity.compute_capacity(
-        nodes, all_vms, reserve_cpu_m, reserve_mem_b,
+    return vm_capacity.compute_capacity(
+        nodes, live_vms, reserve_cpu_m, reserve_mem_b,
         total_storage_b=total_storage_b, reserve_storage_b=reserve_storage_b,
     )
-    node_caps = vm_capacity.compute_node_capacities(nodes, by_node, reserve_cpu_m, reserve_mem_b)
-    return cap, node_caps
-
-
-async def _free_from_nodes(db: AsyncSession, nodes) -> vm_capacity.Capacity:
-    """Aggregate free capacity only (see :func:`_capacity`)."""
-    cap, _ = await _capacity(db, nodes)
-    return cap
 
 
 async def current_capacity(
@@ -225,19 +187,6 @@ async def current_capacity(
     if nodes is None:
         return None
     return await _free_from_nodes(db, nodes)
-
-
-async def current_capacity_and_nodes(
-    db: AsyncSession, orch: OrchestratorClient
-) -> tuple[vm_capacity.Capacity | None, list[vm_capacity.NodeCapacity] | None]:
-    """Best-effort aggregate + per-node free capacity for the availability
-    readout, from a single ListNodes + live-VM read. (None, None) if the
-    orchestrator is down."""
-    nodes = await fetch_nodes(orch)
-    if nodes is None:
-        return None, None
-    cap, node_caps = await _capacity(db, nodes)
-    return cap, node_caps
 
 
 async def _lock_admission(db: AsyncSession) -> None:
@@ -295,14 +244,8 @@ async def reserve_sync_slot(
     if queued > 0:  # never jump ahead of anyone already waiting (FCFS)
         await db.rollback()
         return None
-    cap, node_caps = await _capacity(db, nodes)
-    # Both gates must pass: aggregate (incl. storage) so the cluster as a whole
-    # has room, AND some single node can hold it so it will actually schedule
-    # (multi-node fragmentation). On one node the two are equivalent.
+    cap = await _free_from_nodes(db, nodes)
     if not vm_capacity.plan_fits(cap, cpu, memory, _plan_disk(plan)):
-        await db.rollback()
-        return None
-    if not vm_capacity.fits_on_some_node(node_caps, cpu, memory):
         await db.rollback()
         return None
     if await _user_live_count(db, user_id) >= MAX_CONCURRENT_VMS_PER_USER:
@@ -339,14 +282,7 @@ async def _requeue_stuck_admitting(db: AsyncSession, orch: OrchestratorClient) -
         if pod_name:
             try:
                 status = await orch.get_pod_status(pod_name)
-                # A successful GetPodStatus means the orchestrator materialized
-                # the pod -- it raises for an unknown pod. Finalize rather than
-                # requeue so we never create a second pod for one the
-                # orchestrator already made. (The old `getattr(status, "exists")`
-                # read a field PodStatusResponse never had, so it was always
-                # False and every stuck entry was requeued -- an orphan-pod
-                # risk that the Pending watchdog makes more reachable.)
-                live = status.state not in ("unknown", "unspecified")
+                live = bool(getattr(status, "exists", False))
             except Exception:
                 live = False
         if live:
@@ -377,49 +313,6 @@ async def _requeue_stuck_admitting(db: AsyncSession, orch: OrchestratorClient) -
     return recovered
 
 
-async def _backfill_node_names(db: AsyncSession, orch: OrchestratorClient) -> int:
-    """Fill node_name for live VMs that never recorded it, by asking the
-    orchestrator where the pod actually landed.
-
-    node_name is normally set from the pod.started event, but that is fire-and-
-    forget core NATS (no JetStream/redelivery). A single dropped message would
-    otherwise leave that VM with node_name=NULL forever, hiding its CPU/RAM from
-    per-node accounting -- silently reintroducing the fragmentation the per-node
-    gate exists to prevent. This is the self-heal: cheap (usually zero rows, and
-    a VM keeps its NULL only until the next tick), idempotent, best-effort.
-
-    Runs unlocked at the top of reconcile_pass, before capacity is read, so this
-    pass already sees the corrected placement."""
-    rows = (
-        await db.execute(
-            select(PodSession.id, PodSession.pod_name).where(
-                PodSession.state.in_(_LIVE_VM_STATES),
-                PodSession.node_name.is_(None),
-                PodSession.pod_name.is_not(None),
-            )
-        )
-    ).all()
-    filled = 0
-    for sid, pod_name in rows:
-        if not pod_name:
-            continue
-        try:
-            status = await orch.get_pod_status(pod_name)
-        except Exception:
-            continue  # not materialized yet, or a transient error -- retry next tick
-        if status.node_name:
-            await db.execute(
-                text(
-                    "UPDATE pod_sessions SET node_name=:n WHERE id=:id AND node_name IS NULL"
-                ),
-                {"n": status.node_name, "id": sid},
-            )
-            filled += 1
-    if filled:
-        await db.commit()
-    return filled
-
-
 async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
     """Admit head-of-line queued entries FCFS while capacity allows.
 
@@ -437,22 +330,11 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
     if nodes is None:
         return {"admitted": 0, "capacity": False}
 
-    # Repair any live VM missing its node placement (a dropped pod.started) so
-    # the per-node capacity read below attributes every VM to its real node.
-    await _backfill_node_names(db, orch)
-
     # ---- Phase 1: reserve fitting entries under the admission lock ----
     await _lock_admission(db)
-    cap, node_caps = await _capacity(db, nodes)
+    cap = await _free_from_nodes(db, nodes)
     free_cpu_m, free_mem_b = cap.free_cpu_m(), cap.free_mem_b()
     free_storage_b = cap.free_storage_b()
-    # Mutable per-node free (Ready nodes only) that we bin-pack against as we
-    # admit within this pass. The gateway doesn't choose the node -- kube-scheduler
-    # does -- so this is a greedy first-fit simulation: if we can place every
-    # admitted VM on some node here, a real placement provably exists; if we
-    # can't, we stop (conservative, and the Pending watchdog backstops any
-    # residual misprediction). See _first_fit_node.
-    node_free = [[nc.free_cpu_m, nc.free_mem_b] for nc in node_caps if nc.ready]
     entries = (
         await db.execute(
             select(VmQueueEntry).where(VmQueueEntry.state == "queued").order_by(VmQueueEntry.seq.asc())
@@ -468,10 +350,7 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
         req_mem_b = vm_capacity.mem_request_bytes(entry.memory)
         req_storage_b = vm_capacity.parse_mem_bytes(_plan_disk(entry.plan))
         if req_cpu_m > free_cpu_m or req_mem_b > free_mem_b or req_storage_b > free_storage_b:
-            break  # head-of-line: aggregate too small, a too-big front entry stops the pass
-        node_idx = _first_fit_node(node_free, req_cpu_m, req_mem_b)
-        if node_idx < 0:
-            break  # head-of-line: fits in aggregate but no single node has room
+            break  # head-of-line: a too-big front entry stops the pass
         count = user_counts.get(entry.user_id)
         if count is None:
             count = await _user_live_count(db, entry.user_id)
@@ -503,10 +382,6 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
         free_cpu_m -= req_cpu_m
         free_mem_b -= req_mem_b
         free_storage_b -= req_storage_b
-        # Consume the chosen node's capacity only now that the admit is
-        # committed, so a skipped/lost-claim entry above never leaks node room.
-        node_free[node_idx][0] -= req_cpu_m
-        node_free[node_idx][1] -= req_mem_b
         user_counts[entry.user_id] = count + 1
 
     await db.commit()  # releases the lock; persists every reservation

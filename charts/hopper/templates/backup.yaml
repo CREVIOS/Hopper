@@ -43,12 +43,6 @@ spec:
             # connection.
             app: pg-backup
         spec:
-          {{- with .Values.stateful.nodeSelector }}
-          # Pin to the node holding the pg-backups PVC (RWO local-path), same as
-          # Postgres. Empty by default — see docs/NODE_JOIN.md.
-          nodeSelector:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           restartPolicy: Never
           containers:
             - name: pg-dump
