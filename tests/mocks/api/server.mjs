@@ -101,6 +101,8 @@ http.createServer(async (req, res) => {
       memory: { total_gib: 32, used_gib: 2, free_gib: 30 },
       storage: { total_gib: 150, used_gib: 5, free_gib: 145 },
       nodes_ready: 1,
+      largest_node_free: { cpu_cores: 8, memory_gib: 30 },
+      nodes: [{ name: 'node-1', ready: true, free_cores: 8, free_gib: 30 }],
       queue_length: 0
     });
   }

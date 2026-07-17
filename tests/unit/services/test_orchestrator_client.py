@@ -70,6 +70,7 @@ async def test_create_pod_maps_response(monkeypatch):
                 vscode_port=30080,
                 message="running",
                 ssh_password="secret",
+                node_name="hopper-worker",
             )
 
     _install_fake_proto_modules(monkeypatch, FakeStub)
@@ -84,6 +85,7 @@ async def test_create_pod_maps_response(monkeypatch):
     assert captured["timeout"] == 30
     assert response.state == "running"
     assert response.ssh_password == "secret"
+    assert response.node_name == "hopper-worker"
 
 
 async def test_terminate_pod_returns_success(monkeypatch):
@@ -115,6 +117,7 @@ async def test_get_pod_status_maps_unknown_state(monkeypatch):
                 vscode_port=30080,
                 message="unknown",
                 ssh_password="secret",
+                node_name="",
             )
 
     _install_fake_proto_modules(monkeypatch, FakeStub)
