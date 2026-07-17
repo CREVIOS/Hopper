@@ -3,6 +3,7 @@ import { currentUser, loginAs, logout } from '../helpers/auth';
 
 type AppFixtures = {
   loginAsAdmin: () => Promise<void>;
+  loginAsProfessor: () => Promise<void>;
   loginAsStudent: () => Promise<void>;
   logoutCurrentUser: () => Promise<void>;
   fetchCurrentUser: () => ReturnType<typeof currentUser>;
@@ -30,6 +31,10 @@ export const test = base.extend<AppFixtures>({
   },
   loginAsAdmin: async ({ page }, use) => {
     await use(() => loginAs(page, 'admin'));
+  },
+
+  loginAsProfessor: async ({ page }, use) => {
+    await use(() => loginAs(page, 'professor'));
   },
 
   loginAsStudent: async ({ page }, use) => {
