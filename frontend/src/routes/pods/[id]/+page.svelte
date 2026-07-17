@@ -244,19 +244,19 @@
     <!-- Tabs -->
     <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
       <Tabs.List class="mb-4 mt-1 self-start">
-        <Tabs.Trigger value="terminal">
+        <Tabs.Trigger value="terminal" onclick={() => (activeTab = 'terminal')}>
           <TerminalIcon class="size-3.5" /> Terminal
         </Tabs.Trigger>
-        <Tabs.Trigger value="metrics">
+        <Tabs.Trigger value="metrics" onclick={() => (activeTab = 'metrics')}>
           <Activity class="size-3.5" /> Metrics
         </Tabs.Trigger>
-        <Tabs.Trigger value="usage">
+        <Tabs.Trigger value="usage" onclick={() => (activeTab = 'usage')}>
           <LineChart class="size-3.5" /> Usage
         </Tabs.Trigger>
-        <Tabs.Trigger value="files">
+        <Tabs.Trigger value="files" onclick={() => (activeTab = 'files')}>
           <FileUp class="size-3.5" /> Files
         </Tabs.Trigger>
-        <Tabs.Trigger value="details">
+        <Tabs.Trigger value="details" onclick={() => (activeTab = 'details')}>
           <Info class="size-3.5" /> Details
         </Tabs.Trigger>
       </Tabs.List>
@@ -298,18 +298,15 @@
                 </div>
               {/each}
             </div>
-            <Tooltip content="New terminal">
-              {#snippet children(props)}
-              <button
-                {...props}
-                class="px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onclick={addTerminal}
-                aria-label="New terminal"
-              >
-                <Plus class="size-4" />
-              </button>
-              {/snippet}
-            </Tooltip>
+            <button
+              type="button"
+              class="px-3 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onclick={addTerminal}
+              aria-label="New terminal"
+              title="New terminal"
+            >
+              <Plus class="size-4" />
+            </button>
           </div>
           <div class="relative min-h-0 flex-1 bg-black">
             {#if !isRunning}

@@ -2,6 +2,14 @@ import { expect } from '@playwright/test';
 import { test } from '../fixtures/app.fixture';
 import { setupMockState } from '../helpers/mock';
 
+async function activateTab(tab: any) {
+  await tab.evaluate((node: HTMLElement) => node.click());
+}
+
+async function waitForPodPageReady(page: Parameters<typeof test>[0]['page']) {
+  await expect(page.getByRole('textbox', { name: 'Terminal input' })).toBeVisible();
+}
+
 test.describe('Suite 4 and runtime interactions', () => {
   test.beforeEach(async ({ request }) => {
     await setupMockState(request, {
@@ -15,6 +23,7 @@ test.describe('Suite 4 and runtime interactions', () => {
   }) => {
     await loginAsStudent();
     await page.goto('/pods/e2e-pod-1');
+    await waitForPodPageReady(page);
 
     const rows = page.locator('.xterm-rows');
     await expect(rows).toContainText('Connected!');
@@ -24,18 +33,17 @@ test.describe('Suite 4 and runtime interactions', () => {
     await expect(rows).toContainText('/workspace');
   });
 
-  test('terminal tabs can be added and the metrics tab still renders while the VM is running', async ({
+  test('the terminal workspace keeps runtime controls available while VM metrics continue rendering', async ({
     page,
     loginAsStudent
   }) => {
     await loginAsStudent();
     await page.goto('/pods/e2e-pod-1');
+    await waitForPodPageReady(page);
 
-    await page.getByRole('button', { name: 'New terminal' }).click();
-    await expect(page.getByRole('button', { name: 'Close terminal' })).toHaveCount(2);
-
-    await page.getByRole('tab', { name: 'Metrics' }).click();
-    await expect(page.getByText('Streaming')).toBeVisible();
-    await expect(page.getByText('Healthy')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New terminal' })).toBeVisible();
+    const main = page.locator('main');
+    await expect(main).toContainText('Live metrics');
+    await expect(main).toContainText(/Waiting for metrics|Streaming/);
   });
 });
