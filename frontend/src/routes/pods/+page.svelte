@@ -30,6 +30,7 @@
     type Availability,
     type CreatePodResult
   } from '$lib/types';
+  import { capacityTone, fmtCapacity } from '$lib/capacity/format';
   import { api, ApiError } from '$lib/api/client';
   import StatCard from '$lib/components/StatCard.svelte';
   import {
@@ -81,24 +82,6 @@
     const timer = setInterval(refreshAvailability, 5000);
     return () => clearInterval(timer);
   });
-
-  // "3.2 / 8" style fraction; renders an em dash when a figure is unknown.
-  function fmtNum(n: number | null | undefined): string {
-    if (n === null || n === undefined) return '—';
-    return Number.isInteger(n) ? String(n) : n.toFixed(1);
-  }
-
-  // Tone the free-capacity cards by how much headroom is left.
-  function capacityTone(
-    free: number | null | undefined,
-    total: number | null | undefined
-  ): 'success' | 'warning' | 'destructive' | 'default' {
-    if (free === null || free === undefined || !total) return 'default';
-    const ratio = free / total;
-    if (ratio < 0.15) return 'destructive';
-    if (ratio < 0.35) return 'warning';
-    return 'success';
-  }
 
   const cpuTone = $derived(
     capacityTone(availability?.cpu.free_cores, availability?.cpu.total_cores)
@@ -297,15 +280,15 @@
       <StatCard
         compact
         label="Free CPU"
-        value="{fmtNum(availability?.cpu.free_cores)} / {fmtNum(availability?.cpu.total_cores)}"
-        sub="cores available"
+        value="{fmtCapacity(availability?.cpu.free_cores)} / {fmtCapacity(availability?.cpu.total_cores)}"
+        sub="cores left to reserve"
         icon={Cpu}
         tone={cpuTone}
       />
       <StatCard
         compact
         label="Free memory"
-        value="{fmtNum(availability?.memory.free_gib)} / {fmtNum(availability?.memory.total_gib)}"
+        value="{fmtCapacity(availability?.memory.free_gib)} / {fmtCapacity(availability?.memory.total_gib)}"
         sub="GiB available"
         icon={MemoryStick}
         tone={memTone}
@@ -313,8 +296,8 @@
       <StatCard
         compact
         label="Free storage"
-        value="{fmtNum(availability?.storage.free_gib)} / {fmtNum(availability?.storage.total_gib)}"
-        sub="GiB workspace disk"
+        value="{fmtCapacity(availability?.storage.free_gib)} / {fmtCapacity(availability?.storage.total_gib)}"
+        sub="GiB workspace quota"
         icon={HardDrive}
         tone={storageTone}
       />
@@ -328,6 +311,18 @@
         href="/pods/queue"
       />
     </div>
+    <!-- Without this the CPU figure looks broken: a "1 CPU" VM only moves it by
+         0.25, because CPU is reserved at a quarter of the plan limit while
+         memory and storage are reserved in full. Only worth saying once there
+         are real figures to explain — the cards are all em dashes until then. -->
+    {#if availability}
+      <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
+        A VM reserves a <strong class="font-medium text-foreground">quarter</strong> of its plan's
+        CPU and bursts up to the full limit whenever cores are idle — so a 1 CPU VM takes 0.25 from
+        free CPU. Memory and storage are reserved in full. Free storage is a workspace quota, not
+        measured disk.
+      </p>
+    {/if}
   </section>
 
   <!-- Launch panel -->
