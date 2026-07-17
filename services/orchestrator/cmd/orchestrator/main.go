@@ -79,10 +79,6 @@ func main() {
 		watcher.Reconcile(ctx, srv.PodManager(), srv.Ticker())
 		go watcher.Watch(ctx, srv.PodManager(), srv.Ticker())
 
-		// Reap VMs that never got scheduled (multi-node fragmentation) instead
-		// of leaving them Pending forever.
-		go watcher.StartWatchdog(ctx, srv.PodManager(), k8sPods, cfg.PendingReapAfter)
-
 		// Background metrics publisher (publishes to NATS every 5s for all running pods)
 		events.StartMetricsPublisher(ctx, nc, logger, srv.PodManager(), k8sPods)
 	}

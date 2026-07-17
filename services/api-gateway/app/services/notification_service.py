@@ -145,16 +145,11 @@ async def _handle_pod_started(msg) -> None:
             if session is None:
                 logger.warning("pod.started for unknown pod %s", pod_ref)
                 return
-            # Record where the scheduler placed the VM (multi-node capacity
-            # accounting attributes this VM's requests to that node). Present on
-            # every pod.started the watcher emits once the pod is scheduled.
-            node_name = data.get("node_name")
-            if node_name:
-                session.node_name = node_name
-            # The watcher publishes pod.started exactly once per observed
-            # Pending→Running phase transition — the first honest signal the
-            # container is actually up. create_pod no longer marks the session
-            # running, so this is normally the pending/creating → running flip.
+            # The DB is usually already "running" here — create_pod records
+            # the orchestrator's optimistic state long before the container
+            # actually starts. The watcher publishes pod.started exactly once
+            # per observed Pending→Running phase transition, so notify
+            # unconditionally and just repair a stale non-terminal state.
             if session.state in ("terminated", "failed"):
                 return  # raced a termination — don't resurrect
             if session.state in ("pending", "creating"):
@@ -241,39 +236,17 @@ async def _handle_pod_failed(msg) -> None:
     # always match.
     pod_ref = data.get("api_pod_id") or data.get("pod_id", "")
 
-    # Usually state-repair only: a synchronous create_pod failure publishes
-    # pod.failed, and THAT path owns the "VM failed to create" notification (a
-    # second one here would race and double-notify). The exception is a failure
-    # with no synchronous owner — the orchestrator's scheduling watchdog reaping
-    # a VM that never found a node — which sets notify=true so the user still
-    # hears why their VM went away. Marking the session failed also frees the
-    # capacity it was holding (it leaves the live-VM set).
-    should_notify = data.get("notify") == "true"
-    reason = data.get("reason", "")
+    # State repair only, no notification: pod.failed is published exactly when
+    # the gateway's create_pod call fails synchronously, and THAT path owns the
+    # "VM failed to create" notification (a second one here would race it and
+    # double-notify). This consumer just makes sure the DB row lands on
+    # "failed" even if the request worker died mid-flight.
     try:
         async with async_session() as db:
             session = await resolve_session(db, pod_ref) if pod_ref else None
             if session is None or session.state in ("failed", "terminated"):
                 return
             session.state = "failed"
-            if should_notify:
-                if reason == "unschedulable":
-                    body = (
-                        f"Your {session.plan} VM couldn't start: no single machine in the "
-                        "cluster currently has room for it. No credits were charged — "
-                        "please try a smaller plan or try again once capacity frees up."
-                    )
-                else:
-                    body = f"Your {session.plan} VM failed to start. No credits were charged."
-                await notify(
-                    db,
-                    session.user_id,
-                    type_="error",
-                    title="VM couldn't start",
-                    body=body,
-                    data={"pod_id": session.id, "reason": reason or "failed"},
-                    commit=False,
-                )
             await db.commit()
             logger.info("pod %s marked failed from pod.failed event", session.id)
     except Exception:

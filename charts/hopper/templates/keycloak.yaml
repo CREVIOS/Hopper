@@ -18,12 +18,6 @@ spec:
       labels:
         app: keycloak
     spec:
-      {{- with .Values.stateful.nodeSelector }}
-      # Pin to the primary node alongside Postgres/NATS on multi-node clusters
-      # (see docs/NODE_JOIN.md). Empty by default.
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       containers:
         - name: keycloak
           image: {{ .Values.keycloak.image }}

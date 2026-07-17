@@ -150,14 +150,3 @@ backup:
   storageClassName: local-path
   retentionDays: 14
   image: postgres:16-alpine
-
-# Placement for the stateful, node-local workloads (Postgres, NATS, Keycloak,
-# the backup job). Their PVCs are RWO k3s local-path volumes bound to one node,
-# so once you add a second node these MUST stay on the node holding their data.
-# Empty = no constraint, correct for a single-node cluster. Before joining a
-# worker, label the primary node and set this to match — see docs/NODE_JOIN.md:
-#   stateful:
-#     nodeSelector:
-#       kubernetes.io/hostname: <primary-node-name>
-stateful:
-  nodeSelector: {}
