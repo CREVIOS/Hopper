@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.core.database import async_session, engine
+from app.core.database import engine
 from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
