@@ -45,6 +45,9 @@ htmlcov/
 .coverage
 .pytest_cache/
 coverage/
+!tests/coverage/
+tests/coverage/*
+!tests/coverage/README.md
 test-results/
 .cache/go-test/
 

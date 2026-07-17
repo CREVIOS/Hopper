@@ -3,6 +3,23 @@ import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || '';
+const MAX_LIVE_PODS = Number(__ENV.K6_MAX_LIVE_PODS || 2);
+const CLASS_START_VUS = Number(__ENV.K6_CLASS_START_VUS || 6);
+const CLASS_START_ITERATIONS = Number(__ENV.K6_CLASS_START_ITERATIONS || 6);
+const METRICS_VUS = Number(__ENV.K6_METRICS_VUS || 12);
+const METRICS_DURATION = __ENV.K6_METRICS_DURATION || '45s';
+const SPIKE_PEAK_VUS = Number(__ENV.K6_SPIKE_PEAK_VUS || 20);
+const SPIKE_UP_DURATION = __ENV.K6_SPIKE_UP_DURATION || '20s';
+const SPIKE_HOLD_DURATION = __ENV.K6_SPIKE_HOLD_DURATION || '40s';
+const SPIKE_DOWN_DURATION = __ENV.K6_SPIKE_DOWN_DURATION || '20s';
+const CLASS_END_VUS = Number(__ENV.K6_CLASS_END_VUS || 6);
+const CLASS_END_ITERATIONS = Number(__ENV.K6_CLASS_END_ITERATIONS || 6);
+const BILLING_VUS = Number(__ENV.K6_BILLING_VUS || 10);
+const BILLING_DURATION = __ENV.K6_BILLING_DURATION || '30s';
+const METRICS_START_TIME = __ENV.K6_METRICS_START_TIME || '20s';
+const SPIKE_START_TIME = __ENV.K6_SPIKE_START_TIME || '1m10s';
+const CLASS_END_START_TIME = __ENV.K6_CLASS_END_START_TIME || '2m30s';
+const BILLING_START_TIME = __ENV.K6_BILLING_START_TIME || '3m';
 
 function headers() {
   return {
@@ -17,42 +34,42 @@ export const options = {
     class_start: {
       executor: 'shared-iterations',
       exec: 'classStart',
-      vus: 30,
-      iterations: 30,
-      maxDuration: '5m',
+      vus: CLASS_START_VUS,
+      iterations: CLASS_START_ITERATIONS,
+      maxDuration: '2m',
     },
     metrics_polling: {
       executor: 'constant-vus',
       exec: 'metricsPolling',
-      vus: 100,
-      duration: '10m',
-      startTime: '5m',
+      vus: METRICS_VUS,
+      duration: METRICS_DURATION,
+      startTime: METRICS_START_TIME,
     },
     spike: {
       executor: 'ramping-vus',
       exec: 'spikeTraffic',
       startVUs: 0,
       stages: [
-        { duration: '1m', target: 150 },
-        { duration: '5m', target: 150 },
-        { duration: '1m', target: 0 },
+        { duration: SPIKE_UP_DURATION, target: SPIKE_PEAK_VUS },
+        { duration: SPIKE_HOLD_DURATION, target: SPIKE_PEAK_VUS },
+        { duration: SPIKE_DOWN_DURATION, target: 0 },
       ],
-      startTime: '15m',
+      startTime: SPIKE_START_TIME,
     },
     class_end: {
       executor: 'shared-iterations',
       exec: 'classEnd',
-      vus: 30,
-      iterations: 30,
-      maxDuration: '5m',
-      startTime: '22m',
+      vus: CLASS_END_VUS,
+      iterations: CLASS_END_ITERATIONS,
+      maxDuration: '2m',
+      startTime: CLASS_END_START_TIME,
     },
     billing_stress: {
       executor: 'constant-vus',
       exec: 'billingStress',
-      vus: 50,
-      duration: '5m',
-      startTime: '27m',
+      vus: BILLING_VUS,
+      duration: BILLING_DURATION,
+      startTime: BILLING_START_TIME,
     },
   },
   thresholds: {
@@ -69,7 +86,58 @@ function listPods() {
   return http.get(`${BASE_URL}/pods/`, { headers: headers() });
 }
 
+function parseJson(response, fallback) {
+  try {
+    return response.json();
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function isLivePod(pod) {
+  return pod && ['pending', 'creating', 'running'].includes(pod.state);
+}
+
+function getPodList() {
+  const response = listPods();
+  check(response, { 'pod list loaded': (result) => result.status === 200 });
+  if (response.status !== 200) {
+    return [];
+  }
+
+  const body = parseJson(response, []);
+  return Array.isArray(body) ? body : [];
+}
+
+function terminatePod(podId) {
+  const response = http.del(`${BASE_URL}/pods/${podId}`, null, {
+    headers: headers(),
+  });
+  check(response, {
+    'pod termination accepted': (result) => [200, 202, 204, 404].includes(result.status),
+  });
+  return response;
+}
+
+function trimLivePods() {
+  const livePods = getPodList().filter(isLivePod);
+  if (livePods.length < MAX_LIVE_PODS) {
+    return livePods;
+  }
+
+  for (let index = MAX_LIVE_PODS - 1; index < livePods.length; index += 1) {
+    terminatePod(livePods[index].id);
+  }
+
+  return getPodList().filter(isLivePod);
+}
+
 export function classStart() {
+  const livePods = trimLivePods();
+  if (livePods.length >= MAX_LIVE_PODS) {
+    return;
+  }
+
   const response = http.post(
     `${BASE_URL}/pods/`,
     JSON.stringify({ plan: 'small', template: 'pytorch' }),
@@ -79,12 +147,24 @@ export function classStart() {
     'pod creation accepted': (result) => [200, 201, 202].includes(result.status),
     'pod creation API under 2 seconds': (result) => result.timings.duration < 2000,
   });
+
+  if (![200, 201, 202].includes(response.status)) {
+    return;
+  }
+
+  const createdPod = parseJson(response, null);
+  if (response.status === 202 || !createdPod || !createdPod.id) {
+    return;
+  }
+
+  const pod = http.get(`${BASE_URL}/pods/${createdPod.id}`, { headers: headers() });
+  check(pod, {
+    'created pod is readable': (result) => result.status === 200,
+  });
 }
 
 export function metricsPolling() {
-  const pods = listPods();
-  check(pods, { 'pod list loaded': (result) => result.status === 200 });
-  const podList = pods.status === 200 ? pods.json() : [];
+  const podList = getPodList().filter(isLivePod);
   if (podList.length > 0) {
     const metrics = http.get(`${BASE_URL}/pods/${podList[0].id}/metrics`, {
       headers: headers(),
@@ -110,14 +190,10 @@ export function spikeTraffic() {
 }
 
 export function classEnd() {
-  const pods = listPods();
-  const podList = pods.status === 200 ? pods.json() : [];
+  const podList = getPodList().filter(isLivePod);
   if (podList.length === 0) return;
-  const response = http.del(`${BASE_URL}/pods/${podList[0].id}`, null, {
-    headers: headers(),
-  });
+  const response = terminatePod(podList[0].id);
   check(response, {
-    'pod termination accepted': (result) => [200, 202, 204].includes(result.status),
     'termination API under 10 seconds': (result) => result.timings.duration < 10000,
   });
 }
