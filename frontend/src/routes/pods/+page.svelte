@@ -322,6 +322,25 @@
         free CPU. Memory and storage are reserved in full. Free storage is a workspace quota, not
         measured disk.
       </p>
+      <!-- On a multi-node cluster the free totals above are cluster-wide, but a
+           VM must fit on ONE machine. This spells out the biggest VM that can
+           start right now, so a queued Large VM isn't mistaken for a bug when
+           there's "enough" free memory spread across machines. -->
+      {#if (availability.nodes_ready ?? 0) > 1 && availability.largest_node_free}
+        <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Across
+          <strong class="font-medium text-foreground">{availability.nodes_ready}</strong> machines,
+          the most a single one can host right now is
+          <strong class="font-medium text-foreground"
+            >{fmtCapacity(availability.largest_node_free.cpu_cores)} CPU</strong
+          >
+          and
+          <strong class="font-medium text-foreground"
+            >{fmtCapacity(availability.largest_node_free.memory_gib)} GiB</strong
+          >. A VM larger than that waits in the queue even if the cluster-wide free memory looks
+          sufficient — it has to fit on one machine.
+        </p>
+      {/if}
     {/if}
   </section>
 

@@ -1,0 +1,95 @@
+---
+# Join a machine to Hopper's k3s cluster as a VM-hosting worker.
+#
+# Order matters and is the whole point: the node is only labelled vm-ready at the
+# very end, after everything a VM needs from its host (lxcfs, the template
+# images) is in place. Until then the orchestrator ignores it, so a half-prepared
+# node never receives a VM it cannot run. Every task is idempotent — re-running
+# the play changes nothing on an already-joined, healthy node.
+
+- name: Require join configuration
+  ansible.builtin.assert:
+    that:
+      - k3s_url | length > 0
+      - k3s_token | length > 0
+    fail_msg: >-
+      k3s_url and k3s_token are required. Set them via environment/Vault — see
+      infrastructure/ansible/group_vars/k8s_workers.yml.
+
+- name: Install base and lxcfs packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - lxcfs
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+# lxcfs must be running so /var/lib/lxcfs/proc/{meminfo,cpuinfo,...} exist: every
+# VM pod bind-mounts those files (hostPath type: File) to show the container its
+# own limits instead of the host's. A missing file fails the pod outright, which
+# is exactly why we gate scheduling on this node being ready.
+- name: Enable and start lxcfs
+  ansible.builtin.systemd:
+    name: lxcfs
+    enabled: true
+    state: started
+
+- name: Wait for lxcfs proc files
+  ansible.builtin.wait_for:
+    path: "/var/lib/lxcfs/proc/{{ item }}"
+    timeout: 30
+  loop: [meminfo, cpuinfo, stat, uptime, diskstats, swaps, loadavg]
+
+- name: Check whether k3s-agent is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+# The official installer is idempotent, but skip it once the agent exists so a
+# re-run doesn't churn the service. INSTALL_K3S_EXEC=agent joins as a worker
+# (no control-plane, no etcd) — the correct role for a machine that only hosts
+# VMs.
+- name: Install k3s agent and join the cluster
+  ansible.builtin.shell:
+    cmd: >-
+      curl -sfL https://get.k3s.io |
+      {% if k3s_version | length > 0 %}INSTALL_K3S_VERSION={{ k3s_version }} {% endif %}
+      K3S_URL={{ k3s_url }}
+      K3S_TOKEN={{ k3s_token }}
+      INSTALL_K3S_EXEC=agent
+      sh -
+  args:
+    creates: /usr/local/bin/k3s
+  when: not k3s_bin.stat.exists
+  no_log: true # keep the token out of logs
+
+- name: Ensure k3s-agent service is running
+  ansible.builtin.systemd:
+    name: k3s-agent
+    enabled: true
+    state: started
+
+- name: Load VM template images onto this node
+  ansible.builtin.include_tasks: load-vm-images.yml
+
+# Labelling is done from the SERVER (it has the kubeconfig/API access), targeting
+# this node by its hostname. delegate_to keeps the whole flow in one play.
+- name: Wait for this node to register with the API server
+  ansible.builtin.command:
+    cmd: "k3s kubectl get node {{ ansible_hostname }}"
+  delegate_to: "{{ groups['k8s_masters'][0] }}"
+  register: node_registered
+  retries: 12
+  delay: 10
+  until: node_registered.rc == 0
+  changed_when: false
+
+- name: Mark this node vm-ready (last step — host is now prepared)
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl label node {{ ansible_hostname }}
+      {{ vm_ready_label_key }}={{ vm_ready_label_value }} --overwrite
+  delegate_to: "{{ groups['k8s_masters'][0] }}"
+  changed_when: true
