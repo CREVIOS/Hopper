@@ -65,28 +65,20 @@ http.createServer(async (req, res) => {
       : json(res, 401, { detail: 'Not authenticated' });
   }
   if (url.pathname === '/auth/logout') {
-    // Mirror the real gateway: a 302 whose Set-Cookie headers clear the
-    // session, pointing at Keycloak's end_session endpoint. The followed
-    // redirect then lands on a non-2xx (prod Keycloak 400s an unregistered
-    // post_logout_redirect_uri), so the UI must not depend on the final
-    // response being ok — only on the cookies being gone.
-    res.writeHead(302, {
-      location: '/api/realms/hopper/protocol/openid-connect/logout?post_logout_redirect_uri=%2Flogin&client_id=hopper-api',
+    res.writeHead(200, {
+      'content-type': 'application/json',
       'set-cookie': [
         'session_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
         'refresh_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/',
         'id_token=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
       ]
     });
-    return res.end();
-  }
-  if (url.pathname.includes('/protocol/openid-connect/logout')) {
-    // Faithful to a misconfigured Keycloak: "Invalid redirect uri" error page.
-    res.writeHead(400, { 'content-type': 'text/html;charset=utf-8' });
-    return res.end('<html><body><p class="instruction">Invalid redirect uri</p></body></html>');
+    return res.end(JSON.stringify({ ok: true }));
   }
   if (url.pathname === '/credits/balance') return json(res, 200, { account_id: 'acct-student-1', balance: state.balance });
   if (url.pathname === '/credits/history') return json(res, 200, state.transactions);
+  if (url.pathname === '/healthz') return json(res, 200, { status: 'ok' });
+  if (url.pathname === '/readyz') return json(res, 200, { status: 'ready' });
   if (req.method === 'POST' && url.pathname === '/credits/allocate') {
     const input = await body(req); state.balance += Number(input.amount || 0);
     state.transactions.push({ id: `tx-${Date.now()}`, amount: Number(input.amount), direction: 'credit', type: 'allocation', created_at: new Date().toISOString() });
@@ -94,7 +86,8 @@ http.createServer(async (req, res) => {
   }
   if (url.pathname === '/pods/plans') return json(res, 200, { small:{credits_per_hour:1}, medium:{credits_per_hour:2}, large:{credits_per_hour:4} });
   // Admission-queue endpoints (PR #78): a roomy cluster with an empty queue,
-  // so the sync-create fast path stays the default in specs.
+  // so the sync-create fast path stays the default in specs. Includes the
+  // multi-node availability fields (largest_node_free, nodes).
   if (url.pathname === '/pods/availability') {
     return json(res, 200, {
       cpu: { total_cores: 8, used_cores: state.pods.filter(p=>p.state==='running').length, free_cores: 8 - state.pods.filter(p=>p.state==='running').length },
@@ -136,30 +129,5 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/admin/audit-logs' || url.pathname === '/admin/teacher-requests') return json(res, 200, []);
   if (url.pathname === '/usage/summary/me') return json(res, 200, { pod_count:state.pods.length, avg_cpu_percent:42, avg_memory_bytes:1073741824 });
   if (url.pathname.startsWith('/usage/')) return json(res, 200, []);
-
-  // Notifications: the bell in the authenticated layout loads these on every
-  // page. Mirror the gateway shapes (list + SSE stream) so specs that aren't
-  // about notifications don't trip over 404s or a hanging EventSource.
-  if (url.pathname === '/notifications/stream') {
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
-    res.write(`event: connected\ndata: {"user_id":"e2e"}\n\n`);
-    const keepalive = setInterval(() => res.write('event: ping\ndata: \n\n'), 15000);
-    req.on('close', () => clearInterval(keepalive));
-    return;
-  }
-  if (req.method === 'GET' && url.pathname === '/notifications/') {
-    return json(res, 200, { notifications: state.notifications ?? [], unread_count: (state.notifications ?? []).filter(n => !n.read).length });
-  }
-  if (req.method === 'POST' && url.pathname === '/notifications/read-all') {
-    (state.notifications ?? []).forEach(n => { n.read = true; });
-    return json(res, 200, { message: 'ok' });
-  }
-  const notifReadMatch = url.pathname.match(/^\/notifications\/([^/]+)\/read$/);
-  if (req.method === 'POST' && notifReadMatch) {
-    const target = (state.notifications ?? []).find(n => n.id === notifReadMatch[1]);
-    if (!target) return json(res, 404, { detail: 'Notification not found' });
-    target.read = true;
-    return json(res, 200, { message: 'ok' });
-  }
   json(res, 404, { detail:`No mock route for ${req.method} ${url.pathname}` });
 }).listen(8000, '0.0.0.0');

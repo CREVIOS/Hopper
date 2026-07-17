@@ -28,19 +28,12 @@
   }
 
   async function logout() {
-    // The gateway answers with a 302 whose Set-Cookie headers clear the
-    // session cookies, then fetch follows the redirect to Keycloak's
-    // end_session endpoint. That hop is best-effort: it can reject (a
-    // cross-origin Keycloak in dev is blocked by CORS) or resolve non-ok
-    // (Keycloak 400s an unregistered post_logout_redirect_uri). Either way
-    // the local session is already gone, so always finish by leaving the
-    // page — gating on `response.ok` strands a signed-out user on a dead
-    // dashboard.
-    try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-    } catch {
-      // ignore — the session cookies were cleared by the gateway's 302
-    }
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include'
+    });
+    if (!response.ok) return;
+
     localStorage.clear();
     sessionStorage.clear();
     window.location.href = '/login';
