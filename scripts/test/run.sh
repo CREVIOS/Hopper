@@ -328,8 +328,11 @@ api_migrate() {
   require_cmd poetry
   (
     cd "$ROOT/services/api-gateway"
+    # `test-migrate` is paired with docker-compose.test.yml, whose Postgres
+    # service uses hopper_test/test. Real-stack callers export
+    # HOPPER_DATABASE_URL explicitly before invoking this helper.
     PYTHONPATH="." \
-      HOPPER_DATABASE_URL="${HOPPER_DATABASE_URL:-postgresql+asyncpg://hopper:hopper_dev@127.0.0.1:5433/hopper}" \
+      HOPPER_DATABASE_URL="${HOPPER_DATABASE_URL:-postgresql+asyncpg://hopper_test:test@127.0.0.1:5433/hopper_test}" \
       poetry run alembic -c alembic.ini upgrade head
   )
 }
