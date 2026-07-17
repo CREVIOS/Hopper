@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg16@sha256:0af03ecf697825f6ddae76fd275d16bf46007bed6d00eb3d754779cb7db96fa6
+    image: timescale/timescaledb:latest-pg16
     environment: { POSTGRES_DB: hopper_test, POSTGRES_USER: hopper_test, POSTGRES_PASSWORD: test }
   nats:
     image: nats:2.10-alpine
