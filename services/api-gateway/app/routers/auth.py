@@ -266,10 +266,14 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     await get_or_create_account(db, user_id)
     await send_code_email(email, verification.VERIFY_EMAIL, code)
 
-    tokens = await _password_grant(email, body.password)
-    return _issue_session(
+    # Do NOT issue a session here. The account is created email-unverified, so
+    # signing the browser in now would let the user reach /dashboard just by
+    # opening the app in another tab before entering the emailed code. The
+    # client collects the code, calls /auth/verify-email, then /auth/login —
+    # and /auth/login enforces `require_email_verified`, so a session only ever
+    # exists after the email is confirmed.
+    return JSONResponse(
         {"id": user_id, "email": email, "name": body.name, "role": "student", "pending_teacher": pending},
-        tokens,
         status_code=status.HTTP_202_ACCEPTED if pending else status.HTTP_200_OK,
     )
 
