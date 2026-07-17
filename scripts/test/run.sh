@@ -144,9 +144,6 @@ test_services_down() {
 }
 
 e2e_tests() {
-  require_docker_daemon
-  test_services_up
-  trap test_services_down EXIT
   e2e_exec npx playwright test
 }
 
