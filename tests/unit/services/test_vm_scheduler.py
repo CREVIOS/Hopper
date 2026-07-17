@@ -1,0 +1,306 @@
+from datetime import datetime
+from types import SimpleNamespace
+
+import pytest
+
+from app.services import vm_scheduler
+
+
+class ScalarResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class ExecuteResult:
+    def __init__(self, rows=None, first_value=None, scalar=None):
+        self._rows = rows
+        self._first_value = first_value
+        self._scalar = scalar
+
+    def first(self):
+        return self._first_value
+
+    def scalars(self):
+        return ScalarResult(self._rows)
+
+    def all(self):
+        return self._rows
+
+
+class FakeDB:
+    def __init__(self, execute_results=None, scalar_results=None):
+        self.execute_results = list(execute_results or [])
+        self.scalar_results = list(scalar_results or [])
+        self.added = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.flushes = 0
+        self.executed = []
+
+    async def execute(self, stmt, params=None):
+        self.executed.append((stmt, params))
+        if not self.execute_results:
+            raise AssertionError("unexpected execute call")
+        result = self.execute_results.pop(0)
+        if callable(result):
+            return result(stmt, params)
+        return result
+
+    async def scalar(self, stmt):
+        if not self.scalar_results:
+            raise AssertionError("unexpected scalar call")
+        result = self.scalar_results.pop(0)
+        return result(stmt) if callable(result) else result
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+
+    async def flush(self):
+        self.flushes += 1
+
+
+class FakeNode:
+    def __init__(self, ready=True, cpu="4", mem="8Gi"):
+        self.ready = ready
+        self.cpu_allocatable = cpu
+        self.memory_allocatable = mem
+
+
+def test_plan_disk_falls_back_for_unknown_plan():
+    assert vm_scheduler._plan_disk("small") == "5Gi"
+    assert vm_scheduler._plan_disk("unknown") == "0"
+
+
+def test_storage_reserves_reads_settings(monkeypatch):
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "100Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_storage", "10Gi")
+
+    total, reserve = vm_scheduler._storage_reserves()
+
+    assert total == 100 * 1024**3
+    assert reserve == 10 * 1024**3
+
+
+async def test_acquire_and_release_leadership():
+    db = FakeDB(execute_results=[ExecuteResult(), ExecuteResult(first_value=("holder",))])
+
+    assert await vm_scheduler.acquire_or_renew_leadership(db, "inst-1", 30) is True
+    assert db.commits == 1
+
+    db = FakeDB(execute_results=[ExecuteResult()])
+    await vm_scheduler.release_leadership(db, "inst-1")
+    assert db.commits == 1
+
+
+async def test_fetch_nodes_returns_none_on_failure():
+    class BrokenOrch:
+        async def list_nodes(self):
+            raise RuntimeError("down")
+
+    assert await vm_scheduler.fetch_nodes(BrokenOrch()) is None
+
+
+async def test_free_from_nodes_and_current_capacity(monkeypatch):
+    rows = [("1", "2Gi", "small", None), ("2", "4Gi", "medium", "node-1")]
+    db = FakeDB(execute_results=[ExecuteResult(rows=rows)])
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_cpu", "500m")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_memory", "1Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "50Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_storage", "5Gi")
+
+    capacity = await vm_scheduler._free_from_nodes(db, [FakeNode(True, "8", "16Gi"), FakeNode(False)])
+
+    assert capacity.total_cpu_m == 8000
+    assert capacity.used_cpu_m > 0
+    assert capacity.used_storage_b == 15 * 1024**3
+
+    async def fake_fetch_nodes(orch):
+        return ["nodes"]
+
+    async def fake_free(db, nodes):
+        return "cap"
+
+    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+    monkeypatch.setattr("app.services.vm_scheduler._free_from_nodes", fake_free)
+    assert await vm_scheduler.current_capacity(FakeDB(), object()) == "cap"
+
+
+async def test_user_live_count_and_reserve_pod_session():
+    db = FakeDB(scalar_results=[2])
+    assert await vm_scheduler._user_live_count(db, "user-1") == 2
+
+    db = FakeDB()
+    pod_id = await vm_scheduler._reserve_pod_session(
+        db, "user-1", "small", "img", "1", "2Gi", network_group="team1"
+    )
+
+    assert pod_id
+    assert db.flushes == 1
+    assert db.added[0].network_group == "team1"
+
+
+async def test_reserve_sync_slot_branches(monkeypatch):
+    async def fake_lock(db):
+        return None
+
+    monkeypatch.setattr("app.services.vm_scheduler._lock_admission", fake_lock)
+    async def fake_capacity(db, nodes):
+        return SimpleNamespace(), [SimpleNamespace(ready=True, free_cpu_m=10_000, free_mem_b=10_000)]
+
+    monkeypatch.setattr("app.services.vm_scheduler._capacity", fake_capacity)
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.fits_on_some_node", lambda node_caps, cpu, mem: True)
+    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", lambda db, user_id: 0)
+    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", lambda *args, **kwargs: "pod-1")
+
+    db = FakeDB(scalar_results=[1])
+    assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
+    assert db.rollbacks == 1
+
+    db = FakeDB(scalar_results=[0])
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: False)
+    assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
+    assert db.rollbacks == 1
+
+    db = FakeDB(scalar_results=[0])
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
+    async def fake_user_at_cap(db, user_id):
+        return vm_scheduler.MAX_CONCURRENT_VMS_PER_USER
+
+    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_at_cap)
+    assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
+    assert db.rollbacks == 1
+
+    async def fake_user_live_count(db, user_id):
+        return 0
+
+    async def fake_reserve(*args, **kwargs):
+        return "pod-1"
+
+    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_live_count)
+    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", fake_reserve)
+    db = FakeDB(scalar_results=[0])
+    assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") == "pod-1"
+    assert db.commits == 1
+
+
+async def test_requeue_stuck_admitting_recovers_live_and_orphaned_entries():
+    rows = [("entry-live", "pod-live", "k8s-live"), ("entry-dead", "pod-dead", "k8s-dead")]
+    db = FakeDB(execute_results=[ExecuteResult(rows=rows), ExecuteResult(), ExecuteResult(), ExecuteResult(), ExecuteResult()])
+
+    class Orch:
+        async def get_pod_status(self, pod_name):
+            return SimpleNamespace(exists=pod_name == "k8s-live")
+
+    recovered = await vm_scheduler._requeue_stuck_admitting(db, Orch())
+
+    assert recovered == 2
+    assert db.commits == 1
+
+
+async def test_reconcile_pass_handles_capacity_failures_and_materialization(monkeypatch):
+    async def fake_requeue(db, orch):
+        return 0
+
+    monkeypatch.setattr("app.services.vm_scheduler._requeue_stuck_admitting", fake_requeue)
+    async def fake_fetch_none(orch):
+        return None
+
+    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_none)
+    assert await vm_scheduler.reconcile_pass(FakeDB(), object()) == {"admitted": 0, "capacity": False}
+
+    entries = [
+        SimpleNamespace(id="e1", user_id="user-1", plan="small", image="img", cpu="1", memory="2Gi", seq=1, network_group=None),
+        SimpleNamespace(id="e2", user_id="user-2", plan="small", image="img", cpu="1", memory="2Gi", seq=2, network_group="team"),
+    ]
+
+    class Capacity:
+        def free_cpu_m(self):
+            return 10000
+
+        def free_mem_b(self):
+            return 10000 * 1024**3
+
+        def free_storage_b(self):
+            return 10000 * 1024**3
+
+    async def fake_fetch_nodes(orch):
+        return [FakeNode()]
+
+    async def fake_lock(db):
+        return None
+
+    async def fake_backfill(db, orch):
+        return 0
+
+    async def fake_capacity(db, nodes):
+        return Capacity(), [SimpleNamespace(ready=True, free_cpu_m=10_000, free_mem_b=10_000)]
+
+    counts = {"user-1": 0, "user-2": 0}
+
+    async def fake_user_count(db, user_id):
+        return counts[user_id]
+
+    reserved_ids = iter(["pod-1", "pod-2"])
+
+    async def fake_reserve(db, user_id, plan, image, cpu, memory, network_group=None):
+        return next(reserved_ids)
+
+    def execute_result(stmt, params):
+        sql = str(stmt)
+        if "SELECT vm_queue_entries.id" in sql or "FROM vm_queue_entries" in sql and "ORDER BY" in sql:
+            return ExecuteResult(rows=entries)
+        if "RETURNING id" in sql:
+            return ExecuteResult(first_value=("claimed",))
+        return ExecuteResult()
+
+    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+    monkeypatch.setattr("app.services.vm_scheduler._backfill_node_names", fake_backfill)
+    monkeypatch.setattr("app.services.vm_scheduler._lock_admission", fake_lock)
+    monkeypatch.setattr("app.services.vm_scheduler._capacity", fake_capacity)
+    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_count)
+    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", fake_reserve)
+    monkeypatch.setattr("app.services.vm_scheduler._first_fit_node", lambda node_free, cpu, mem: 0)
+    db = FakeDB(
+        execute_results=[
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+            execute_result,
+        ]
+    )
+
+    class Orch:
+        def __init__(self):
+            self.calls = []
+
+        async def create_pod(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["pod_id"] == "pod-2":
+                raise RuntimeError("boom")
+            return SimpleNamespace(state="running", id="vm-real", ssh_port=22, vscode_port=8080, ssh_password="pw")
+
+    summary = await vm_scheduler.reconcile_pass(db, Orch())
+
+    assert summary["queued"] == 2
+    assert summary["admitted"] == 1
+    assert db.commits >= 2
+
+
+def test_lease_ttl_seconds_has_minimum_buffer():
+    assert vm_scheduler._lease_ttl_seconds(30) == 90
+    assert vm_scheduler._lease_ttl_seconds(1) == 6

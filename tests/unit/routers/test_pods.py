@@ -791,15 +791,11 @@ async def test_get_availability_returns_null_capacity_when_orchestrator_fails(mo
     async def fake_live_queue_count(db):
         return 4
 
-    async def fake_list_nodes():
-        raise RuntimeError("down")
-
-    async def fake_current_capacity(db, orch):
-        return None
+    async def fake_current_capacity_and_nodes(db, orch):
+        return None, None
 
     monkeypatch.setattr("app.routers.pods.vm_queue.live_queue_count", fake_live_queue_count)
-    monkeypatch.setattr("app.routers.pods.orchestrator_client.list_nodes", fake_list_nodes)
-    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity", fake_current_capacity)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity_and_nodes", fake_current_capacity_and_nodes)
 
     result = await get_availability(current_user=_payload(), db=FakeDB())
 
@@ -830,15 +826,24 @@ async def test_get_availability_returns_reconciled_capacity(monkeypatch):
     async def fake_live_queue_count(db):
         return 1
 
-    async def fake_list_nodes():
-        return [FakeNode(True), FakeNode(False)]
+    class FakeNodeCapacity:
+        def __init__(self, name, ready, free_cpu_m, free_mem_b):
+            self.name = name
+            self.ready = ready
+            self.free_cpu_m = free_cpu_m
+            self.free_mem_b = free_mem_b
 
-    async def fake_current_capacity(db, orch):
-        return FakeCapacity()
+    async def fake_current_capacity_and_nodes(db, orch):
+        return (
+            FakeCapacity(),
+            [
+                FakeNodeCapacity("node-a", True, 2500, 5 * 1024**3),
+                FakeNodeCapacity("node-b", False, 0, 0),
+            ],
+        )
 
     monkeypatch.setattr("app.routers.pods.vm_queue.live_queue_count", fake_live_queue_count)
-    monkeypatch.setattr("app.routers.pods.orchestrator_client.list_nodes", fake_list_nodes)
-    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity", fake_current_capacity)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity_and_nodes", fake_current_capacity_and_nodes)
 
     result = await get_availability(current_user=_payload(), db=FakeDB())
 
