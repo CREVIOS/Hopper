@@ -42,6 +42,14 @@ COPY config/supervisor.conf /etc/supervisor/conf.d/hopper.conf
 # 7. Workspace directory
 RUN mkdir -p /workspace
 
+# 7b. Secrets-scanning pre-commit hook (warning-only) installed via git's
+# template dir, so every `git init`/`git clone` inside the VM picks it up.
+# (Existing repos on a persisted /workspace keep their old hooks.) The child
+# template images (cpp/java/python-ml) inherit this from the base.
+COPY config/pre-commit-secrets-check /etc/hopper/git-template/hooks/pre-commit
+RUN chmod +x /etc/hopper/git-template/hooks/pre-commit && \
+    git config --system init.templateDir /etc/hopper/git-template
+
 # 8. 'code' helper — prints a friendly message since code-server runs in the browser
 RUN printf '#!/bin/sh\necho "Opening $@ in VS Code browser editor..."\necho "Files are shared — refresh the browser explorer to see changes."\n' \
     > /usr/local/bin/code && chmod +x /usr/local/bin/code

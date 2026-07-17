@@ -62,6 +62,10 @@ type CreatePodOpts struct {
 	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
 	// uses the cluster default.
 	StorageClass string
+	// NetworkGroup places the VM in a network isolation group (HOP-19 18.3):
+	// the pod gets the group label and a NetworkPolicy allowing same-group
+	// traffic is ensured. Empty = fully isolated (the default).
+	NetworkGroup string
 }
 
 type PodPorts struct {
@@ -93,6 +97,15 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		"hopper.dev/pod-id":  opts.PodID,
 		"hopper.dev/user-id": opts.UserID,
 		"hopper.dev/plan":    opts.Plan,
+	}
+	if opts.NetworkGroup != "" {
+		// Ensure the same-group allow policy BEFORE the pod exists — if this
+		// fails we fail the whole create rather than silently launching a VM
+		// that can't reach its teammates (default-deny keeps it isolated).
+		if err := pm.EnsureGroupNetworkPolicy(ctx, opts.NetworkGroup); err != nil {
+			return PodPorts{}, fmt.Errorf("ensuring network-group policy: %w", err)
+		}
+		labels[NetworkGroupLabel] = opts.NetworkGroup
 	}
 
 	sshPassword, err := generateRandomPassword()

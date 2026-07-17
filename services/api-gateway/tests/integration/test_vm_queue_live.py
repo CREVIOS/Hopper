@@ -91,6 +91,7 @@ class FakeOrchestratorClient:
         memory: str,
         disk: str = "",
         pod_id: str = "",
+        network_group: str = "",
     ) -> PodStatusResponse:
         self.created.append(pod_id)
         return PodStatusResponse(

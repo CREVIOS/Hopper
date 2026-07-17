@@ -334,3 +334,74 @@ async def test_terminate_pod_sets_state_and_stops_port_forward(monkeypatch):
     assert calls == {"terminated": "vm-pod-1", "stopped": "vm-pod-1"}
     assert session.state == "terminated"
     assert db.commits == 1
+
+
+# ---------------------------------------------------------------------------
+# Network isolation groups (HOP-19 18.3)
+# ---------------------------------------------------------------------------
+
+def _teacher_payload() -> TokenPayload:
+    return TokenPayload(
+        sub="prof-1",
+        email="prof@example.com",
+        name="Professor One",
+        role="professor",
+        exp=1234567890,
+    )
+
+
+async def test_create_pod_network_group_requires_teacher_role():
+    # No course-membership model exists, so students must not be able to
+    # self-select a group (they could join anyone's and defeat isolation).
+    with pytest.raises(HTTPException) as exc_info:
+        await create_pod.__wrapped__(
+            request=None,
+            response=None,
+            body=CreatePodRequest(plan=VmPlan.SMALL, network_group="cse101"),
+            current_user=_payload(),  # role=student
+            db=FakeDB(),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "network group" in exc_info.value.detail
+
+
+async def test_create_pod_network_group_flows_to_orchestrator_and_session(monkeypatch):
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    class FakeOrchestratorResponse:
+        id = "vm-real-name"
+        state = "running"
+        ssh_port = 30022
+        vscode_port = 30080
+        ssh_password = "secret"
+
+    orchestrator_calls = []
+
+    async def fake_create_pod(**kwargs):
+        orchestrator_calls.append(kwargs)
+        return FakeOrchestratorResponse()
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    db = FakeDB(execute_results=[[]])
+
+    result = await create_pod.__wrapped__(
+        request=None,
+        response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL, network_group="cse101-team1"),
+        current_user=_teacher_payload(),
+        db=db,
+    )
+
+    assert orchestrator_calls[0]["network_group"] == "cse101-team1"
+    assert db.added[0].network_group == "cse101-team1"
+    assert result.network_group == "cse101-team1"
+
+
+def test_create_pod_request_rejects_bad_group_names():
+    for bad in ("UPPER", "has_underscore", "-lead", "trail-", "a" * 33):
+        with pytest.raises(ValueError):
+            CreatePodRequest(plan=VmPlan.SMALL, network_group=bad)

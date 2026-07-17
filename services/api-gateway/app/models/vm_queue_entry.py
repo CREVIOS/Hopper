@@ -28,6 +28,9 @@ class VmQueueEntry(Base):
     state: Mapped[str] = mapped_column(
         String, nullable=False, default="queued", server_default="queued"
     )
+    # Network isolation group requested at create time (HOP-19 18.3); carried
+    # through admission so the deferred create matches the sync path.
+    network_group: Mapped[str | None] = mapped_column(String(32), nullable=True)
     seq: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True, start=1), nullable=False, unique=True
     )

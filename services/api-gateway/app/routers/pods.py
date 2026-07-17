@@ -62,6 +62,7 @@ def _session_to_response(s: PodSession) -> PodResponse:
         ssh_port=s.ssh_port if is_live else None,
         vscode_port=s.vscode_port if is_live else None,
         ssh_password=s.ssh_password if is_live else None,
+        network_group=s.network_group,
         created_at=s.started_at,
         updated_at=s.updated_at,
     )
@@ -97,7 +98,10 @@ async def list_pods(
 
 
 @router.post("/", response_model=PodResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("10/minute")
+# Keyed by verified user (request.state.rate_key from get_current_user), not
+# client IP — see app.core.limiter. Limit configurable via
+# HOPPER_RATE_LIMIT_POD_CREATE.
+@limiter.limit(settings.rate_limit_pod_create)
 async def create_pod(
     request: Request,
     response: Response,
@@ -110,6 +114,15 @@ async def create_pod(
     This allocates a slice of the host machine's CPU/RAM to the user as an
     isolated container with SSH access. Resources are capped by the chosen plan.
     """
+    # Network groups (HOP-19 18.3) are teacher/admin-only: there is no course
+    # -membership model yet, so letting a student pick an arbitrary group name
+    # would let them join (and reach) any other group's VMs.
+    if body.network_group and current_user.role not in ("professor", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers and admins can place VMs in a network group",
+        )
+
     # Check credit balance — need at least 1 hour's worth
     resources = VM_PLAN_RESOURCES[body.plan]
     balance = await get_balance(db, current_user.sub)
@@ -147,12 +160,14 @@ async def create_pod(
         pod_id = await vm_scheduler.reserve_sync_slot(
             db, nodes, current_user.sub, body.plan.value, image,
             resources["cpu"], resources["memory"],
+            network_group=body.network_group,
         )
         if pod_id is None:
             # Cluster full, or someone is already waiting -> join the queue.
             try:
                 entry = await vm_queue.enqueue_vm_request(
-                    db, current_user, body.plan.value, body.template
+                    db, current_user, body.plan.value, body.template,
+                    network_group=body.network_group,
                 )
             except vm_queue.EnqueueError as exc:
                 raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -183,6 +198,7 @@ async def create_pod(
             namespace="hopper",
             pod_name=f"vm-{pod_id[:8]}",
             state="pending",
+            network_group=body.network_group,
         )
         db.add(session)
         await db.commit()
@@ -199,6 +215,7 @@ async def create_pod(
             cpu=resources["cpu"],
             memory=resources["memory"],
             pod_id=pod_id,
+            network_group=body.network_group or "",
         )
         session.state = resp.state
         session.pod_name = resp.id  # use the actual K8s pod name from orchestrator

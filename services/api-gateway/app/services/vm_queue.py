@@ -66,7 +66,8 @@ def _resolve_image(template: str) -> str:
 
 
 async def enqueue_vm_request(
-    db: AsyncSession, user: TokenPayload, plan: str, template: str
+    db: AsyncSession, user: TokenPayload, plan: str, template: str,
+    network_group: str | None = None,
 ) -> VmQueueEntry:
     """Validate and persist a 'queued' VM request for later admission.
 
@@ -95,6 +96,7 @@ async def enqueue_vm_request(
         cpu=resources["cpu"],
         memory=resources["memory"],
         state="queued",
+        network_group=network_group,
     )
     db.add(entry)
     await db.commit()

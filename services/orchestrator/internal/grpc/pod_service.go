@@ -65,12 +65,20 @@ func podToProto(p *pod.Pod) *podv1.PodStatus {
 func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.CreatePodRequest) (*podv1.PodStatus, error) {
 	podName := fmt.Sprintf("vm-%d", time.Now().UnixNano())
 
+	// Optional network isolation group (HOP-19 18.3), carried in the labels
+	// map. Validated here because label values flow into K8s objects.
+	networkGroup := req.Labels[k8s.NetworkGroupLabel]
+	if networkGroup != "" && !k8s.ValidNetworkGroup(networkGroup) {
+		return nil, fmt.Errorf("invalid network group %q", networkGroup)
+	}
+
 	s.server.logger.Info("CreatePod",
 		zap.String("user_id", req.UserId),
 		zap.String("plan", req.Plan),
 		zap.String("image", req.Image),
 		zap.String("cpu", req.Cpu),
 		zap.String("memory", req.Memory),
+		zap.String("network_group", networkGroup),
 	)
 
 	// 1. Register in the in-memory state machine
@@ -102,13 +110,14 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		apiPodID = podName
 	}
 	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
-		PodName: podName,
-		PodID:   apiPodID,
-		UserID:  req.UserId,
-		Plan:    req.Plan,
-		Image:   req.Image,
-		CPU:     req.Cpu,
-		Memory:  req.Memory,
+		PodName:      podName,
+		PodID:        apiPodID,
+		UserID:       req.UserId,
+		Plan:         req.Plan,
+		Image:        req.Image,
+		CPU:          req.Cpu,
+		Memory:       req.Memory,
+		NetworkGroup: networkGroup,
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
