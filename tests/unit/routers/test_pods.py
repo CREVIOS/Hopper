@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from app.models.session import PodSession
 from app.routers.pods import (
@@ -15,6 +16,10 @@ from app.routers.pods import (
     list_plans,
     list_pods,
     terminate_pod,
+    stream_metrics,
+    vscode_proxy,
+    vscode_ws_proxy,
+    websocket_terminal,
 )
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import CreatePodRequest, VmPlan
@@ -97,6 +102,35 @@ class FakeDB:
         if getattr(obj, "updated_at", None) is None:
             obj.updated_at = datetime(2026, 1, 1, 12, 0, 0)
         self.refreshed.append(obj)
+
+
+class FakeWebSocket:
+    def __init__(self, *, cookies=None, headers=None, query=""):
+        self.cookies = cookies or {}
+        self.headers = headers or {}
+        self.url = type("URL", (), {"query": query})()
+        self.closed = []
+        self.accepted = False
+        self.sent_text = []
+        self.sent_bytes = []
+
+    async def close(self, code=None, reason=None):
+        self.closed.append((code, reason))
+
+    async def accept(self):
+        self.accepted = True
+
+    async def send_text(self, text):
+        self.sent_text.append(text)
+
+    async def send_bytes(self, data):
+        self.sent_bytes.append(data)
+
+    async def receive(self):
+        return {"type": "websocket.disconnect"}
+
+    async def receive_text(self):
+        raise RuntimeError("closed")
 
 
 def test_session_to_response_hides_connection_details_for_non_running_pod():
@@ -339,6 +373,304 @@ async def test_terminate_pod_sets_state_and_stops_port_forward(monkeypatch):
     assert calls == {"terminated": "vm-pod-1", "stopped": "vm-pod-1"}
     assert session.state == "terminated"
     assert db.commits == 1
+
+
+async def test_stream_metrics_rejects_missing_or_foreign_pod():
+    with pytest.raises(HTTPException) as exc_info:
+        await stream_metrics("missing", current_user=_payload(), db=FakeDB(execute_results=[None]))
+
+    assert exc_info.value.status_code == 404
+
+    foreign = PodSession(
+        id="pod-1",
+        user_id="other-user",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await stream_metrics("pod-1", current_user=_payload(), db=FakeDB(execute_results=[foreign]))
+
+    assert exc_info.value.status_code == 404
+
+
+def _request(method="GET", *, cookie=None, accept="application/json", path="/pods/pod-1/vscode/", query=""):
+    headers = []
+    if cookie:
+        headers.append((b"cookie", cookie.encode()))
+    if accept:
+        headers.append((b"accept", accept.encode()))
+    if query:
+        raw_path = f"{path}?{query}".encode()
+    else:
+        raw_path = path.encode()
+    return Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "raw_path": raw_path,
+            "query_string": query.encode(),
+            "headers": headers,
+        }
+    )
+
+
+async def test_vscode_proxy_redirects_html_navigation_when_missing_session(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.settings.frontend_url", "http://frontend.test")
+
+    response = await vscode_proxy("pod-1", "", _request(accept="text/html"), FakeDB())
+
+    assert response.status_code == 302
+    assert response.headers["location"].startswith("http://frontend.test/login?return_to=")
+
+
+async def test_vscode_proxy_rejects_api_request_when_missing_session():
+    with pytest.raises(HTTPException) as exc_info:
+        await vscode_proxy("pod-1", "", _request(), FakeDB())
+
+    assert exc_info.value.status_code == 401
+
+
+async def test_vscode_proxy_rejects_missing_foreign_and_non_running_pods(monkeypatch):
+    async def fake_verify_token(token):
+        return _payload()
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_token)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await vscode_proxy("missing", "", _request(cookie="session_token=tok"), FakeDB(execute_results=[None]))
+    assert exc_info.value.status_code == 404
+
+    foreign = PodSession(
+        id="pod-1",
+        user_id="other-user",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await vscode_proxy("pod-1", "", _request(cookie="session_token=tok"), FakeDB(execute_results=[foreign]))
+    assert exc_info.value.status_code == 403
+
+    starting = PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="creating",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await vscode_proxy("pod-1", "", _request(cookie="session_token=tok"), FakeDB(execute_results=[starting]))
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.headers["Retry-After"] == "5"
+
+
+async def test_vscode_proxy_returns_503_when_port_forward_unavailable(monkeypatch):
+    async def fake_verify_token(token):
+        return _payload()
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_token)
+    monkeypatch.setattr("app.routers.pods.port_forward.get_local_port", lambda pod_name: None)
+
+    async def fail_start(pod_name, namespace):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.routers.pods.port_forward.start", fail_start)
+    session = PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await vscode_proxy("pod-1", "index.html", _request(cookie="session_token=tok"), FakeDB(execute_results=[session]))
+
+    assert exc_info.value.status_code == 503
+
+
+async def test_vscode_proxy_passthrough_preserves_set_cookie(monkeypatch):
+    import httpx
+
+    async def fake_verify_token(token):
+        return _payload()
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_token)
+    monkeypatch.setattr("app.routers.pods.port_forward.get_local_port", lambda pod_name: 41000)
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def request(self, **kwargs):
+            return type(
+                "Resp",
+                (),
+                {
+                    "content": b"ok",
+                    "status_code": 200,
+                    "headers": httpx.Headers(
+                        [
+                            ("content-type", "text/plain"),
+                            ("set-cookie", "a=1; Path=/"),
+                            ("set-cookie", "b=2; Path=/"),
+                        ]
+                    ),
+                },
+            )()
+
+    monkeypatch.setattr("app.routers.pods.httpx.AsyncClient", lambda timeout: FakeClient())
+    session = PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    request = _request(cookie="session_token=tok", query="folder=/home")
+
+    async def fake_body():
+        return b""
+
+    request.body = fake_body
+    response = await vscode_proxy("pod-1", "index.html", request, FakeDB(execute_results=[session]))
+
+    assert response.status_code == 200
+    assert response.body == b"ok"
+    cookies = response.headers.getlist("set-cookie")
+    assert "a=1; Path=/" in cookies
+    assert "b=2; Path=/" in cookies
+
+
+async def test_vscode_ws_proxy_rejects_auth_origin_and_state(monkeypatch):
+    ws = FakeWebSocket()
+    await vscode_ws_proxy("pod-1", "", ws, FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    async def fake_verify_none(token):
+        return None
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_none)
+    ws = FakeWebSocket(cookies={"session_token": "tok"})
+    await vscode_ws_proxy("pod-1", "", ws, FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    async def fake_verify_token(token):
+        return _payload()
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_token)
+    monkeypatch.setattr("app.routers.pods.settings.cors_origins", ["http://good"])
+    ws = FakeWebSocket(cookies={"session_token": "tok"}, headers={"origin": "http://bad"})
+    await vscode_ws_proxy("pod-1", "", ws, FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    running = PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    monkeypatch.setattr("app.routers.pods.port_forward.get_local_port", lambda pod_name: None)
+
+    async def fail_start(pod_name, namespace):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.routers.pods.port_forward.start", fail_start)
+    ws = FakeWebSocket(cookies={"session_token": "tok"}, headers={"origin": "http://good"})
+    await vscode_ws_proxy("pod-1", "", ws, FakeDB(execute_results=[running]))
+    assert ws.accepted is False
+    assert ws.closed[-1][0] == 1011
+
+
+async def test_websocket_terminal_rejects_invalid_requests(monkeypatch):
+    ws = FakeWebSocket()
+    await websocket_terminal(ws, "pod-1", FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    async def fake_verify_none(token):
+        return None
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_none)
+    ws = FakeWebSocket(cookies={"session_token": "tok"})
+    await websocket_terminal(ws, "pod-1", FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    async def fake_verify_token(token):
+        return _payload()
+
+    monkeypatch.setattr("app.routers.pods.verify_token", fake_verify_token)
+    monkeypatch.setattr("app.routers.pods.settings.cors_origins", ["http://good"])
+    ws = FakeWebSocket(cookies={"session_token": "tok"}, headers={"origin": "http://bad"})
+    await websocket_terminal(ws, "pod-1", FakeDB())
+    assert ws.closed[0][0] == 1008
+
+    session = PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="img",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        ssh_port=None,
+        ssh_password=None,
+        state="running",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        updated_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
+    monkeypatch.setattr("app.routers.pods.settings.node_ip", "127.0.0.1")
+    monkeypatch.setattr("app.routers.pods.port_forward.get_local_port", lambda pod_name, port=22: None)
+
+    async def fail_start(pod_name, namespace, port=22):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.routers.pods.port_forward.start", fail_start)
+    ws = FakeWebSocket(cookies={"session_token": "tok"}, headers={"origin": "http://good"})
+    await websocket_terminal(ws, "pod-1", FakeDB(execute_results=[session]))
+    assert any("SSH is not available" in text for text in ws.sent_text)
 
 
 # ---------------------------------------------------------------------------
