@@ -25,6 +25,9 @@ class PodStatusResponse:
     vscode_port: int
     message: str
     ssh_password: str = ""
+    # The node the pod was scheduled onto, "" until placed. Lets the gateway
+    # backfill PodSession.node_name if the pod.started event was ever missed.
+    node_name: str = ""
 
 
 @dataclass
@@ -125,6 +128,7 @@ class OrchestratorClient:
             vscode_port=resp.vscode_port,
             message=resp.message,
             ssh_password=resp.ssh_password,
+            node_name=resp.node_name,
         )
 
     async def terminate_pod(self, pod_id: str) -> bool:
@@ -148,6 +152,7 @@ class OrchestratorClient:
             vscode_port=resp.vscode_port,
             message=resp.message,
             ssh_password=resp.ssh_password,
+            node_name=resp.node_name,
         )
 
     async def list_nodes(self) -> list[NodeInfoResponse]:

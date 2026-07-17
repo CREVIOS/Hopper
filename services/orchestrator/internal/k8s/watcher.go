@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"go.uber.org/zap"
 
 	"github.com/hopper/orchestrator/internal/billing"
 	"github.com/hopper/orchestrator/internal/pod"
@@ -18,7 +18,9 @@ import (
 type PublishFunc func(subject string, data any) error
 
 type PodWatcher struct {
-	client    *kubernetes.Clientset
+	// kubernetes.Interface (not the concrete *Clientset) so a fake clientset can
+	// drive the watchdog/reconcile logic in tests. *Clientset satisfies it.
+	client    kubernetes.Interface
 	namespace string
 	logger    *zap.Logger
 	publish   PublishFunc
@@ -33,7 +35,7 @@ type PodWatcher struct {
 	lastPhase map[string]corev1.PodPhase
 }
 
-func NewPodWatcher(client *kubernetes.Clientset, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
+func NewPodWatcher(client kubernetes.Interface, namespace string, logger *zap.Logger, publish PublishFunc) *PodWatcher {
 	return &PodWatcher{
 		client:    client,
 		namespace: namespace,
@@ -41,6 +43,34 @@ func NewPodWatcher(client *kubernetes.Clientset, namespace string, logger *zap.L
 		publish:   publish,
 		lastPhase: make(map[string]corev1.PodPhase),
 	}
+}
+
+// ensureBilling starts the billing ticker for a pod that is actually Running.
+//
+// Billing is deliberately NOT started at CreatePod: that call returns when the
+// API server accepts the pod object, which is before the scheduler has placed
+// it. On a multi-node cluster a pod can sit Pending indefinitely (no single
+// node has room), and billing it from creation charges a user for a VM that
+// never ran. Running is the only honest signal, and this is the one place that
+// observes it.
+//
+// Idempotent via EnsureStarted: Running is re-observed on every watch
+// reconnect's replayed ADDED event, and restarting the ticker there would reset
+// the pod's billing clock.
+func (w *PodWatcher) ensureBilling(ticker *billing.Ticker, mgdPodID, plan, userID string) {
+	planInfo, ok := billing.Plans[plan]
+	if !ok {
+		return
+	}
+	ticker.EnsureStarted(mgdPodID, planInfo, func(ev billing.TickEvent) {
+		_ = w.publish("billing.deducted", map[string]interface{}{
+			"pod_id":  ev.PodID,
+			"amount":  ev.Amount,
+			"user_id": userID,
+			"tx_id":   ev.TxID,
+			"seq":     ev.Seq,
+		})
+	})
 }
 
 // observePhase records a pod's phase and publishes pod.started exactly once
@@ -64,6 +94,10 @@ func (w *PodWatcher) observePhase(p *corev1.Pod) {
 		"pod_id":   podID,
 		"user_id":  userID,
 		"pod_name": p.Name,
+		// The node the scheduler placed this VM on. The gateway records it so
+		// per-node capacity accounting can attribute this VM's requests to the
+		// right machine (multi-node fragmentation check).
+		"node_name": p.Spec.NodeName,
 	})
 	w.logger.Info("pod started (container running)",
 		zap.String("pod_id", podID),
@@ -107,6 +141,7 @@ func (w *PodWatcher) Reconcile(ctx context.Context, podMgr *pod.Manager, ticker 
 		// Set state based on K8s phase
 		targetState := k8sPhaseToState(p.Status.Phase)
 		podMgr.SetState(mgdPod.ID, targetState)
+		podMgr.SetNodeName(mgdPod.ID, p.Spec.NodeName)
 
 		// Look up SSH port from the service
 		svcName := fmt.Sprintf("ssh-%s", p.Name)
@@ -131,17 +166,7 @@ func (w *PodWatcher) Reconcile(ctx context.Context, podMgr *pod.Manager, ticker 
 
 		// Restart billing for running pods
 		if targetState == pod.StateRunning {
-			if planInfo, ok := billing.Plans[plan]; ok {
-				ticker.Start(mgdPod.ID, planInfo, func(ev billing.TickEvent) {
-					_ = w.publish("billing.deducted", map[string]interface{}{
-						"pod_id":  ev.PodID,
-						"amount":  ev.Amount,
-						"user_id": userID,
-						"tx_id":   ev.TxID,
-						"seq":     ev.Seq,
-					})
-				})
-			}
+			w.ensureBilling(ticker, mgdPod.ID, plan, userID)
 		}
 
 		w.logger.Info("reconciled pod",
@@ -196,6 +221,23 @@ func (w *PodWatcher) watchOnce(ctx context.Context, podMgr *pod.Manager, ticker 
 		mgdPod, exists := podMgr.Get(podID)
 		if !exists {
 			mgdPod, exists = podMgr.GetByPodName(p.Name)
+		}
+
+		// Record placement as soon as the scheduler assigns a node, so
+		// GetPodStatus and the reconciler can report where a VM ran.
+		if exists && p.Spec.NodeName != "" {
+			podMgr.SetNodeName(mgdPod.ID, p.Spec.NodeName)
+		}
+
+		// Billing follows the container, not the API object: any time we see a
+		// pod Running, make sure it is being billed. Covers the normal
+		// Pending→Running transition (Modified) and a pod that reached Running
+		// while our watch was down (replayed as Added on reconnect). Both are
+		// idempotent — see ensureBilling. Deleted is excluded: its object can
+		// still carry phase Running, and starting a ticker the Deleted branch
+		// immediately stops is churn.
+		if exists && p.Status.Phase == corev1.PodRunning && event.Type != watch.Deleted {
+			w.ensureBilling(ticker, mgdPod.ID, p.Labels["hopper.dev/plan"], userID)
 		}
 
 		switch event.Type {
@@ -258,4 +300,3 @@ func k8sPhaseToState(phase corev1.PodPhase) pod.State {
 		return pod.StatePending
 	}
 }
-

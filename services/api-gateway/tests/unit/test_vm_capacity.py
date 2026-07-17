@@ -352,3 +352,60 @@ def test_storage_is_a_capacity_dimension():
     assert plan_fits(cap, "1", "2Gi", "10Gi") is False
     # Without a disk_limit, storage never constrains (back-compat).
     assert plan_fits(cap, "1", "2Gi") is True
+
+
+# --------------------------------------------------------------------------- #
+# Per-node fit (multi-node fragmentation)
+# --------------------------------------------------------------------------- #
+
+from types import SimpleNamespace  # noqa: E402
+
+from app.services.vm_capacity import (  # noqa: E402
+    NodeCapacity,
+    compute_node_capacities,
+    fits_on_some_node,
+)
+
+
+def _node(name: str, cpu: str, mem: str, ready: bool = True):
+    return SimpleNamespace(
+        name=name, ready=ready, cpu_allocatable=cpu, memory_allocatable=mem
+    )
+
+
+def test_compute_node_capacities_subtracts_placed_vms_and_per_node_reserve():
+    nodes = [_node("w1", "16", "16Gi"), _node("w2", "16", "16Gi")]
+    # w1 hosts a 4Gi VM (request = full 4Gi mem, cpu 1//4 -> 250m); w2 is empty.
+    vms_by_node = {"w1": [FakeVm(cpu="1", memory="4Gi")]}
+    caps = compute_node_capacities(nodes, vms_by_node, reserve_cpu_m=1000, reserve_mem_b=2 * GIB)
+    by_name = {c.name: c for c in caps}
+    # w1: 16Gi - 4Gi used - 2Gi reserve = 10Gi; cpu 16000m - 250m - 1000m = 14750m.
+    assert by_name["w1"].free_mem_b == 10 * GIB
+    assert by_name["w1"].free_cpu_m == 14750
+    # w2: 16Gi - 0 - 2Gi reserve = 14Gi.
+    assert by_name["w2"].free_mem_b == 14 * GIB
+
+
+def test_not_ready_node_contributes_zero():
+    nodes = [_node("w1", "16", "16Gi", ready=False)]
+    caps = compute_node_capacities(nodes, {}, 0, 0)
+    assert caps[0].ready is False
+    assert caps[0].free_cpu_m == 0 and caps[0].free_mem_b == 0
+
+
+def test_fits_on_some_node_rejects_fragmentation():
+    # The live incident: two nodes, 3.3Gi and 5.5Gi free, an 8Gi VM requested.
+    node_caps = [
+        NodeCapacity(name="w1", ready=True, free_cpu_m=15000, free_mem_b=int(3.3 * GIB)),
+        NodeCapacity(name="w2", ready=True, free_cpu_m=15000, free_mem_b=int(5.5 * GIB)),
+    ]
+    # Aggregate free (8.8Gi) > 8Gi, but no single node fits -> reject.
+    assert fits_on_some_node(node_caps, "4", "8Gi") is False
+    # A 4Gi VM fits on w2.
+    assert fits_on_some_node(node_caps, "2", "4Gi") is True
+
+
+def test_fits_on_some_node_ignores_not_ready_and_empty():
+    assert fits_on_some_node([], "1", "2Gi") is False
+    node_caps = [NodeCapacity(name="w1", ready=False, free_cpu_m=99000, free_mem_b=99 * GIB)]
+    assert fits_on_some_node(node_caps, "1", "2Gi") is False

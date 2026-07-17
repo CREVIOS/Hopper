@@ -14,6 +14,7 @@ class FakePodSession:
         self.user_id = "user-1"
         self.plan = "small"
         self.state = state
+        self.node_name = None
 
 
 class FakeDB:
@@ -80,6 +81,21 @@ async def test_pod_started_repairs_stale_creating_state(monkeypatch):
 
     assert session.state == "running"
     assert notified["user_id"] == "user-1"
+
+
+async def test_pod_started_records_node_name(monkeypatch):
+    """pod.started carries the node the VM was placed on; the session stores it
+    for per-node capacity accounting."""
+    session = FakePodSession(state="creating")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(
+        json.dumps({"pod_id": "sess-1", "node_name": "hopper-worker2"}).encode()
+    )
+    await notif_module._handle_pod_started(msg)
+
+    assert session.state == "running"
+    assert session.node_name == "hopper-worker2"
 
 
 async def test_pod_started_skips_terminal_sessions(monkeypatch):
@@ -166,6 +182,29 @@ async def test_pod_failed_skips_terminal_sessions(monkeypatch):
     await notif_module._handle_pod_failed(msg)
 
     assert db.committed is False
+
+
+async def test_pod_failed_unschedulable_notifies_user(monkeypatch):
+    """A watchdog-reaped VM (notify=true) has no synchronous owner, so the
+    consumer sends the user-facing 'couldn't start' notification itself."""
+    session = FakePodSession(state="creating")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(
+        json.dumps({
+            "pod_id": "sess-1",
+            "api_pod_id": "sess-1",
+            "user_id": "user-1",
+            "reason": "unschedulable",
+            "notify": "true",
+        }).encode()
+    )
+    await notif_module._handle_pod_failed(msg)
+
+    assert session.state == "failed"
+    assert notified["user_id"] == "user-1"
+    assert notified["type_"] == "error"
+    assert "no single machine" in notified["body"]
 
 
 # --- consumer registration --------------------------------------------------
