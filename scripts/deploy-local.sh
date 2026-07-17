@@ -135,10 +135,10 @@ if [ "$APP_ONLY" = false ]; then
 
   log "Waiting for Keycloak to be ready..."
   RETRIES=60
-  until curl -sf http://localhost:8080/health/ready > /dev/null 2>&1; do
+  until curl -sf http://localhost:9000/health/ready > /dev/null 2>&1; do
     RETRIES=$((RETRIES - 1))
     if [ "$RETRIES" -le 0 ]; then
-      warn "Keycloak not responding on /health/ready yet (may still be starting)."
+      warn "Keycloak management health endpoint did not become ready."
       warn "Continuing anyway — Keycloak can take a while on first launch."
       break
     fi
