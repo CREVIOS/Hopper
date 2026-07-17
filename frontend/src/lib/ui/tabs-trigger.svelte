@@ -6,12 +6,14 @@
   let {
     children,
     value,
-    class: className
+    class: className,
+    ...restProps
   }: { children: Snippet; value: string; class?: string } = $props();
 </script>
 
 <Bits.Trigger
   {value}
+  {...restProps}
   class={cn(
     'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1 text-sm font-medium transition-all duration-200',
     'text-muted-foreground hover:text-foreground',

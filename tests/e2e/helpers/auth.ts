@@ -24,17 +24,29 @@ export async function loginAs(page: Page, role: AuthRole): Promise<void> {
     throw new Error(authRequirementMessage(role));
   }
 
-  if (mode === 'password') {
-    const email = role === 'admin' ? e2eEnv.adminEmail : e2eEnv.studentEmail;
-    const password = role === 'admin' ? e2eEnv.adminPassword : e2eEnv.studentPassword;
+  if (role !== 'professor' && mode === 'dev-login') {
+    const path = role === 'admin' ? '/dev-login?as=admin' : '/dev-login?as=user';
+    await page.goto(path);
+  } else if (mode === 'password') {
+    const email =
+      role === 'admin'
+        ? e2eEnv.adminEmail
+        : role === 'professor'
+          ? e2eEnv.professorEmail
+          : e2eEnv.studentEmail;
+    const password =
+      role === 'admin'
+        ? e2eEnv.adminPassword
+        : role === 'professor'
+          ? e2eEnv.professorPassword
+          : e2eEnv.studentPassword;
 
     await page.goto('/login');
     await page.getByLabel('Email').fill(email!);
     await page.getByLabel('Password').fill(password!);
     await page.getByRole('button', { name: /^sign in$/i }).click();
   } else {
-    const path = role === 'admin' ? '/dev-login?as=admin' : '/dev-login?as=user';
-    await page.goto(path);
+    throw new Error(authRequirementMessage(role));
   }
 
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);

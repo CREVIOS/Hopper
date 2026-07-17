@@ -1,0 +1,79 @@
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/app.fixture';
+import { setupMockState } from '../helpers/mock';
+
+async function activateTab(tab: ReturnType<(typeof test)['extend']> extends never ? never : any) {
+  await tab.click({ force: true });
+}
+
+async function visibleRowByText(page: Parameters<typeof test>[0]['page'], value: RegExp | string) {
+  return page.getByRole('row').filter({ has: page.getByText(value) }).first();
+}
+
+test.describe('Suite 5: admin workflows', () => {
+  test.beforeEach(async ({ loginAsAdmin }) => {
+    await loginAsAdmin();
+  });
+
+  test('TC-ADMIN-001 and TC-ADMIN-004: the admin console shows overview stats, active VMs, and node inventory', async ({
+    page,
+    request
+  }) => {
+    await setupMockState(request, {
+      pods: [{ id: 'e2e-pod-1', user_id: 'student-1', plan: 'medium', template: 'python-ml' }]
+    });
+
+    await page.goto('/admin');
+    await expect(page.locator('[data-admin-hydrated="true"]')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Admin' })).toBeVisible();
+    await expect(page.getByText('Total users')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Active VMs' })).toBeVisible();
+
+    const nodesTab = page.getByRole('tab', { name: 'Nodes' });
+    await activateTab(nodesTab);
+    await expect(page.getByText('mock-node')).toBeVisible();
+
+    const vmsTab = page.getByRole('tab', { name: 'Active VMs' });
+    await activateTab(vmsTab);
+    await expect(
+      await visibleRowByText(page, /student-1@test\.edu/i)
+    ).toBeVisible();
+  });
+
+  test('TC-ADMIN-002: the admin can search for a user, allocate credits, and change their role', async ({
+    page
+  }) => {
+    await page.goto('/admin');
+    await expect(page.locator('[data-admin-hydrated="true"]')).toBeVisible();
+    const usersTab = page.getByRole('tab', { name: 'Users' });
+    await activateTab(usersTab);
+    await page.getByPlaceholder('Search users…').fill('student-1@test.edu');
+    await expect(await visibleRowByText(page, 'student-1@test.edu')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Allocate' }).first().click();
+    const allocateDialog = page.getByRole('dialog', { name: 'Allocate credits' });
+    await allocateDialog.getByLabel('Amount').fill('25');
+    await allocateDialog.getByRole('button', { name: 'Allocate' }).click();
+    await expect(page.getByText('Allocated 25.00 credits')).toBeVisible();
+
+    await page.getByLabel('Change role for student-1@test.edu').click();
+    await page.getByRole('menuitem', { name: /professor/i }).click();
+    await expect(page.getByText('professor')).toBeVisible();
+  });
+
+  test('teacher approval requests can be processed from the admin console', async ({
+    page
+  }) => {
+    await page.goto('/admin');
+    await expect(page.locator('[data-admin-hydrated="true"]')).toBeVisible();
+    const requestsTab = page.getByRole('tab', { name: /Requests/i });
+    await activateTab(requestsTab);
+    await expect(
+      await visibleRowByText(page, 'teacher-pending@test.edu')
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect(
+      page.getByText('teacher-pending@test.edu')
+    ).toHaveCount(0);
+  });
+});
