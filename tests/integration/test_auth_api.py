@@ -117,25 +117,30 @@ async def test_auth_signup_creates_pending_teacher_user_and_audit_log(client, db
     async def fake_create_user(email, name, password, role, email_verified):
         assert email == "teacher@cs.du.ac.bd"
         assert role == "student"
+        # The account must be created email-unverified; a session is only
+        # issued later, after /auth/verify-email + /auth/login.
+        assert email_verified is False
         return "teacher-1"
 
-    async def fake_password_grant(email, password):
-        assert email == "teacher@cs.du.ac.bd"
-        return {
-            "access_token": "access-1",
-            "refresh_token": "refresh-1",
-            "expires_in": 300,
-            "refresh_expires_in": 1800,
-        }
+    def fail_password_grant(*args, **kwargs):
+        raise AssertionError("signup must not log the user in before email verification")
 
     monkeypatch.setattr("app.routers.auth.keycloak_admin.create_user", fake_create_user)
-    monkeypatch.setattr("app.routers.auth._password_grant", fake_password_grant)
+    # Guard the email-verification bypass fix: signup must NOT call the password
+    # grant / issue a session, so an unverified user can't reach /dashboard by
+    # opening the app in another tab before entering the emailed code.
+    monkeypatch.setattr("app.routers.auth._password_grant", fail_password_grant)
 
     response = await client.post(
         "/auth/signup",
         json={
+            # Must satisfy the realm password policy that app.services.
+            # password_policy mirrors — "strongpass123" has no uppercase, so
+            # signup now rejects it with a 400 before create_user is reached.
+            # Keycloak is mocked here, which is exactly why this test used to
+            # pass with a password the real realm would have refused.
             "email": "teacher@cs.du.ac.bd",
-            "password": "strongpass123",
+            "password": "StrongPass123",
             "name": "Teacher One",
             "role": "teacher",
         },
@@ -146,6 +151,11 @@ async def test_auth_signup_creates_pending_teacher_user_and_audit_log(client, db
     assert body["id"] == "teacher-1"
     assert body["role"] == "student"
     assert body["pending_teacher"] is True
+
+    # No session cookies on signup — the email is still unverified.
+    cookies = response.headers.get_list("set-cookie")
+    assert not any(cookie.startswith("session_token=") for cookie in cookies)
+    assert not any(cookie.startswith("refresh_token=") for cookie in cookies)
 
     user = await db_session.get(User, "teacher-1")
     assert user is not None

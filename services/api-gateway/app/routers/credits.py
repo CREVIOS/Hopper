@@ -14,6 +14,7 @@ from app.services.credit_service import (
     get_balance,
     get_or_create_account,
 )
+from app.services.notification_service import notify
 
 router = APIRouter()
 
@@ -132,6 +133,14 @@ async def allocate_credits(
         transfer = await add_credits(
             db, request.user_id, request.amount, request.description or "admin_grant"
         )
+        await notify(
+            db,
+            request.user_id,
+            type_="success",
+            title="Credits received",
+            body=f"You received {request.amount:g} credits from {current_user.name}.",
+            data={"amount": request.amount, "from": current_user.name},
+        )
         return {"message": "granted", "transfer_id": transfer.id}
 
     if current_user.role == "professor":
@@ -146,6 +155,14 @@ async def allocate_credits(
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)
             )
+        await notify(
+            db,
+            request.user_id,
+            type_="success",
+            title="Credits received",
+            body=f"You received {request.amount:g} credits from {current_user.name}.",
+            data={"amount": request.amount, "from": current_user.name},
+        )
         return {"message": "allocated", "transfer_id": transfer.id}
 
     raise HTTPException(

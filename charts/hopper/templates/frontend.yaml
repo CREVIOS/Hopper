@@ -1,0 +1,53 @@
+##############################################################################
+# Frontend (port of k8s/deploy/02-apps.yaml)
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ include "hopper.image" (dict "root" . "component" .Values.frontend) }}
+          imagePullPolicy: {{ .Values.frontend.imagePullPolicy }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PUBLIC_API_URL
+              value: "/api"
+            - name: ORIGIN
+              value: "{{ .Values.global.scheme }}://{{ .Values.global.host }}"
+            - name: API_INTERNAL_URL
+              value: "http://api-gateway:8000"
+            # Public host that NodePort SSH/VS Code services are reachable
+            # on. NodePorts (30000–32767) must be open on the firewall.
+            - name: NODE_IP
+              value: {{ .Values.frontend.nodeIP | default .Values.global.host | quote }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000

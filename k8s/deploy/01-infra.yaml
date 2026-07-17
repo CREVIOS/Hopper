@@ -37,7 +37,9 @@ spec:
         fsGroup: 999
       containers:
         - name: postgres
-          image: timescale/timescaledb:latest-pg16
+          # Pinned by digest to the exact image live on prod — `latest-pg16` is a
+          # moving tag and re-applying it could silently upgrade Postgres.
+          image: timescale/timescaledb:latest-pg16@sha256:0af03ecf697825f6ddae76fd275d16bf46007bed6d00eb3d754779cb7db96fa6
           ports:
             - containerPort: 5432
           securityContext:
