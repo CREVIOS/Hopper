@@ -1,0 +1,172 @@
+{{- if .Values.ingress.enabled }}
+##############################################################################
+# Ingresses (port of k8s/deploy/03-ingress.yaml)
+#
+# Traffic flow (host = .Values.global.host):
+#   /                      → frontend:3000
+#   /api/...               → api-gateway:8000 (prefix stripped)
+#   /realms /resources /js → keycloak:8080 (admin console NOT exposed)
+#   /<uid>/code/<pid>/...  → api-gateway:8000/pods/<pid>/vscode/...
+##############################################################################
+{{- $host := .Values.global.host }}
+{{- $tls := .Values.ingress.tlsSecretName }}
+{{- $class := .Values.ingress.className }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-keycloak-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+spec:
+  ingressClassName: {{ $class }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $tls }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          # Keycloak 25+ serves at root: /realms, /resources, /js. The
+          # /admin console is deliberately NOT exposed — administer via
+          # `kubectl port-forward svc/keycloak 8080:8080`.
+          {{- range $path := list "/realms" "/resources" "/js" }}
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
+          {{- end }}
+---
+# API Ingress — strips /api before forwarding. Carries the cert-manager
+# annotation; the issued cert is reused by every ingress referencing the
+# same TLS secret.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-api-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.certManager.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.certManager.clusterIssuer }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # The OIDC callback's 302 sets ~5KB of Set-Cookie headers, which
+    # overflows nginx's default 4KB proxy buffer → 502 at the final login
+    # redirect. 32k leaves headroom.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+    # Per-source request limits — defence against credential stuffing.
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "30"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  ingressClassName: {{ $class }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $tls }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8000
+---
+# Code Ingress — path-based code-server access:
+#   /<userId>/code/<podId>/<rest> → api-gateway:8000/pods/<podId>/vscode/<rest>
+# The JWT cookie validates the user; <userId> in the URL is decorative.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-code-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /pods/$2/vscode/$4
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: {{ $class }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $tls }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/code/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8000
+---
+# Frontend Ingress — catch-all (lowest priority).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopper-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # SvelteKit SSR emits large Link preload headers + several Set-Cookie
+    # entries; the default 4k response buffer overflows ("upstream sent too
+    # big header" → 502) on authenticated SSR pages.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "8"
+spec:
+  ingressClassName: {{ $class }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ $tls }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000
+{{- end }}

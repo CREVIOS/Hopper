@@ -1,0 +1,11 @@
+apiVersion: v2
+name: hopper
+description: >-
+  Hopper Cloud — credit-based VM provisioning platform (SvelteKit frontend,
+  FastAPI api-gateway, Go orchestrator, Postgres/TimescaleDB, NATS, Keycloak).
+  Parameterized port of the raw manifests in k8s/deploy/ (HOP-22 25.2).
+type: application
+version: 0.1.0
+# Tracks the platform release; the service image tag is set per-values-file
+# (CI pushes ghcr images tagged with the 12-char commit SHA).
+appVersion: "b19bbd699a03"

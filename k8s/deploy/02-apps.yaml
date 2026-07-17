@@ -40,8 +40,11 @@ spec:
           hostnames: ["smtp.gmail.com"]
       containers:
         - name: api-gateway
-          image: hopper/api-gateway:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-api-gateway:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           # Override Dockerfile CMD so uvicorn trusts the nginx ingress's
           # X-Forwarded-Proto header (otherwise FastAPI's auto-redirects build
           # http:// URLs and the browser never reaches the secure callback).
@@ -274,8 +277,11 @@ spec:
       serviceAccountName: orchestrator
       containers:
         - name: orchestrator
-          image: hopper/orchestrator:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-orchestrator:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051
           env:
@@ -359,8 +365,11 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: hopper/frontend:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-frontend:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:

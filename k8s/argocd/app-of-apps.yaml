@@ -1,0 +1,34 @@
+##############################################################################
+# ArgoCD app-of-apps (HOP-22 25.3)
+#
+# The root Application: point ArgoCD at this file once and it manages the
+# child Applications below (currently one — the hopper platform chart).
+#
+#   kubectl apply -n argocd -f k8s/argocd/app-of-apps.yaml
+#
+# See k8s/argocd/README.md for install + the cutover plan. Sync is
+# DELIBERATELY manual (no automated prune/self-heal) until the team retires
+# the `kubectl set image` CD pipeline — automated self-heal would revert
+# every CI image rollout minutes after it lands, and automated prune could
+# delete the out-of-band Secrets. Flip `syncPolicy` to automated only
+# together with the pipeline change described in the README.
+##############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hopper-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CREVIOS/Hopper
+    targetRevision: main
+    path: k8s/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
