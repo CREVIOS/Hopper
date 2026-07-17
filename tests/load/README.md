@@ -14,8 +14,8 @@ Expected environment:
 - `BASE_URL`
   - default: `http://127.0.0.1:8000`
 - `ACCESS_TOKEN`
-  - default: `e2e-student`
-  - the deterministic mock API also accepts this value via the `session_token` cookie injected by the scripts
+  - default: `e2e-student-1`
+  - this is the deterministic mock token for `student-1@test.edu`, injected both as a bearer token and `session_token` cookie by the scripts
 
 Canonical commands from repo root:
 

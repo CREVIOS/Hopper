@@ -149,7 +149,7 @@ jobs:
       - name: Run load smoke test
         env:
           BASE_URL: "http://127.0.0.1:8000"
-          ACCESS_TOKEN: "e2e-student"
+          ACCESS_TOKEN: "e2e-student-1"
         run: ./scripts/test/run.sh test-load-smoke
 
       - name: Capture mock service logs

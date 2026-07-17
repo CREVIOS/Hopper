@@ -2,7 +2,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8000';
-const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || 'e2e-student';
+const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || 'e2e-student-1';
 
 function headers() {
   return {
