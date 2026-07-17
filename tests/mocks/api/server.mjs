@@ -77,6 +77,8 @@ http.createServer(async (req, res) => {
   }
   if (url.pathname === '/credits/balance') return json(res, 200, { account_id: 'acct-student-1', balance: state.balance });
   if (url.pathname === '/credits/history') return json(res, 200, state.transactions);
+  if (url.pathname === '/healthz') return json(res, 200, { status: 'ok' });
+  if (url.pathname === '/readyz') return json(res, 200, { status: 'ready' });
   if (req.method === 'POST' && url.pathname === '/credits/allocate') {
     const input = await body(req); state.balance += Number(input.amount || 0);
     state.transactions.push({ id: `tx-${Date.now()}`, amount: Number(input.amount), direction: 'credit', type: 'allocation', created_at: new Date().toISOString() });

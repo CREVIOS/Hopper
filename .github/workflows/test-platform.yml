@@ -34,8 +34,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: grafana/setup-k6-action@v1
       - run: ./scripts/test/run.sh test-services-up
+      - run: ./scripts/test/run.sh test-load-smoke
+        env: { BASE_URL: "http://127.0.0.1:8000", ACCESS_TOKEN: "e2e-student" }
       - run: ./scripts/test/run.sh test-load
         env: { BASE_URL: "http://127.0.0.1:8000", ACCESS_TOKEN: "e2e-student" }
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: test-results/load
+          if-no-files-found: ignore
       - if: always()
         run: ./scripts/test/run.sh test-services-down
 
