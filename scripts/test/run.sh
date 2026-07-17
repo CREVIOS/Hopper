@@ -430,7 +430,7 @@ test_real_stack_up() {
   compose_cmd "$REAL_COMPOSE_FILE" up -d postgres nats keycloak
   real_services_wait
   bootstrap_keycloak
-  api_migrate
+  HOPPER_DATABASE_URL="$hopper_database_url" api_migrate
 
   start_background_process api-gateway \
     env \
