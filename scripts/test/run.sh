@@ -116,6 +116,22 @@ wait_for_http() {
   die "Timed out waiting for $label at $url"
 }
 
+http_ready() {
+  local url=$1
+  local attempts=${2:-60}
+  local sleep_seconds=${3:-2}
+
+  require_cmd curl
+  for ((i = 1; i <= attempts; i += 1)); do
+    if curl --fail --silent --show-error "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$sleep_seconds"
+  done
+
+  return 1
+}
+
 wait_for_port() {
   local host=$1
   local port=$2
@@ -378,22 +394,6 @@ test_services_down() {
   compose_cmd "$MOCK_COMPOSE_FILE" down -v
 }
 
-real_stack_api_env() {
-  cat <<EOF
-HOPPER_DATABASE_URL=postgresql+asyncpg://hopper:hopper_dev@127.0.0.1:5433/hopper
-HOPPER_NATS_URL=nats://127.0.0.1:4222
-HOPPER_KEYCLOAK_URL=http://127.0.0.1:8080
-HOPPER_KEYCLOAK_EXTERNAL_URL=http://127.0.0.1:8080
-HOPPER_KEYCLOAK_REALM=hopper
-HOPPER_KEYCLOAK_CLIENT_ID=hopper-api
-HOPPER_KEYCLOAK_ADMIN_CLIENT_ID=hopper-admin
-HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET=${HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET:-hopper-admin-secret}
-HOPPER_FRONTEND_URL=http://127.0.0.1:4173
-HOPPER_CALLBACK_URL=http://127.0.0.1:4173/api/auth/callback
-HOPPER_CORS_ORIGINS=["http://127.0.0.1:4173"]
-EOF
-}
-
 bootstrap_keycloak() {
   require_cmd python3
   local bootstrap_script="$ROOT/scripts/test/bootstrap_keycloak.py"
@@ -415,25 +415,36 @@ test_real_stack_up() {
   require_cmd poetry
   require_cmd pnpm
 
+  local hopper_database_url="postgresql+asyncpg://hopper:hopper_dev@127.0.0.1:5433/hopper"
+  local hopper_nats_url="nats://127.0.0.1:4222"
+  local hopper_keycloak_url="http://127.0.0.1:8080"
+  local hopper_keycloak_external_url="http://127.0.0.1:8080"
+  local hopper_keycloak_realm="hopper"
+  local hopper_keycloak_client_id="hopper-api"
+  local hopper_keycloak_admin_client_id="hopper-admin"
+  local hopper_keycloak_admin_client_secret="${HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET:-hopper-admin-secret}"
+  local hopper_frontend_url="http://127.0.0.1:4173"
+  local hopper_callback_url="http://127.0.0.1:4173/api/auth/callback"
+  local hopper_cors_origins='["http://127.0.0.1:4173"]'
+
   compose_cmd "$REAL_COMPOSE_FILE" up -d postgres nats keycloak
   real_services_wait
   bootstrap_keycloak
-  eval "$(real_stack_api_env)"
   api_migrate
 
   start_background_process api-gateway \
     env \
-      HOPPER_DATABASE_URL="$HOPPER_DATABASE_URL" \
-      HOPPER_NATS_URL="$HOPPER_NATS_URL" \
-      HOPPER_KEYCLOAK_URL="$HOPPER_KEYCLOAK_URL" \
-      HOPPER_KEYCLOAK_EXTERNAL_URL="$HOPPER_KEYCLOAK_EXTERNAL_URL" \
-      HOPPER_KEYCLOAK_REALM="$HOPPER_KEYCLOAK_REALM" \
-      HOPPER_KEYCLOAK_CLIENT_ID="$HOPPER_KEYCLOAK_CLIENT_ID" \
-      HOPPER_KEYCLOAK_ADMIN_CLIENT_ID="$HOPPER_KEYCLOAK_ADMIN_CLIENT_ID" \
-      HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET="$HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET" \
-      HOPPER_FRONTEND_URL="$HOPPER_FRONTEND_URL" \
-      HOPPER_CALLBACK_URL="$HOPPER_CALLBACK_URL" \
-      HOPPER_CORS_ORIGINS="$HOPPER_CORS_ORIGINS" \
+      HOPPER_DATABASE_URL="$hopper_database_url" \
+      HOPPER_NATS_URL="$hopper_nats_url" \
+      HOPPER_KEYCLOAK_URL="$hopper_keycloak_url" \
+      HOPPER_KEYCLOAK_EXTERNAL_URL="$hopper_keycloak_external_url" \
+      HOPPER_KEYCLOAK_REALM="$hopper_keycloak_realm" \
+      HOPPER_KEYCLOAK_CLIENT_ID="$hopper_keycloak_client_id" \
+      HOPPER_KEYCLOAK_ADMIN_CLIENT_ID="$hopper_keycloak_admin_client_id" \
+      HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET="$hopper_keycloak_admin_client_secret" \
+      HOPPER_FRONTEND_URL="$hopper_frontend_url" \
+      HOPPER_CALLBACK_URL="$hopper_callback_url" \
+      HOPPER_CORS_ORIGINS="$hopper_cors_origins" \
       PYTHONPATH="$ROOT/services/api-gateway" \
       poetry --directory "$ROOT/services/api-gateway" run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
@@ -450,7 +461,16 @@ test_real_stack_up() {
       DEV_LOGIN_PASS_ALT="" \
       pnpm --dir "$ROOT/frontend" exec vite dev --host 127.0.0.1 --port 4173
 
-  wait_for_http "http://127.0.0.1:8000/readyz" "API readiness"
+  if http_ready "http://127.0.0.1:8000/readyz" 30 2; then
+    echo "Ready: API readiness (http://127.0.0.1:8000/readyz)"
+  else
+    local api_log="$REAL_STACK_LOG_DIR/api-gateway.log"
+    if [[ -f "$api_log" ]]; then
+      echo "API gateway startup log:" >&2
+      tail -n 200 "$api_log" >&2 || true
+    fi
+    die "Timed out waiting for API readiness at http://127.0.0.1:8000/readyz"
+  fi
   wait_for_http "http://127.0.0.1:4173/login" "frontend login page"
 }
 
