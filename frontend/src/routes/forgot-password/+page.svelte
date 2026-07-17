@@ -4,6 +4,8 @@
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { api, ApiError } from '$lib/api/client';
+  import PasswordRequirements from '$lib/auth/PasswordRequirements.svelte';
+  import { explainFailures, unmetRules } from '$lib/auth/passwordPolicy';
 
   // 'request' asks for the email; 'reset' collects the code + new password.
   let step = $state<'request' | 'reset'>('request');
@@ -13,6 +15,8 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
   let resent = $state(false);
+  // Set once a submit is rejected, so the checklist flags what's missing.
+  let passwordRejected = $state(false);
 
   async function requestCode(e: SubmitEvent) {
     e.preventDefault();
@@ -32,16 +36,25 @@
   async function reset(e: SubmitEvent) {
     e.preventDefault();
     error = null;
-    if (password.length < 12) {
-      error = 'Password must be at least 12 characters.';
+    // Mirrors the realm policy the gateway enforces, so the user is told which
+    // rules they missed instead of the request failing with a generic error.
+    const unmet = unmetRules(password, email);
+    if (unmet.length > 0) {
+      error = explainFailures(unmet);
+      passwordRejected = true;
       return;
     }
+    passwordRejected = false;
     submitting = true;
     try {
       await api.post('/auth/reset-password', { email, code, password });
       window.location.href = '/login?reset=1';
     } catch (err) {
       error = err instanceof ApiError ? err.message : 'Reset failed. Please try again.';
+      // Keycloak owns password history — a reused password is rejected there,
+      // not by the mirror above. Flag the field for those too.
+      passwordRejected =
+        err instanceof ApiError && err.status === 400 && /password/i.test(err.message);
       submitting = false;
     }
   }
@@ -102,7 +115,10 @@
         </div>
         <div>
           <Label for="fp-password">New password</Label>
-          <Input id="fp-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="At least 12 characters" class="mt-1" />
+          <Input id="fp-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="Choose a strong password" class="mt-1" aria-describedby="fp-password-reqs" />
+          <div id="fp-password-reqs">
+            <PasswordRequirements {password} username={email} showErrors={passwordRejected} />
+          </div>
         </div>
         <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
           <span class="flex items-center gap-2.5">

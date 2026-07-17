@@ -4,6 +4,8 @@
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { api, ApiError } from '$lib/api/client';
+  import PasswordRequirements from '$lib/auth/PasswordRequirements.svelte';
+  import { explainFailures, unmetRules } from '$lib/auth/passwordPolicy';
 
   let name = $state('');
   let email = $state('');
@@ -11,6 +13,9 @@
   let role = $state<'student' | 'teacher'>('student');
   let submitting = $state(false);
   let error = $state<string | null>(null);
+  // Set once a submit is rejected, so the checklist flags what's missing
+  // rather than staying neutral while an error sits above the form.
+  let passwordRejected = $state(false);
 
   // Two-step flow: 'form' collects details, 'verify' collects the emailed code.
   let step = $state<'form' | 'verify'>('form');
@@ -26,10 +31,15 @@
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     error = null;
-    if (password.length < 12) {
-      error = 'Password must be at least 12 characters.';
+    // Mirrors the realm policy the gateway enforces, so the user is told which
+    // rules they missed instead of the request failing with a generic error.
+    const unmet = unmetRules(password, email);
+    if (unmet.length > 0) {
+      error = explainFailures(unmet);
+      passwordRejected = true;
       return;
     }
+    passwordRejected = false;
     submitting = true;
     try {
       const res = await api.post<{ pending_teacher?: boolean }>('/auth/signup', {
@@ -42,6 +52,10 @@
       step = 'verify';
     } catch (err) {
       error = err instanceof ApiError ? err.message : 'Sign-up failed. Please try again.';
+      // The gateway rejects on rules this page can't check (Keycloak owns
+      // password history) — flag the field for those too.
+      passwordRejected =
+        err instanceof ApiError && err.status === 400 && /password/i.test(err.message);
     } finally {
       submitting = false;
     }
@@ -194,7 +208,10 @@
         </div>
         <div>
           <Label for="su-password">Password</Label>
-          <Input id="su-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="At least 12 characters" class="mt-1" />
+          <Input id="su-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="Choose a strong password" class="mt-1" aria-describedby="su-password-reqs" />
+          <div id="su-password-reqs">
+            <PasswordRequirements {password} username={email} showErrors={passwordRejected} />
+          </div>
         </div>
 
         <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
