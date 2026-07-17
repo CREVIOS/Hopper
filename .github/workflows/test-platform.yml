@@ -57,7 +57,7 @@ jobs:
             docker run --rm -v "$PWD:/work" mikefarah/yq:4 e '.' "/work/$file" >/dev/null
           done
       - name: Run staging chaos and invariants
-        if: ${{ secrets.STAGING_KUBECONFIG != '' }}
+        if: ${{ env.KUBECONFIG_DATA != '' }}
         env: { KUBECONFIG_DATA: "${{ secrets.STAGING_KUBECONFIG }}" }
         run: |
           mkdir -p "$RUNNER_TEMP/kube"
@@ -78,7 +78,7 @@ jobs:
             docker run --rm -v "$PWD:/work" mikefarah/yq:4 e '.' "/work/$file" >/dev/null
           done
       - name: Run staging security checks
-        if: ${{ secrets.STAGING_KUBECONFIG != '' && secrets.STAGING_BASE_URL != '' }}
+        if: ${{ env.KUBECONFIG_DATA != '' && env.BASE_URL != '' }}
         env:
           BASE_URL: "${{ secrets.STAGING_BASE_URL }}"
           STUDENT_TOKEN: "${{ secrets.STAGING_STUDENT_TOKEN }}"

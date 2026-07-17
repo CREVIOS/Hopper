@@ -69,10 +69,11 @@ class FakeDB:
 
 
 class FakeNode:
-    def __init__(self, ready=True, cpu="4", mem="8Gi"):
+    def __init__(self, ready=True, cpu="4", mem="8Gi", name="node-1"):
         self.ready = ready
         self.cpu_allocatable = cpu
         self.memory_allocatable = mem
+        self.name = name
 
 
 def test_plan_disk_falls_back_for_unknown_plan():
@@ -129,8 +130,8 @@ async def test_free_from_nodes_and_current_capacity(monkeypatch):
     async def fake_free(db, nodes):
         return "cap"
 
-    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_nodes)
-    monkeypatch.setattr("app.services.vm_scheduler._free_from_nodes", fake_free)
+    monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_nodes)
+    monkeypatch.setattr(vm_scheduler, "_free_from_nodes", fake_free)
     assert await vm_scheduler.current_capacity(FakeDB(), object()) == "cap"
 
 
@@ -152,15 +153,22 @@ async def test_reserve_sync_slot_branches(monkeypatch):
     async def fake_lock(db):
         return None
 
-    monkeypatch.setattr("app.services.vm_scheduler._lock_admission", fake_lock)
+    monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
     async def fake_capacity(db, nodes):
         return SimpleNamespace(), [SimpleNamespace(ready=True, free_cpu_m=10_000, free_mem_b=10_000)]
 
-    monkeypatch.setattr("app.services.vm_scheduler._capacity", fake_capacity)
+    monkeypatch.setattr(vm_scheduler, "_capacity", fake_capacity)
     monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
     monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.fits_on_some_node", lambda node_caps, cpu, mem: True)
-    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", lambda db, user_id: 0)
-    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", lambda *args, **kwargs: "pod-1")
+
+    async def fake_user_live_count_zero(db, user_id):
+        return 0
+
+    async def fake_reserve_sync(*args, **kwargs):
+        return "pod-1"
+
+    monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_live_count_zero)
+    monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve_sync)
 
     db = FakeDB(scalar_results=[1])
     assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
@@ -176,7 +184,7 @@ async def test_reserve_sync_slot_branches(monkeypatch):
     async def fake_user_at_cap(db, user_id):
         return vm_scheduler.MAX_CONCURRENT_VMS_PER_USER
 
-    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_at_cap)
+    monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_at_cap)
     assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
     assert db.rollbacks == 1
 
@@ -186,8 +194,8 @@ async def test_reserve_sync_slot_branches(monkeypatch):
     async def fake_reserve(*args, **kwargs):
         return "pod-1"
 
-    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_live_count)
-    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", fake_reserve)
+    monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_live_count)
+    monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve)
     db = FakeDB(scalar_results=[0])
     assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") == "pod-1"
     assert db.commits == 1
@@ -211,11 +219,11 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
     async def fake_requeue(db, orch):
         return 0
 
-    monkeypatch.setattr("app.services.vm_scheduler._requeue_stuck_admitting", fake_requeue)
+    monkeypatch.setattr(vm_scheduler, "_requeue_stuck_admitting", fake_requeue)
     async def fake_fetch_none(orch):
         return None
 
-    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_none)
+    monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_none)
     assert await vm_scheduler.reconcile_pass(FakeDB(), object()) == {"admitted": 0, "capacity": False}
 
     entries = [
@@ -263,13 +271,13 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
             return ExecuteResult(first_value=("claimed",))
         return ExecuteResult()
 
-    monkeypatch.setattr("app.services.vm_scheduler.fetch_nodes", fake_fetch_nodes)
-    monkeypatch.setattr("app.services.vm_scheduler._backfill_node_names", fake_backfill)
-    monkeypatch.setattr("app.services.vm_scheduler._lock_admission", fake_lock)
-    monkeypatch.setattr("app.services.vm_scheduler._capacity", fake_capacity)
-    monkeypatch.setattr("app.services.vm_scheduler._user_live_count", fake_user_count)
-    monkeypatch.setattr("app.services.vm_scheduler._reserve_pod_session", fake_reserve)
-    monkeypatch.setattr("app.services.vm_scheduler._first_fit_node", lambda node_free, cpu, mem: 0)
+    monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_nodes)
+    monkeypatch.setattr(vm_scheduler, "_backfill_node_names", fake_backfill)
+    monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
+    monkeypatch.setattr(vm_scheduler, "_capacity", fake_capacity)
+    monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_count)
+    monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve)
+    monkeypatch.setattr(vm_scheduler, "_first_fit_node", lambda node_free, cpu, mem: 0)
     db = FakeDB(
         execute_results=[
             execute_result,
