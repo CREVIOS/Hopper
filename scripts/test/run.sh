@@ -287,6 +287,16 @@ go_contract_tests() {
       -coverprofile="$contract_profile" \
       -json | tee "$REPORT_ROOT/contracts/go-contracts.json"
   )
+  (
+    cd "$ROOT/services/orchestrator"
+    GOCACHE="${GOCACHE:-$GO_TEST_CACHE_DEFAULT}" go test ./internal/k8s -count=1 \
+      -coverpkg=github.com/hopper/orchestrator/... \
+      -coverprofile="$internal_k8s_profile"
+  )
+  python3 "$ROOT/scripts/test/merge_go_coverprofiles.py" \
+    "$ROOT/coverage/orchestrator/orchestrator.out" \
+    "$external_profile" \
+    "$internal_k8s_profile"
 }
 
 merge_go_coverage() {

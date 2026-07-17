@@ -7,6 +7,10 @@ const controlURL =
   `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`;
 const baseURL = process.env.BASE_URL ?? 'http://127.0.0.1:5173';
 
+const controlURL =
+  process.env.E2E_CONTROL_URL ??
+  `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? '18000'}`;
+
 type AppFixtures = {
   loginAsAdmin: () => Promise<void>;
   loginAsProfessor: () => Promise<void>;
