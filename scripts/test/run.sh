@@ -326,9 +326,12 @@ contract_tests() {
 
 api_migrate() {
   require_cmd poetry
-  PYTHONPATH="$ROOT/services/api-gateway" \
-    HOPPER_DATABASE_URL="${HOPPER_DATABASE_URL:-postgresql+asyncpg://hopper:hopper_dev@127.0.0.1:5433/hopper}" \
-    poetry --directory "$ROOT/services/api-gateway" run alembic upgrade head
+  (
+    cd "$ROOT/services/api-gateway"
+    PYTHONPATH="." \
+      HOPPER_DATABASE_URL="${HOPPER_DATABASE_URL:-postgresql+asyncpg://hopper:hopper_dev@127.0.0.1:5433/hopper}" \
+      poetry run alembic -c alembic.ini upgrade head
+  )
 }
 
 test_services_up() {
@@ -435,6 +438,7 @@ e2e_tests() {
   require_cmd node
   require_cmd npx
   E2E_USE_MOCK_SERVER="true" \
+  E2E_MANAGE_MOCK_SERVER="${E2E_MANAGE_MOCK_SERVER:-false}" \
   E2E_MANAGE_FRONTEND="true" \
   E2E_TEST_DIR="./specs" \
   PLAYWRIGHT_JUNIT_PATH="$REPORT_ROOT/e2e/playwright-junit.xml" \

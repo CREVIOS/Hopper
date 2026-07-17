@@ -6,6 +6,9 @@ const controlPort = process.env.E2E_CONTROL_PORT || '8000';
 const controlURL = process.env.E2E_CONTROL_URL || `http://${controlHost}:${controlPort}`;
 const enableCrossBrowser = /^(1|true|yes)$/i.test(process.env.E2E_CROSS_BROWSER ?? '');
 const useMockServer = !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true');
+const manageMockServer = !/^(0|false|no)$/i.test(
+  process.env.E2E_MANAGE_MOCK_SERVER ?? (useMockServer ? 'true' : 'false')
+);
 const manageFrontendServer = !/^(0|false|no)$/i.test(
   process.env.E2E_MANAGE_FRONTEND ?? (useMockServer ? 'true' : 'false')
 );
@@ -14,7 +17,7 @@ const playwrightJUnitPath =
 
 const webServer = [];
 
-if (useMockServer) {
+if (useMockServer && manageMockServer) {
   webServer.push({
     command: 'node tests/mocks/api/server.mjs',
     cwd: '../..',
