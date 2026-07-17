@@ -132,6 +132,7 @@ func (m *Manager) ListRunning() []*Pod {
 	return result
 }
 
+
 func (m *Manager) SetPorts(id string, sshPort, vscodePort int32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -146,15 +147,5 @@ func (m *Manager) SetSshPassword(id string, password string) {
 	defer m.mu.Unlock()
 	if p, ok := m.pods[id]; ok {
 		p.SshPassword = password
-	}
-}
-
-// SetNodeName records which node the scheduler placed the pod on. Empty until
-// the pod is scheduled; the K8s watcher fills it in once p.Spec.NodeName is set.
-func (m *Manager) SetNodeName(id string, nodeName string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if p, ok := m.pods[id]; ok {
-		p.NodeName = nodeName
 	}
 }

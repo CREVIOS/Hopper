@@ -53,25 +53,9 @@ type TickEvent struct {
 // deterministic tx_id for idempotency in the consumer.
 type OnTickFunc func(ev TickEvent)
 
-// Start begins (or restarts) billing for a pod, resetting its billing clock.
 func (t *Ticker) Start(podID string, plan VmPlan, onTick OnTickFunc) {
-	t.start(podID, plan, onTick, true)
-}
-
-// EnsureStarted begins billing only if the pod is not already being billed,
-// and reports whether it started one. Billing begins when a container is
-// observed Running, and the K8s watcher re-observes Running on every replayed
-// ADDED event (each watch reconnect) — so the caller there must be idempotent
-// or every reconnect would reset the pod's billing clock and re-log a start.
-func (t *Ticker) EnsureStarted(podID string, plan VmPlan, onTick OnTickFunc) bool {
-	return t.start(podID, plan, onTick, false)
-}
-
-// start is the shared body. The already-billing check and the map write happen
-// under one lock hold, so concurrent callers cannot both decide to start.
-func (t *Ticker) start(podID string, plan VmPlan, onTick OnTickFunc, restart bool) bool {
 	if plan.CreditsPerHr == 0 {
-		return false
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,11 +66,6 @@ func (t *Ticker) start(podID string, plan VmPlan, onTick OnTickFunc, restart boo
 	// cancel the existing goroutine — overwriting the map entry alone would
 	// leak a live ticker feeding off the replacement's state.
 	if existing, ok := t.timers[podID]; ok {
-		if !restart {
-			t.mu.Unlock()
-			cancel() // nothing was spawned; don't leak the context
-			return false
-		}
 		existing.cancel()
 		t.logger.Warn("billing ticker restarted for already-billed pod", zap.String("pod_id", podID))
 	}
@@ -133,7 +112,6 @@ func (t *Ticker) start(podID string, plan VmPlan, onTick OnTickFunc, restart boo
 	}()
 
 	t.logger.Info("billing started", zap.String("pod_id", podID), zap.Float64("rate_per_hr", plan.CreditsPerHr))
-	return true
 }
 
 // TickTxID derives the idempotency key for a billing tick: the pod plus the
