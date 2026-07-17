@@ -12,6 +12,7 @@ mkdir -p \
   "$ROOT/coverage/python" \
   "$ROOT/coverage/frontend" \
   "$ROOT/coverage/orchestrator" \
+  "$ROOT/tests/coverage" \
   "$ROOT/test-results/unit" \
   "$ROOT/test-results/integration" \
   "$ROOT/test-results/e2e" \
@@ -78,6 +79,7 @@ python_unit() {
     -v \
     --tb=short \
     --cov=app \
+    --cov-config="$ROOT/services/api-gateway/.coveragerc" \
     --cov-report=term-missing \
     --cov-report="xml:$ROOT/coverage/python/unit.xml"
 }
@@ -89,6 +91,7 @@ python_integration() {
     -v \
     --tb=short \
     --cov=app \
+    --cov-config="$ROOT/services/api-gateway/.coveragerc" \
     --cov-report=term-missing \
     --cov-report="xml:$ROOT/coverage/python/integration.xml"
 }
@@ -101,14 +104,33 @@ frontend_coverage() {
   frontend_exec npx vitest run --coverage
 }
 
+render_coverage_report() {
+  require_cmd python3
+  python3 "$ROOT/scripts/test/generate_coverage_report.py"
+}
+
 orchestrator_tests() {
   require_cmd go
+  require_cmd python3
+  local external_profile="$ROOT/coverage/orchestrator/orchestrator-external.out"
+  local internal_k8s_profile="$ROOT/coverage/orchestrator/orchestrator-internal-k8s.out"
+
   (
     cd "$ROOT/tests/orchestrator"
     GOCACHE="${GOCACHE:-$GO_TEST_CACHE_DEFAULT}" go test ./... -race -count=1 \
       -coverpkg=github.com/hopper/orchestrator/... \
-      -coverprofile="$ROOT/coverage/orchestrator/orchestrator.out"
+      -coverprofile="$external_profile"
   )
+  (
+    cd "$ROOT/services/orchestrator"
+    GOCACHE="${GOCACHE:-$GO_TEST_CACHE_DEFAULT}" go test ./internal/k8s -count=1 \
+      -coverpkg=github.com/hopper/orchestrator/... \
+      -coverprofile="$internal_k8s_profile"
+  )
+  python3 "$ROOT/scripts/test/merge_go_coverprofiles.py" \
+    "$ROOT/coverage/orchestrator/orchestrator.out" \
+    "$external_profile" \
+    "$internal_k8s_profile"
 }
 
 test_services_up() {
@@ -175,6 +197,7 @@ coverage_all() {
   python_unit
   orchestrator_tests
   frontend_coverage
+  render_coverage_report
 }
 
 test_all() {
@@ -213,6 +236,7 @@ Public commands:
   test-security       Validate security scripts and optionally execute live checks
   test-chaos          Validate chaos scripts and optionally execute live invariants
   test-coverage       Run Python unit, frontend, and Go coverage-producing suites
+  test-coverage-report Render tests/coverage/REPORT.md from existing artifacts
   test-all            Run local fast-path validation
   test-ci             Run the CI-oriented validation path
   test-services-up    Start deterministic test services from docker-compose.test.yml
@@ -239,6 +263,7 @@ case "$command_name" in
   test-security) security_checks ;;
   test-chaos) chaos_checks ;;
   test-coverage) coverage_all ;;
+  test-coverage-report) render_coverage_report ;;
   test-all) test_all ;;
   test-ci) test_ci ;;
   test-services-up) test_services_up ;;
