@@ -20,7 +20,9 @@ import (
 
 func main() {
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	// Sync flushes buffered logs on exit; its error is unactionable at that
+	// point (stderr may be gone) — ignored explicitly for errcheck.
+	defer func() { _ = logger.Sync() }()
 
 	cfg, err := config.Load()
 	if err != nil {

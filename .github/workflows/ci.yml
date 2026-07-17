@@ -108,6 +108,30 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  lint-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: services/orchestrator/go.sum
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.6.2
+
+      - name: Lint orchestrator
+        working-directory: services/orchestrator
+        run: golangci-lint run --timeout 5m ./...
+
+      - name: Lint orchestrator contract tests
+        working-directory: tests/orchestrator
+        run: golangci-lint run --timeout 5m ./...
+
   orchestrator:
     runs-on: ubuntu-latest
     steps:

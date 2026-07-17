@@ -1,0 +1,161 @@
+##############################################################################
+# Orchestrator + RBAC (port of k8s/deploy/02-apps.yaml)
+##############################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+---
+# Namespace-scoped permissions only — principle of least privilege.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: orchestrator-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create", "get"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+  # Same-group VM NetworkPolicies (HOP-19 18.3).
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "create"]
+---
+# ClusterRole for reading node info (admin /nodes endpoint + capacity).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: orchestrator-node-reader
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: orchestrator-node-reader-binding
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: orchestrator
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: orchestrator-node-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: orchestrator-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: orchestrator
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: orchestrator-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: the orchestrator owns the billing tickers.
+  # A rolling update runs old + new pods side by side — two tickers billing
+  # every VM. Leader election also guards this, but not overlapping at all
+  # is the cheapest correctness.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      serviceAccountName: orchestrator
+      containers:
+        - name: orchestrator
+          image: {{ include "hopper.image" (dict "root" . "component" .Values.orchestrator) }}
+          imagePullPolicy: {{ .Values.orchestrator.imagePullPolicy }}
+          ports:
+            - containerPort: 50051
+          env:
+            - name: HOPPER_NATS_URL
+              value: "nats://nats:4222"
+            - name: GRPC_PORT
+              value: "50051"
+            - name: KUBERNETES_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            # Gate billing tickers / pod watcher behind a K8s Lease so a
+            # second instance can never double-bill.
+            - name: HOPPER_LEADER_ELECTION
+              value: {{ .Values.orchestrator.leaderElection | quote }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # Native gRPC probes: readiness on the default ("") service (flips
+          # NOT_SERVING when NATS / K8s API is lost); liveness on the
+          # dedicated "liveness" service that stays SERVING while the
+          # process is up — restarting can't fix a NATS outage.
+          readinessProbe:
+            grpc:
+              port: 50051
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            grpc:
+              port: 50051
+              service: liveness
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 50051
+      targetPort: 50051
