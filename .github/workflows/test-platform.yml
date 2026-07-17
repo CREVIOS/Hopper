@@ -25,23 +25,19 @@ jobs:
         working-directory: tests/e2e
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
         working-directory: tests/e2e
-      - run: docker compose -f docker-compose.test.yml up -d --build mock-api mock-k8s mock-dcgm postgres nats
-      - run: pnpm test
-        working-directory: tests/e2e
+      - run: ./scripts/test/run.sh test-e2e
         env: { CI: "true", E2E_CROSS_BROWSER: "true" }
-      - if: always()
-        run: docker compose -f docker-compose.test.yml down -v
 
   load:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: grafana/setup-k6-action@v1
-      - run: docker compose -f docker-compose.test.yml up -d --build mock-api
-      - run: k6 run tests/load/scenarios.js
+      - run: ./scripts/test/run.sh test-services-up
+      - run: ./scripts/test/run.sh test-load
         env: { BASE_URL: "http://127.0.0.1:8000", ACCESS_TOKEN: "e2e-student" }
       - if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: ./scripts/test/run.sh test-services-down
 
   chaos-manifests:
     runs-on: ubuntu-latest

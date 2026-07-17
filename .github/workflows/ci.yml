@@ -16,9 +16,6 @@ concurrency:
 jobs:
   frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -38,17 +35,25 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Lint, check, test, build
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend validate
+        run: ./scripts/test/run.sh frontend-validate
+
+      - name: Frontend coverage
         run: |
-          pnpm install --frozen-lockfile
-          if compgen -G "eslint.config.*" >/dev/null 2>&1; then
-            pnpm lint
-          else
-            echo "Skipping eslint (add frontend/eslint.config.* to enable)"
-          fi
-          pnpm check
-          pnpm exec vitest run
-          pnpm build
+          cd frontend
+          npx vitest run --coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/frontend
+          if-no-files-found: ignore
 
   api-gateway:
     runs-on: ubuntu-latest
@@ -93,19 +98,14 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run Python unit tests
-        run: |
-          poetry --directory services/api-gateway run pytest \
-            "${GITHUB_WORKSPACE}/tests/unit" \
-            -v --tb=short --import-mode=importlib \
-            --cov=app --cov-report=term-missing \
-            --cov-report="xml:${GITHUB_WORKSPACE}/coverage.xml"
+        run: ./scripts/test/run.sh test-unit
 
       - name: Upload Python coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: python-unit-coverage
-          path: coverage.xml
+          path: coverage/python/unit.xml
           if-no-files-found: ignore
 
   orchestrator:
@@ -119,25 +119,16 @@ jobs:
           cache: true
           cache-dependency-path: services/orchestrator/go.sum
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Vet, test, or Docker build (proto parity)
-        run: |
-          set -euo pipefail
-          ROOT="${GITHUB_WORKSPACE}"
-          cd "${ROOT}/services/orchestrator"
-          go mod download
-          if go vet ./... && go test ./... -race -count=1; then
-            echo "Orchestrator: go vet && go test OK"
-          else
-            echo "Orchestrator: native vet/test failed — Docker build (regenerates protos)"
-            docker build -f "${ROOT}/services/orchestrator/Dockerfile" \
-              -t hopper/orchestrator:ci-"${GITHUB_SHA}" "${ROOT}"
-          fi
-
       - name: Run orchestrator contract and fake-client integration tests
-        working-directory: tests/orchestrator
-        run: go test ./... -race -count=1
+        run: ./scripts/test/run.sh test-orchestrator
+
+      - name: Upload orchestrator coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-coverage
+          path: coverage/orchestrator/orchestrator.out
+          if-no-files-found: ignore
 
   integration:
     runs-on: ubuntu-latest
@@ -159,23 +150,16 @@ jobs:
         working-directory: services/api-gateway
         run: poetry install --no-interaction
 
-      # Use workspace-absolute path: Poetry 1.x may keep cwd at repo root, so ../../tests/ is wrong.
       - name: Integration tests (Testcontainers)
-        run: |
-          set +e
-          poetry --directory services/api-gateway run pytest \
-            "${GITHUB_WORKSPACE}/tests/unit" \
-            "${GITHUB_WORKSPACE}/tests/integration" \
-            -v --tb=short --cov=app \
-            --cov-report=term-missing \
-            --cov-report="xml:${GITHUB_WORKSPACE}/integration-coverage.xml"
-          code=$?
-          set -e
-          if [ "$code" -eq 5 ]; then
-            echo "No tests collected (exit 5); treating as success."
-            exit 0
-          fi
-          exit "$code"
+        run: ./scripts/test/run.sh test-integration
+
+      - name: Upload integration coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-integration-coverage
+          path: coverage/python/integration.xml
+          if-no-files-found: ignore
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -207,14 +191,10 @@ jobs:
         working-directory: tests/e2e
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Start deterministic E2E services
-        run: docker compose -f docker-compose.test.yml up -d --build mock-api mock-k8s mock-dcgm postgres nats
-
       - name: Run Playwright E2E tests
-        working-directory: tests/e2e
         env:
           CI: "true"
-        run: pnpm test
+        run: ./scripts/test/run.sh test-e2e
 
       - name: Upload Playwright report
         if: always()
@@ -224,10 +204,6 @@ jobs:
           path: tests/e2e/playwright-report
           if-no-files-found: ignore
           retention-days: 14
-
-      - name: Stop deterministic E2E services
-        if: always()
-        run: docker compose -f docker-compose.test.yml down -v
 
   docker:
     runs-on: ubuntu-latest

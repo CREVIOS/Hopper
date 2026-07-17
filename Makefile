@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load
+.PHONY: help dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load frontend-validate test-unit test-integration test-frontend test-orchestrator test-e2e test-e2e-real test-load-smoke test-load test-security test-chaos test-coverage test-all test-ci test-services-up test-services-down test-clean
 
 # Development environment
 dev-up:
@@ -46,24 +46,65 @@ orchestrator-dev:
 	cd services/orchestrator && go run ./cmd/orchestrator/
 
 # Testing
+help:
+	@./scripts/test/run.sh help
+
+frontend-validate:
+	@./scripts/test/run.sh frontend-validate
+
 test-unit:
-	cd services/api-gateway && poetry run pytest tests/unit/ -v
-	cd services/orchestrator && go test ./... -v -race
+	@./scripts/test/run.sh test-unit
 
 test-integration:
-	cd services/api-gateway && poetry run pytest tests/integration/ -v
+	@./scripts/test/run.sh test-integration
+
+test-frontend:
+	@./scripts/test/run.sh test-frontend
+
+test-orchestrator:
+	@./scripts/test/run.sh test-orchestrator
 
 test-e2e:
-	cd tests/e2e && npx playwright test
+	@./scripts/test/run.sh test-e2e
+
+test-e2e-real:
+	@./scripts/test/run.sh test-e2e-real
+
+test-load-smoke:
+	@./scripts/test/run.sh test-load-smoke
 
 test-load:
-	cd tests/load && k6 run class-start.js
+	@./scripts/test/run.sh test-load
+
+test-security:
+	@./scripts/test/run.sh test-security
+
+test-chaos:
+	@./scripts/test/run.sh test-chaos
+
+test-coverage:
+	@./scripts/test/run.sh test-coverage
+
+test-all:
+	@./scripts/test/run.sh test-all
+
+test-ci:
+	@./scripts/test/run.sh test-ci
+
+test-services-up:
+	@./scripts/test/run.sh test-services-up
+
+test-services-down:
+	@./scripts/test/run.sh test-services-down
+
+test-clean:
+	@./scripts/test/run.sh test-clean
 
 test: test-unit test-integration
 
 # Linting
 lint:
-	cd frontend && pnpm lint
+	cd frontend && npx eslint .
 	cd services/api-gateway && poetry run ruff check .
 	cd services/orchestrator && golangci-lint run
 
