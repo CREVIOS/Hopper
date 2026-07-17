@@ -71,6 +71,13 @@ Implemented on July 17, 2026:
   - `src/routes/+layout.server.ts`
   - `src/routes/+page.server.ts`
   - `src/routes/dashboard/+page.server.ts`
+  - `src/routes/admin/+page.server.ts`
+  - `src/routes/credits/+page.server.ts`
+  - `src/routes/pods/+page.server.ts`
+  - `src/routes/pods/[id]/+page.server.ts`
+  - `src/routes/settings/+page.server.ts`
+  - `src/routes/settings/ssh-keys/+page.server.ts`
+  - `src/routes/teacher/+page.server.ts`
 - Updated GitHub Actions to consume the same repository command surface for frontend, Python unit, orchestrator, integration, and E2E execution.
 - Updated orchestrator coverage collection so the external `tests/orchestrator` module measures `github.com/hopper/orchestrator/...` via `-coverpkg`, not just the wrapper test module itself.
 
@@ -113,15 +120,15 @@ Successful local verification on July 17, 2026:
 | `./scripts/test/run.sh test-coverage` | Pass |
 | `./scripts/test/run.sh test-security` | Pass in validation mode |
 | `./scripts/test/run.sh test-chaos` | Pass in validation mode |
-| `cd frontend && npx vitest run` | Pass, `9` files and `18` tests |
+| `cd frontend && npx vitest run` | Pass, `18` files and `78` tests |
 | `cd frontend && npx vitest run --coverage` | Pass |
 
 Current measured outputs:
 
 - Python unit tests: `205 passed`
 - Python unit coverage: `60%` total for `services/api-gateway/app`
-- Frontend Vitest: `18 passed`
-- Frontend coverage: `47.7%` statements, `56.33%` branches, `38.7%` functions, `47.7%` lines
+- Frontend Vitest: `78 passed`
+- Frontend coverage: `66.08%` statements, `70.45%` branches, `70.45%` functions, `66.08%` lines
 - Orchestrator external black-box suite: pass with `48.6%` statement coverage against `github.com/hopper/orchestrator/...`
 
 ## 5. Environment-Gated Results
@@ -145,15 +152,14 @@ Load, live security, and live chaos execution remain environment-gated by the sa
 
 ## 6. Remaining Gaps
 
-The following areas are now wired but not fully expanded in test depth:
+The following areas remain incomplete for reasons outside the local repo-side infrastructure changes:
 
 - Container-backed integration and deterministic E2E could not be executed locally because Docker was unavailable.
-- Frontend route-loader coverage is improved, but several server loaders remain untested:
-  - `admin`
-  - `credits`
-  - `pods`
-  - `pods/[id]`
-  - `settings`
-  - `settings/ssh-keys`
-  - `teacher`
+- Live load execution still depends on a reachable target stack and k6 runtime conditions.
+- Live security checks still depend on staging credentials, tokens, and pod ownership fixtures.
+- Live chaos invariants still depend on staging database and cluster tooling.
+
+Repo-side note:
+
+- The planned frontend loader coverage gap is now closed for the routes explicitly listed in `TESTING_INFRA_PLAN.md`.
 - Python and orchestrator behavioral test depth was already substantial in this checkout, so the work here focused on infrastructure normalization, coverage surfacing, and frontend expansion rather than rewriting already-present backend suites.
