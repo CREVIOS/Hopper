@@ -83,6 +83,21 @@ compose_cmd() {
   docker compose -f "$compose_file" "$@"
 }
 
+container_has_healthcheck() {
+  local container_id=$1
+  docker inspect --format '{{if .State.Health}}yes{{else}}no{{end}}' "$container_id" 2>/dev/null
+}
+
+dump_container_diagnostics() {
+  local container_id=$1
+  local service=$2
+
+  echo "Container diagnostics for $service ($container_id):" >&2
+  docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit_code={{.State.ExitCode}} error={{.State.Error}} started_at={{.State.StartedAt}}' "$container_id" >&2 || true
+  docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}{{println .Start "exit=" .ExitCode}}{{println .Output}}{{end}}{{end}}' "$container_id" >&2 || true
+  docker logs --tail 200 "$container_id" >&2 || true
+}
+
 wait_for_http() {
   local url=$1
   local label=$2
@@ -141,26 +156,39 @@ wait_for_container_health() {
   local attempts=${3:-60}
   local sleep_seconds=${4:-2}
   local container_id
+  local has_healthcheck
 
   container_id=$(compose_cmd "$compose_file" ps -q "$service")
   [[ -n "$container_id" ]] || die "Could not resolve container for service: $service"
+  has_healthcheck=$(container_has_healthcheck "$container_id")
 
   for ((i = 1; i <= attempts; i += 1)); do
     local status
     status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)
-    if [[ "$status" == "healthy" || "$status" == "running" ]]; then
+    if [[ "$status" == "healthy" ]]; then
       echo "Ready: $service container status=$status"
       return 0
+    fi
+    if [[ "$has_healthcheck" != "yes" && "$status" == "running" ]]; then
+      echo "Ready: $service container status=$status"
+      return 0
+    fi
+    if [[ "$status" == "unhealthy" || "$status" == "exited" || "$status" == "dead" ]]; then
+      dump_container_diagnostics "$container_id" "$service"
+      die "Container failed before becoming ready: $service (status=$status)"
     fi
     sleep "$sleep_seconds"
   done
 
+  dump_container_diagnostics "$container_id" "$service"
   die "Timed out waiting for healthy container: $service"
 }
 
 mock_services_wait() {
   wait_for_container_health "$MOCK_COMPOSE_FILE" postgres
   wait_for_container_health "$MOCK_COMPOSE_FILE" nats
+  wait_for_container_health "$MOCK_COMPOSE_FILE" keycloak 120 2
+  wait_for_http "http://127.0.0.1:9000/health/ready" "Keycloak management readiness" 30 2
   wait_for_http "http://127.0.0.1:8000/healthz" "mock API"
   wait_for_port "127.0.0.1" "6443" "mock K8s API"
   wait_for_port "127.0.0.1" "9400" "mock DCGM exporter"
@@ -170,7 +198,7 @@ real_services_wait() {
   wait_for_container_health "$REAL_COMPOSE_FILE" postgres
   wait_for_container_health "$REAL_COMPOSE_FILE" nats
   wait_for_container_health "$REAL_COMPOSE_FILE" keycloak 120 2
-  wait_for_http "http://127.0.0.1:8080/health/ready" "Keycloak" 30 2
+  wait_for_http "http://127.0.0.1:9000/health/ready" "Keycloak management readiness" 30 2
 }
 
 collect_compose_logs() {
