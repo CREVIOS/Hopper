@@ -108,6 +108,25 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Lint and render the chart with every values overlay
+        run: |
+          set -euo pipefail
+          helm lint charts/hopper -f charts/hopper/values-prod.yaml
+          for v in dev staging prod; do
+            helm template hopper charts/hopper -n hopper \
+              -f "charts/hopper/values-$v.yaml" > /dev/null
+            echo "values-$v.yaml renders OK"
+          done
+
   lint-go:
     runs-on: ubuntu-latest
     steps:
