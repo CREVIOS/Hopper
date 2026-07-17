@@ -1,27 +1,31 @@
 ---
-- name: Hopper Platform Setup
+# Hopper cluster provisioning.
+#
+# Scope today: join worker machines to an EXISTING k3s cluster as VM hosts. The
+# control-plane (k8s_masters) is assumed already up — it is the machine you ran
+# the k3s server installer on by hand, the one holding the app deployment. This
+# playbook does not (re)provision it.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+# with K3S_URL and K3S_TOKEN exported (see group_vars/k8s_workers.yml) and a full
+# walkthrough in docs/NODE_JOIN.md.
+
+- name: Base setup for all hosts
   hosts: all
   become: true
   tasks:
-    - name: Update system packages
-      ansible.builtin.apt:
-        update_cache: true
-        upgrade: dist
-      when: ansible_os_family == "Debian"
-
     - name: Install common dependencies
       ansible.builtin.apt:
         name:
           - curl
-          - apt-transport-https
           - ca-certificates
-          - gnupg
         state: present
+        update_cache: true
       when: ansible_os_family == "Debian"
 
-- name: Setup GPU nodes
-  hosts: gpu_nodes
+- name: Join worker nodes as VM hosts
+  hosts: k8s_workers
   become: true
-  tasks:
-    - name: Include GPU setup
-      ansible.builtin.include_tasks: gpu-setup.yml
+  roles:
+    - k3s-agent

@@ -1,0 +1,45 @@
+---
+# Defaults for the k3s-agent role: join a machine to Hopper's cluster as a
+# worker that can host user VMs. Override the two required vars per-run (they are
+# secrets / environment-specific) — see infrastructure/ansible/group_vars.
+
+# The k3s server (control-plane) to join. Reachable from this machine over the
+# network you intend cluster traffic to use — a private LAN, or a WireGuard /
+# Tailscale overlay if this PC is off-site. NEVER the public internet directly.
+# Example: https://10.0.0.6:6443
+k3s_url: ""
+
+# The cluster join token. Read it on the server from
+# /var/lib/rancher/k3s/server/node-token. It is a cluster credential — pass it
+# via an environment variable or Ansible Vault, never commit it.
+k3s_token: ""
+
+# Pin the k3s version so a joined node matches the server. Leave empty to take
+# the latest stable (fine for a fresh lab, riskier against an older server).
+k3s_version: ""
+
+# The label the orchestrator gates VM scheduling on. Applied as the LAST step,
+# only after lxcfs and the VM images are in place, so the node never receives a
+# VM before it can run one. Must match k8s.VMReadyLabel in the orchestrator.
+vm_ready_label_key: "hopper.dev/vm-ready"
+vm_ready_label_value: "true"
+
+# VM template images this node must have locally (VM pods are IfNotPresent with
+# no registry fallback). If vm_image_registry is set they are pulled+retagged
+# from there; otherwise they are expected to arrive as tarballs in
+# vm_image_tarball_dir (see the load-vm-images task).
+vm_images:
+  - "hopper/vm-ubuntu:22.04"
+  - "hopper/vm-python-ml:22.04"
+  - "hopper/vm-cpp:22.04"
+  - "hopper/vm-java:22.04"
+
+# Optional registry the VM images live in, e.g. ghcr.io/your-org. When set, the
+# role pulls "<registry>/<image>" and retags it to the bare "<image>" name the
+# pod spec uses. When empty, tarballs are imported instead.
+vm_image_registry: ""
+
+# Where VM image tarballs (docker save output) are staged on this machine when
+# no registry is configured. One <name>.tar per image, name = image with
+# "/" and ":" replaced by "_", e.g. hopper_vm-ubuntu_22.04.tar.
+vm_image_tarball_dir: "/opt/hopper/vm-images"

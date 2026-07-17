@@ -1,0 +1,21 @@
+---
+# Join configuration for worker nodes. The two required values are secrets /
+# environment-specific, so they are read from the environment rather than
+# committed. Export them before running the play:
+#
+#   export K3S_URL="https://10.0.0.6:6443"
+#   export K3S_TOKEN="$(ssh server-01 sudo cat /var/lib/rancher/k3s/server/node-token)"
+#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+#
+# (Or put them in an Ansible Vault file instead of the environment.)
+
+k3s_url: "{{ lookup('env', 'K3S_URL') }}"
+k3s_token: "{{ lookup('env', 'K3S_TOKEN') }}"
+
+# Uncomment to pin the agent to the server's k3s version:
+# k3s_version: "v1.30.0+k3s1"
+
+# If your VM images live in a registry, set it here so the node pulls them
+# instead of importing tarballs. Leave unset to use tarballs staged by
+# scripts/node/stage-vm-images.sh (see docs/NODE_JOIN.md).
+# vm_image_registry: "ghcr.io/your-org"

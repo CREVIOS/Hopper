@@ -1,16 +1,18 @@
 """Live integration tests for the CPU/RAM admission queue against real Postgres.
 
 Exercises the queue + scheduler service modules end to end on the local
-Postgres at localhost:5433 (migrated to head 011):
+Postgres (migrated to head):
 
-  * app.services.vm_capacity  -- pure capacity math + plan_fits
+  * app.services.vm_capacity  -- pure capacity math + plan_fits + per-node fit
   * app.services.vm_queue     -- enqueue / position / count
-  * app.services.vm_scheduler -- current_capacity, admit, reconcile_pass,
+  * app.services.vm_scheduler -- current_capacity, admit, reconcile_pass
+                                 (incl. per-node fit + node_name backfill),
                                  leader election
 
 A FakeOrchestratorClient stands in for the gRPC orchestrator: list_nodes
 returns configurable Ready nodes, create_pod echoes an id of "vm-<pod_id>",
-terminate_pod is a no-op. No orchestrator process is required.
+get_pod_status raises for unknown pods and otherwise reports state + node
+placement, terminate_pod is a no-op. No orchestrator process is required.
 
 Each test starts from a clean slate: vm_queue_entries and pod_sessions are
 truncated (seq identity reset to 1) and the scheduler_leader lease is cleared,
@@ -71,6 +73,8 @@ class FakeOrchestratorClient:
     terminated: list[str] = field(default_factory=list)
     # pod_names get_pod_status should report as still live (for the reaper test).
     live_pods: set = field(default_factory=set)
+    # pod_name -> node the pod landed on, for node_name backfill tests.
+    placements: dict = field(default_factory=dict)
 
     async def list_nodes(self) -> list[NodeInfoResponse]:
         if self.fail_list_nodes:
@@ -80,7 +84,12 @@ class FakeOrchestratorClient:
     async def get_pod_status(self, pod_name: str):
         from types import SimpleNamespace
 
-        return SimpleNamespace(exists=pod_name in self.live_pods, state="running")
+        # The real orchestrator raises for a pod it doesn't know, which is how
+        # callers distinguish "materialized" from "never created". A live pod
+        # reports its state and the node it landed on (empty until scheduled).
+        if pod_name not in self.live_pods:
+            raise RuntimeError(f"pod {pod_name} not found")
+        return SimpleNamespace(state="running", node_name=self.placements.get(pod_name, ""))
 
     async def create_pod(
         self,
@@ -486,3 +495,103 @@ async def test_stuck_admitting_entry_is_requeued(db: AsyncSession) -> None:
     assert entry.state in ("queued", "active"), f"stuck entry not recovered: {entry.state}"
     # The unstarted (orphan) reservation was dropped either way.
     assert await db.get(PodSession, sid) is None
+
+
+# --------------------------------------------------------------------------- #
+# 9. Multi-node: per-node fit (fragmentation) — a VM must fit on ONE machine
+# --------------------------------------------------------------------------- #
+def _large_cpu() -> str:
+    return VM_PLAN_RESOURCES[VmPlan.LARGE]["cpu"]
+
+
+def _large_mem() -> str:
+    return VM_PLAN_RESOURCES[VmPlan.LARGE]["memory"]
+
+
+def _medium_cpu() -> str:
+    return VM_PLAN_RESOURCES[VmPlan.MEDIUM]["cpu"]
+
+
+def _medium_mem() -> str:
+    return VM_PLAN_RESOURCES[VmPlan.MEDIUM]["memory"]
+
+
+async def test_sync_slot_rejects_when_no_single_node_fits(db: AsyncSession) -> None:
+    """Two 8Gi nodes: aggregate free (16-2 reserve = 14Gi) admits a Large (8Gi),
+    but each node has only 8-2 = 6Gi, so no single node fits. The sync fast-path
+    must decline (queue it) instead of admitting a VM that can't be scheduled."""
+    orch = FakeOrchestratorClient(
+        nodes=[_node("16", "8Gi", name="n1"), _node("16", "8Gi", name="n2")]
+    )
+    nodes = await orch.list_nodes()
+
+    # Sanity: the aggregate gate alone WOULD admit the Large — so a rejection
+    # here proves it is the per-node gate doing the work.
+    cap, node_caps = await vm_scheduler._capacity(db, nodes)
+    assert vm_capacity.plan_fits(cap, _large_cpu(), _large_mem()) is True
+    assert vm_capacity.fits_on_some_node(node_caps, _large_cpu(), _large_mem()) is False
+
+    reserved = await vm_scheduler.reserve_sync_slot(
+        db, nodes, "u-frag", "large", "ubuntu", _large_cpu(), _large_mem()
+    )
+    assert reserved is None  # per-node reject -> caller enqueues
+
+    # A Medium (4Gi) fits within a single node's 6Gi, so it reserves fine.
+    reserved_med = await vm_scheduler.reserve_sync_slot(
+        db, nodes, "u-frag", "medium", "ubuntu", _medium_cpu(), _medium_mem()
+    )
+    assert reserved_med is not None
+
+
+async def test_reconcile_head_of_line_on_per_node_fragmentation(db: AsyncSession) -> None:
+    """Two 6Gi nodes: aggregate free (12-2 = 10Gi) would fit a Large (8Gi), but
+    each node has only 6-2 = 4Gi. reconcile must admit nothing and leave the
+    entry queued — the per-node gate, not the aggregate one, blocks the head."""
+    orch = FakeOrchestratorClient(
+        nodes=[_node("16", "6Gi", name="n1"), _node("16", "6Gi", name="n2")]
+    )
+    await _fund(db, "u-frag2")
+    big = await enqueue_vm_request(db, _token("u-frag2"), "large", "ubuntu")
+
+    cap = await vm_scheduler.current_capacity(db, orch)
+    assert vm_capacity.plan_fits(cap, _large_cpu(), _large_mem()) is True  # aggregate would admit
+
+    summary = await vm_scheduler.reconcile_pass(db, orch)
+    assert summary["admitted"] == 0
+
+    await db.refresh(big)
+    assert big.state == "queued"
+
+
+async def test_reconcile_backfills_missing_node_name(db: AsyncSession) -> None:
+    """node_name normally arrives on the pod.started event; if that event is
+    lost the session keeps node_name=NULL. reconcile_pass must self-heal by
+    asking the orchestrator where the pod landed, so per-node accounting is not
+    permanently blinded (which would silently reintroduce fragmentation)."""
+    orch = FakeOrchestratorClient(nodes=[_node("16", "64Gi")])
+    await _fund(db, "u-bf")
+
+    await enqueue_vm_request(db, _token("u-bf"), "small", "ubuntu")
+    assert (await vm_scheduler.reconcile_pass(db, orch))["admitted"] == 1
+
+    # Admitted, but no pod.started was delivered: node_name is still NULL.
+    row = (
+        await db.execute(
+            text("SELECT id, pod_name, node_name FROM pod_sessions WHERE state='running'")
+        )
+    ).one()
+    sid, pod_name, node_name = row
+    assert node_name is None
+
+    # The pod is live and the orchestrator knows which node it's on; the next
+    # reconcile pass backfills node_name from GetPodStatus.
+    orch.live_pods.add(pod_name)
+    orch.placements[pod_name] = "hopper-worker7"
+    await vm_scheduler.reconcile_pass(db, orch)
+
+    refilled = (
+        await db.execute(
+            text("SELECT node_name FROM pod_sessions WHERE id=:id"), {"id": sid}
+        )
+    ).scalar_one()
+    assert refilled == "hopper-worker7"
