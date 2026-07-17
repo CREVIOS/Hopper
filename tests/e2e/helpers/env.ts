@@ -16,7 +16,8 @@ export const e2eEnv = {
   devAdminPassword: process.env.DEV_LOGIN_PASS ?? 'e2e',
   devStudentPassword: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
   allowMutations: parseBoolean(process.env.E2E_ALLOW_MUTATIONS),
-  crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER)
+  crossBrowser: parseBoolean(process.env.E2E_CROSS_BROWSER),
+  useMockServer: !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true')
 };
 
 export type AuthRole = 'admin' | 'professor' | 'student';

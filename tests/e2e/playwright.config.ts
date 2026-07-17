@@ -5,16 +5,71 @@ const controlHost = process.env.E2E_CONTROL_HOST || '127.0.0.1';
 const controlPort = process.env.E2E_CONTROL_PORT || '18000';
 const controlURL = process.env.E2E_CONTROL_URL || `http://${controlHost}:${controlPort}`;
 const enableCrossBrowser = /^(1|true|yes)$/i.test(process.env.E2E_CROSS_BROWSER ?? '');
+const useMockServer = !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true');
+const manageFrontendServer = !/^(0|false|no)$/i.test(
+  process.env.E2E_MANAGE_FRONTEND ?? (useMockServer ? 'true' : 'false')
+);
+const playwrightJUnitPath =
+  process.env.PLAYWRIGHT_JUNIT_PATH || './test-results/playwright-junit.xml';
+
+const webServer = [];
+
+if (useMockServer) {
+  webServer.push({
+    command: 'node tests/mocks/api/server.mjs',
+    cwd: '../..',
+    url: `${controlURL}/healthz`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      HOST: controlHost,
+      PORT: controlPort,
+      E2E_CONTROL_HOST: controlHost,
+      E2E_CONTROL_PORT: controlPort,
+      E2E_CONTROL_URL: controlURL
+    }
+  });
+}
+
+if (manageFrontendServer) {
+  webServer.push({
+    command:
+      'node ./node_modules/@sveltejs/kit/svelte-kit.js sync && node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
+    cwd: '../../frontend',
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: {
+      ...process.env,
+      E2E_CONTROL_HOST: controlHost,
+      E2E_CONTROL_PORT: controlPort,
+      E2E_CONTROL_URL: controlURL,
+      API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? controlURL,
+      API_PROXY_STRIP_PREFIX: process.env.API_PROXY_STRIP_PREFIX ?? 'true',
+      API_PROXY_SECURE: process.env.API_PROXY_SECURE ?? 'false',
+      API_PROXY_ORIGIN: process.env.API_PROXY_ORIGIN ?? '',
+      API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? controlURL,
+      KEYCLOAK_EXTERNAL_URL: process.env.KEYCLOAK_EXTERNAL_URL ?? controlURL,
+      KEYCLOAK_REALM: process.env.KEYCLOAK_REALM ?? 'hopper',
+      KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api',
+      DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
+      DEV_LOGIN_PASS: process.env.DEV_LOGIN_PASS ?? 'e2e'
+    }
+  });
+}
 
 export default defineConfig({
-  testDir: './specs',
+  testDir: process.env.E2E_TEST_DIR || './specs',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: process.env.CI
-    ? [['list'], ['html', { open: 'never' }]]
-    : [['list'], ['html', { open: 'never' }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never' }],
+    ['junit', { outputFile: playwrightJUnitPath }]
+  ],
   timeout: 60_000,
   expect: {
     timeout: 10_000
@@ -44,45 +99,5 @@ export default defineConfig({
         ]
       : [])
   ],
-  webServer: [
-    {
-      command: 'node tests/mocks/api/server.mjs',
-      cwd: '../..',
-      url: `${controlURL}/healthz`,
-      reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
-      env: {
-        ...process.env,
-        HOST: controlHost,
-        PORT: controlPort,
-        E2E_CONTROL_HOST: controlHost,
-        E2E_CONTROL_PORT: controlPort,
-        E2E_CONTROL_URL: controlURL
-      }
-    },
-    {
-      command:
-        'node ./node_modules/@sveltejs/kit/svelte-kit.js sync && node ./node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 5173',
-      cwd: '../../frontend',
-      url: baseURL,
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        E2E_CONTROL_HOST: controlHost,
-        E2E_CONTROL_PORT: controlPort,
-        E2E_CONTROL_URL: controlURL,
-        API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? controlURL,
-        API_PROXY_STRIP_PREFIX: process.env.API_PROXY_STRIP_PREFIX ?? 'true',
-        API_PROXY_SECURE: process.env.API_PROXY_SECURE ?? 'false',
-        API_PROXY_ORIGIN: process.env.API_PROXY_ORIGIN ?? '',
-        API_INTERNAL_URL: process.env.API_INTERNAL_URL ?? controlURL,
-        KEYCLOAK_EXTERNAL_URL: process.env.KEYCLOAK_EXTERNAL_URL ?? controlURL,
-        KEYCLOAK_REALM: process.env.KEYCLOAK_REALM ?? 'hopper',
-        KEYCLOAK_CLIENT_ID: process.env.KEYCLOAK_CLIENT_ID ?? 'hopper-api',
-        DEV_LOGIN_PASS_ALT: process.env.DEV_LOGIN_PASS_ALT ?? 'e2e',
-        DEV_LOGIN_PASS: process.env.DEV_LOGIN_PASS ?? 'e2e'
-      }
-    }
-  ]
+  webServer
 });

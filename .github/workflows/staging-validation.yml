@@ -1,0 +1,107 @@
+name: Staging Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      load_profile:
+        description: Which staging load profile to run
+        required: false
+        default: stress
+        type: choice
+        options:
+          - stress
+          - spike
+          - soak
+  schedule:
+    - cron: "30 3 * * 6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  staging-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Run staging load profile
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          ACCESS_TOKEN: ${{ secrets.STAGING_STUDENT_TOKEN }}
+        run: |
+          case "${{ github.event.inputs.load_profile || 'stress' }}" in
+            stress) ./scripts/test/run.sh test-load-stress ;;
+            spike) ./scripts/test/run.sh test-load-spike ;;
+            soak) ./scripts/test/run.sh test-load-soak ;;
+            *) echo "Unknown load profile" >&2; exit 1 ;;
+          esac
+
+      - name: Upload staging load artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-load-artifacts
+          path: test-results/load
+          if-no-files-found: error
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run staging security checks
+        env:
+          BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          STUDENT_TOKEN: ${{ secrets.STAGING_STUDENT_TOKEN }}
+          ADMIN_TOKEN: ${{ secrets.STAGING_ADMIN_TOKEN }}
+          OTHER_STUDENT_POD_ID: ${{ secrets.STAGING_OTHER_STUDENT_POD_ID }}
+          KUBECONFIG_DATA: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kube/config"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
+          ./scripts/test/run.sh test-security
+
+      - name: Upload staging security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-security-artifacts
+          path: test-results/security
+          if-no-files-found: ignore
+
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run staging chaos validation
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          KUBECONFIG_DATA: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kube/config"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
+          ./scripts/test/run.sh test-chaos
+
+      - name: Upload staging chaos artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-chaos-artifacts
+          path: test-results/chaos
+          if-no-files-found: ignore

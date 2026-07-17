@@ -1,4 +1,4 @@
-.PHONY: help dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load frontend-validate test-unit test-integration test-frontend test-orchestrator test-e2e test-e2e-real test-load-smoke test-load test-security test-chaos test-coverage test-all test-ci test-services-up test-services-down test-clean
+.PHONY: help dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load frontend-validate test-unit test-integration test-integration-keycloak test-integration-nats test-frontend test-orchestrator test-contract test-migrate test-e2e test-e2e-real test-e2e-real-stack test-load-smoke test-load test-load-stress test-load-spike test-load-soak test-security test-chaos test-coverage test-all test-ci test-services-up test-services-down test-service-logs test-real-stack-up test-real-stack-down test-real-stack-logs test-clean
 
 # Development environment
 dev-up:
@@ -58,11 +58,23 @@ test-unit:
 test-integration:
 	@./scripts/test/run.sh test-integration
 
+test-integration-keycloak:
+	@./scripts/test/run.sh test-integration-keycloak
+
+test-integration-nats:
+	@./scripts/test/run.sh test-integration-nats
+
 test-frontend:
 	@./scripts/test/run.sh test-frontend
 
 test-orchestrator:
 	@./scripts/test/run.sh test-orchestrator
+
+test-contract:
+	@./scripts/test/run.sh test-contract
+
+test-migrate:
+	@./scripts/test/run.sh test-migrate
 
 test-e2e:
 	@./scripts/test/run.sh test-e2e
@@ -70,11 +82,23 @@ test-e2e:
 test-e2e-real:
 	@./scripts/test/run.sh test-e2e-real
 
+test-e2e-real-stack:
+	@./scripts/test/run.sh test-e2e-real-stack
+
 test-load-smoke:
 	@./scripts/test/run.sh test-load-smoke
 
 test-load:
 	@./scripts/test/run.sh test-load
+
+test-load-stress:
+	@./scripts/test/run.sh test-load-stress
+
+test-load-spike:
+	@./scripts/test/run.sh test-load-spike
+
+test-load-soak:
+	@./scripts/test/run.sh test-load-soak
 
 test-security:
 	@./scripts/test/run.sh test-security
@@ -96,6 +120,18 @@ test-services-up:
 
 test-services-down:
 	@./scripts/test/run.sh test-services-down
+
+test-service-logs:
+	@./scripts/test/run.sh test-service-logs
+
+test-real-stack-up:
+	@./scripts/test/run.sh test-real-stack-up
+
+test-real-stack-down:
+	@./scripts/test/run.sh test-real-stack-down
+
+test-real-stack-logs:
+	@./scripts/test/run.sh test-real-stack-logs
 
 test-clean:
 	@./scripts/test/run.sh test-clean
