@@ -3,11 +3,14 @@ package k8s
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8swatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"go.uber.org/zap"
 
 	"github.com/hopper/orchestrator/internal/billing"
@@ -146,5 +149,163 @@ func TestK8sPhaseToStateMappings(t *testing.T) {
 		if got := k8sPhaseToState(phase); got != want {
 			t.Fatalf("phase %q => %q, want %q", phase, got, want)
 		}
+	}
+}
+
+func TestObservePhasePublishesNodeNameInStartedEvent(t *testing.T) {
+	var event map[string]string
+	w := NewPodWatcher(
+		fake.NewSimpleClientset(),
+		"hopper",
+		zap.NewNop(),
+		func(subject string, data any) error {
+			if subject != "pod.started" {
+				t.Fatalf("subject = %q", subject)
+			}
+			event = data.(map[string]string)
+			return nil
+		},
+	)
+
+	w.lastPhase["vm-1"] = corev1.PodPending
+	w.observePhase(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "vm-1",
+			Labels: map[string]string{
+				"hopper.dev/pod-id":  "pod-1",
+				"hopper.dev/user-id": "user-1",
+			},
+		},
+		Spec:   corev1.PodSpec{NodeName: "node-a"},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	})
+
+	if event["node_name"] != "node-a" {
+		t.Fatalf("node_name = %q, want node-a", event["node_name"])
+	}
+}
+
+func TestWatchOncePublishesStoppedForExternalDelete(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	fakeWatcher := k8swatch.NewFake()
+	client.PrependWatchReactor("pods", func(action k8stesting.Action) (bool, k8swatch.Interface, error) {
+		return true, fakeWatcher, nil
+	})
+
+	manager := pod.NewManager()
+	mgdPod, err := manager.Create(pod.CreateOpts{
+		ID:        "pod-1",
+		UserID:    "user-1",
+		Plan:      "small",
+		Image:     "hopper/vm-ubuntu:22.04",
+		CPU:       "1",
+		Memory:    "2Gi",
+		Namespace: "hopper",
+		PodName:   "vm-1",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	manager.SetState(mgdPod.ID, pod.StateRunning)
+
+	var published []map[string]string
+	w := NewPodWatcher(client, "hopper", zap.NewNop(), func(subject string, data any) error {
+		if subject == "pod.stopped" {
+			published = append(published, data.(map[string]string))
+		}
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.watchOnce(ctx, manager, billing.NewTicker(zap.NewNop()))
+	}()
+
+	fakeWatcher.Delete(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "vm-1",
+			Labels: map[string]string{
+				"hopper.dev/pod-id":  "pod-1",
+				"hopper.dev/user-id": "user-1",
+			},
+		},
+	})
+	fakeWatcher.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchOnce did not return")
+	}
+
+	if len(published) != 1 || published[0]["reason"] != "deleted" {
+		t.Fatalf("published = %#v, want deleted event", published)
+	}
+	if got, _ := manager.Get("pod-1"); got.State != pod.StateTerminated {
+		t.Fatalf("state = %q, want terminated", got.State)
+	}
+}
+
+func TestWatchOnceSkipsStoppedEventForIntentionalDelete(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	fakeWatcher := k8swatch.NewFake()
+	client.PrependWatchReactor("pods", func(action k8stesting.Action) (bool, k8swatch.Interface, error) {
+		return true, fakeWatcher, nil
+	})
+
+	manager := pod.NewManager()
+	mgdPod, err := manager.Create(pod.CreateOpts{
+		ID:        "pod-1",
+		UserID:    "user-1",
+		Plan:      "small",
+		Image:     "hopper/vm-ubuntu:22.04",
+		CPU:       "1",
+		Memory:    "2Gi",
+		Namespace: "hopper",
+		PodName:   "vm-1",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	manager.SetState(mgdPod.ID, pod.StateStopping)
+
+	var published int
+	w := NewPodWatcher(client, "hopper", zap.NewNop(), func(subject string, data any) error {
+		if subject == "pod.stopped" {
+			published++
+		}
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.watchOnce(ctx, manager, billing.NewTicker(zap.NewNop()))
+	}()
+
+	fakeWatcher.Delete(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "vm-1",
+			Labels: map[string]string{
+				"hopper.dev/pod-id":  "pod-1",
+				"hopper.dev/user-id": "user-1",
+			},
+		},
+	})
+	fakeWatcher.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchOnce did not return")
+	}
+
+	if published != 0 {
+		t.Fatalf("published = %d, want 0", published)
 	}
 }
