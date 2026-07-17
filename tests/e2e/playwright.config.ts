@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.BASE_URL || 'http://127.0.0.1:5173';
 const controlHost = process.env.E2E_CONTROL_HOST || '127.0.0.1';
-const controlPort = process.env.E2E_CONTROL_PORT || '18000';
+const controlPort = process.env.E2E_CONTROL_PORT || '8000';
 const controlURL = process.env.E2E_CONTROL_URL || `http://${controlHost}:${controlPort}`;
 const enableCrossBrowser = /^(1|true|yes)$/i.test(process.env.E2E_CROSS_BROWSER ?? '');
 const useMockServer = !/^(0|false|no)$/i.test(process.env.E2E_USE_MOCK_SERVER ?? 'true');
