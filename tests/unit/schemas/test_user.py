@@ -28,15 +28,35 @@ def test_signup_request_accepts_teacher_role():
     assert request.role == "teacher"
 
 
-def test_signup_request_rejects_short_password():
+def test_signup_request_leaves_password_rules_to_the_policy():
+    """The schema deliberately does NOT enforce the password policy.
+
+    A `min_length` here fails as a pydantic 422 whose `detail` is a list of
+    error dicts, which the browser client renders as "[object Object]" — and it
+    can only ever complain about length, never the character-class rules the
+    Keycloak realm also enforces. app.services.password_policy owns all of it
+    and names every unmet rule; routers/auth.py rejects with a 400 before
+    Keycloak is called. See tests/unit/routers/test_auth_password.py.
+    """
+    request = SignupRequest(
+        email="student@example.com",
+        password="short",
+        name="Test Student",
+    )
+
+    assert request.password == "short"
+
+
+def test_signup_request_rejects_password_above_max_length():
+    # max_length stays on the schema: an input-size guard, not a policy rule.
     with pytest.raises(ValidationError) as exc_info:
         SignupRequest(
             email="student@example.com",
-            password="short",
+            password="x" * 129,
             name="Test Student",
         )
 
-    assert "at least 12 characters" in str(exc_info.value)
+    assert "at most 128 characters" in str(exc_info.value)
 
 
 def test_signup_request_rejects_empty_name():

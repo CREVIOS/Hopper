@@ -46,10 +46,15 @@ from app.schemas.user import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import api_key_service, verification
+from app.services import api_key_service, password_policy, verification
 from app.services.credit_service import get_or_create_account
 from app.services.email import send_code_email
-from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
+from app.services.keycloak_admin import (
+    KeycloakAdminError,
+    KeycloakPasswordPolicyError,
+    KeycloakUserExistsError,
+    keycloak_admin,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -89,6 +94,20 @@ def _domain_allowed(email: str) -> bool:
     # `cs.du.ac.bd`. We compare only the part after the last `@`.
     domain = email.rsplit("@", 1)[1]
     return domain in {d.lower() for d in settings.allowed_email_domains}
+
+
+def _check_password(password: str, email: str) -> None:
+    """Reject a password that the Keycloak realm policy would reject anyway.
+
+    Checking here (rather than letting Keycloak fail the call) is what lets the
+    user see *which* rule they missed. Keycloak stays the enforcer — this only
+    front-runs it so the answer is a precise 400 instead of a round trip that
+    ends in a generic error.
+    """
+    try:
+        password_policy.validate(password, username=email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _set_session_cookies(
@@ -240,6 +259,7 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
         raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
     if "@" not in email or not _domain_allowed(email):
         raise HTTPException(status_code=403, detail="This email domain is not permitted to sign up.")
+    _check_password(body.password, email)
 
     try:
         # Created unverified — the user must confirm the emailed code before a
@@ -248,9 +268,15 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
             email=email, name=body.name, password=body.password,
             role="student", email_verified=False,
         )
+    except KeycloakUserExistsError:
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    except KeycloakPasswordPolicyError as e:
+        # The realm rejected a password our mirror accepted — the two have
+        # drifted. Surface Keycloak's own reason: it's specific and actionable,
+        # and a 502 would blame the server for the user's fixable input.
+        logger.warning("signup: realm password policy rejected a password we allowed: %s", e)
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except KeycloakAdminError as e:
-        if "exists" in str(e):
-            raise HTTPException(status_code=409, detail="An account with this email already exists.")
         logger.error("signup: keycloak create_user failed: %s", e)
         raise HTTPException(status_code=502, detail="Could not create the account. Try again later.")
 
@@ -343,6 +369,9 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
     """Complete a password reset with the emailed code, then set the new
     password in Keycloak. The client logs in afterwards."""
     email = (body.email or "").lower().strip()
+    # Check the policy before burning the one-time code: a rejected password
+    # would otherwise consume the code and force a resend to try again.
+    _check_password(body.password, email)
     ok = await verification.verify_code(db, email, verification.PASSWORD_RESET, body.code)
     if not ok:
         await db.commit()
@@ -357,6 +386,15 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
         # A reset also confirms control of the mailbox — mark verified.
         if not ku.get("emailVerified", False):
             await keycloak_admin.set_email_verified(ku["id"], True)
+    except KeycloakPasswordPolicyError as e:
+        # Reachable on a rule our mirror can't check — passwordHistory(3) —
+        # so this is the normal path for "you already used that password",
+        # not just a drift backstop. Deliberately NOT committing: verify_code
+        # only marks the code consumed in the session, so rolling back leaves
+        # it valid and the user can retry with a different password instead of
+        # having to request a fresh code.
+        logger.info("reset-password rejected by realm policy for %s: %s", email, e)
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except KeycloakAdminError as e:
         logger.error("reset-password failed for %s: %s", email, e)
         raise HTTPException(status_code=502, detail="Could not reset the password. Try again later.")
