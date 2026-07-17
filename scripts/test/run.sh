@@ -66,6 +66,7 @@ frontend_validate() {
   require_cmd node
   require_cmd npx
   frontend_exec npx eslint .
+  frontend_exec npx svelte-kit sync
   frontend_exec npx svelte-check --tsconfig ./tsconfig.json
   frontend_exec npx vitest run
   frontend_exec npx vite build
