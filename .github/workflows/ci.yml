@@ -108,6 +108,65 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Lint and render the chart with every values overlay
+        run: |
+          set -euo pipefail
+          helm lint charts/hopper -f charts/hopper/values-prod.yaml
+          for v in dev staging prod; do
+            helm template hopper charts/hopper -n hopper \
+              -f "charts/hopper/values-$v.yaml" > /dev/null
+            echo "values-$v.yaml renders OK"
+          done
+
+  lint-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: services/orchestrator/go.sum
+
+      # The generated proto stubs (services/orchestrator/api/proto/) are
+      # gitignored — regenerate them exactly like the Docker build does, or
+      # the type-checking linters fail on the missing packages.
+      - name: Generate orchestrator proto stubs
+        working-directory: services/orchestrator
+        run: |
+          sudo apt-get update -q >/dev/null && sudo apt-get install -y -q protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
+          mkdir -p api/proto/hopper/pod/v1 api/proto/hopper/billing/v1
+          protoc --proto_path=proto \
+            --go_out=api/proto --go_opt=paths=source_relative \
+            --go-grpc_out=api/proto --go-grpc_opt=paths=source_relative \
+            proto/hopper/pod/v1/pod.proto \
+            proto/hopper/billing/v1/billing.proto
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v2.6.2
+
+      - name: Lint orchestrator
+        working-directory: services/orchestrator
+        run: golangci-lint run --timeout 5m ./...
+
+      - name: Lint orchestrator contract tests
+        working-directory: tests/orchestrator
+        run: golangci-lint run --timeout 5m ./...
+
   orchestrator:
     runs-on: ubuntu-latest
     steps:

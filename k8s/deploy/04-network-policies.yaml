@@ -240,7 +240,12 @@ spec:
         - protocol: TCP
           port: 443
 
-
+---
+# api-gateway → user-vm pods on the code-server / SSH ports (ingress side).
+# NOTE: the `---` above was missing for months — YAML then merges this doc
+# into the previous one, silently DROPPING platform-egress-internet on any
+# fresh apply (prod still has it from an older apply). Found while building
+# the Helm chart (HOP-22), which renders each policy separately.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

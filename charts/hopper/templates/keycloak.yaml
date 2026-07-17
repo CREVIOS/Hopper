@@ -1,0 +1,91 @@
+##############################################################################
+# Keycloak (port of k8s/deploy/01-infra.yaml)
+##############################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: {{ .Values.keycloak.image }}
+          {{- if .Values.keycloak.startDev }}
+          # Dev mode: no hostname strictness, embedded config. Local only.
+          args: ["start-dev"]
+          {{- else }}
+          # `start` (not `start-dev`) is the production mode. It enforces
+          # hostname strictness, requires HTTPS to be terminated upstream,
+          # and uses an optimized server config. `--proxy-headers=xforwarded`
+          # tells Keycloak to honour the nginx ingress's X-Forwarded-* headers.
+          args:
+            - start
+            - --proxy-headers=xforwarded
+            - --hostname-strict=true
+            - --http-enabled=true
+          {{- end }}
+          ports:
+            - containerPort: 8080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef: { name: keycloak-admin, key: username }
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: keycloak-admin, key: password }
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://postgres:5432/{{ .Values.postgres.database }}
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: username }
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: hopper-db, key: password }
+            - name: KC_HOSTNAME
+              value: "{{ .Values.global.scheme }}://{{ .Values.global.host }}"
+            # Theme resource caching: without these, Keycloak's hosted login
+            # page re-downloads ~1.8 MB of PatternFly CSS on every login
+            # (dev mode serves theme assets with Cache-Control: no-cache).
+            - name: KC_SPI_THEME_STATIC_MAX_AGE
+              value: "2592000"
+            - name: KC_SPI_THEME_CACHE_THEMES
+              value: "true"
+            - name: KC_SPI_THEME_CACHE_TEMPLATES
+              value: "true"
+          resources:
+            {{- toYaml .Values.keycloak.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,291 @@
+{{- if .Values.networkPolicies.enabled }}
+##############################################################################
+# Network Policies (port of k8s/deploy/04-network-policies.yaml)
+#
+# Zero-trust namespace baseline: default-deny everything, then explicitly
+# allow. Requires a CNI that enforces NetworkPolicy (prod runs Cilium —
+# flannel does NOT enforce, so on a stock k3s these are inert).
+##############################################################################
+{{- $podCIDR := .Values.networkPolicies.podCIDR }}
+{{- $svcCIDR := .Values.networkPolicies.serviceCIDR }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS for every pod (kube-dns/CoreDNS in kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Platform services may talk to each other. User VMs carry no `app` label
+# from this set, so they are excluded.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-internal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [api-gateway, postgres, nats, keycloak, orchestrator, frontend]
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [api-gateway, postgres, nats, keycloak, orchestrator, frontend]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [api-gateway, postgres, nats, keycloak, orchestrator, frontend]
+---
+# Nginx ingress controller → frontend / API / Keycloak.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-services
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [frontend, api-gateway, keycloak]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+---
+# User VMs: internet egress allowed, cluster ranges + cloud metadata
+# endpoints excluded (IMDS leakage gives a tenant the node's identity).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - {{ $podCIDR }}
+              - {{ $svcCIDR }}
+              - 169.254.0.0/16
+              - 100.100.100.200/32  # Alibaba Cloud metadata
+              - 192.0.0.192/32      # Oracle Cloud metadata
+---
+# Orchestrator + api-gateway may manage / reach user VMs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-allow-orchestrator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+---
+{{- if .Values.networkPolicies.cilium }}
+# Standard NetworkPolicy ipBlock rules do NOT work for ClusterIPs with
+# Cilium — orchestrator/api-gateway → kube-apiserver needs a
+# CiliumNetworkPolicy with toEntities (cilium/cilium#20550).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: orchestrator-allow-kube-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [orchestrator, api-gateway]
+  egress:
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - host
+---
+{{- end }}
+# Keycloak / api-gateway need outbound HTTP(S) (IdPs, JWKS, Brevo).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-egress-internet
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [keycloak, api-gateway]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - {{ $podCIDR }}
+              - {{ $svcCIDR }}
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+---
+# api-gateway → user-vm pods (code-server proxy + SSH bridge), both sides.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-to-user-vms
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 22
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-egress-to-user-vms
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              role: user-vm
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 22
+---
+# ACME HTTP-01 solver pods (cert-manager) must accept ingress traffic or
+# Let's Encrypt validation fails under default-deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-http-solver
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - {}
+---
+# External SSH → user-vm sshd (NodePort DNATs to the pod; the pod's ingress
+# policy still decides whether sshd sees the packet).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-vm-allow-external-ssh
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      role: user-vm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 22
+{{- end }}
