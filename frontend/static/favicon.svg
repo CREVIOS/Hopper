@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Mirrors $lib/brand/HopperLogo.svelte: squircle tile + lucide "rabbit" glyph. -->
+  <defs>
+    <linearGradient id="tile" x1="0.1585" y1="-0.0915" x2="0.8415" y2="1.0915">
+      <stop offset="0" stop-color="#3371D7" />
+      <stop offset="0.52" stop-color="#694CDC" />
+      <stop offset="1" stop-color="#4018DC" />
+    </linearGradient>
+    <radialGradient id="gloss" cx="0.28" cy="0.10" r="0.55" fx="0.28" fy="0.10"
+                    gradientTransform="scale(1.20 0.90)">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.45" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.16" />
+      <stop offset="0.38" stop-color="#fff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <rect width="32" height="32" rx="9.6" fill="url(#tile)" />
+  <rect width="32" height="32" rx="9.6" fill="url(#gloss)" />
+  <rect width="32" height="32" rx="9.6" fill="url(#sheen)" />
+
+  <g transform="translate(6.72 6.72) scale(0.7733)" fill="none" stroke="#fff"
+     stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 16a3 3 0 0 1 2.24 5" />
+    <path d="M18 12h.01" />
+    <path d="M18 21h-8a4 4 0 0 1-4-4 7 7 0 0 1 7-7h.2L9.6 6.4a1 1 0 1 1 2.8-2.8L15.8 7h.2c3.3 0 6 2.7 6 6v1a2 2 0 0 1-2 2h-1a3 3 0 0 0-3 3" />
+    <path d="M20 8.54V4a2 2 0 1 0-4 0v3" />
+    <path d="M7.612 12.524a3 3 0 1 0-1.6 4.3" />
+  </g>
+</svg>
