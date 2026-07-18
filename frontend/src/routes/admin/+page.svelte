@@ -1384,7 +1384,7 @@
                           {#if planBusy === p.name}
                             <Spinner class="size-3.5" />
                           {:else}
-                            <Check class="size-3.5 text-success" />
+                            <Power class="size-3.5 text-success" />
                           {/if}
                         </Button>
                       {/if}
@@ -1461,7 +1461,7 @@
                         </Button>
                       {:else}
                         <Button variant="ghost" size="sm" onclick={() => reactivateImage(im)} disabled={imageBusy === im.template} aria-label={`Reactivate ${im.template}`}>
-                          {#if imageBusy === im.template}<Spinner class="size-3.5" />{:else}<Check class="size-3.5 text-success" />{/if}
+                          {#if imageBusy === im.template}<Spinner class="size-3.5" />{:else}<Power class="size-3.5 text-success" />{/if}
                         </Button>
                       {/if}
                     </div>
