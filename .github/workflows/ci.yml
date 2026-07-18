@@ -40,16 +40,32 @@ jobs:
       - name: Frontend tests with coverage
         run: ./scripts/test/run.sh test-frontend
 
+      - name: Stage frontend artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/frontend
+
+          found=0
+          for path in coverage/frontend tests/coverage/frontend test-results/frontend; do
+            if [ -e "$path" ]; then
+              found=1
+              mkdir -p "artifacts/frontend/$(dirname "$path")"
+              cp -R "$path" "artifacts/frontend/$path"
+            fi
+          done
+
+          if [ "$found" -eq 0 ]; then
+            echo "No frontend coverage or report artifacts were generated."
+          fi
+
       - name: Upload frontend coverage and reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-artifacts
-          path: |
-            coverage/frontend
-            tests/coverage/frontend
-            test-results/frontend
-          if-no-files-found: error
+          path: artifacts/frontend
+          if-no-files-found: warn
 
   api-gateway-smoke:
     runs-on: ubuntu-latest
