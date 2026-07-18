@@ -47,6 +47,7 @@ jobs:
           name: frontend-artifacts
           path: |
             coverage/frontend
+            tests/coverage/frontend
             test-results/frontend
           if-no-files-found: error
 
@@ -104,6 +105,7 @@ jobs:
           name: python-unit-artifacts
           path: |
             coverage/python/unit.xml
+            tests/coverage/python/unit
             test-results/unit
           if-no-files-found: error
 
@@ -179,6 +181,7 @@ jobs:
           name: python-integration-artifacts
           path: |
             coverage/python/integration.xml
+            tests/coverage/python/integration
             test-results/integration
           if-no-files-found: error
 
@@ -204,6 +207,7 @@ jobs:
           name: go-orchestrator-artifacts
           path: |
             coverage/orchestrator/orchestrator-internal-k8s.out
+            tests/coverage/orchestrator/internal
             test-results/orchestrator
           if-no-files-found: error
 
@@ -244,6 +248,7 @@ jobs:
           name: contract-artifacts
           path: |
             coverage/orchestrator/orchestrator-contract.out
+            tests/coverage/orchestrator/contract
             test-results/contracts
           if-no-files-found: error
 
@@ -410,7 +415,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: tests/coverage/REPORT.md
+          path: tests/coverage
           if-no-files-found: error
 
   docker:
