@@ -44,6 +44,12 @@ services/orchestrator/orchestrator
 htmlcov/
 .coverage
 .pytest_cache/
+coverage/
+!tests/coverage/
+tests/coverage/*
+!tests/coverage/README.md
+test-results/
+.cache/go-test/
 
 # Pulumi
 infrastructure/pulumi/.pulumi/
@@ -75,3 +81,6 @@ docs/*.blg
 docs/*.bcf
 docs/*.run.xml
 .gstack/
+
+# Local operational scratch (helper scripts, may contain creds) — never commit
+scratchpad/

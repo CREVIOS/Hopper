@@ -22,6 +22,13 @@ class PodSession(Base):
     ssh_password: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Credit-exhaustion grace deadline. Set on the first failed billing tick;
+    # the VM is only terminated once this passes (cleared if the user tops up
+    # and a later tick succeeds). NULL = not in grace.
+    grace_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     state: Mapped[str] = mapped_column(String, default="pending")
+    # Network isolation group (HOP-19 18.3). VMs sharing a group can reach
+    # each other over the pod network; NULL = fully isolated (the default).
+    network_group: Mapped[str | None] = mapped_column(String(32), nullable=True)
     credits_charged: Mapped[float] = mapped_column(Numeric(12, 4), default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

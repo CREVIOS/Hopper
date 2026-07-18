@@ -20,14 +20,10 @@ import (
 // a separate secret store.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
 
-// CodeServerPasswordAnnotation stores the per-pod code-server password.
-// code-server reads $PASSWORD at start-up, so the same value is also injected
-// as a container env var. The annotation lets the gateway recover it for
-// auto-fill on the proxy redirect without exec-ing into the pod.
-const CodeServerPasswordAnnotation = "hopper.dev/code-server-password"
-
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
-// of entropy). Used for both the SSH root password and code-server's auth.
+// of entropy). Used for the per-pod SSH root password. (code-server runs with
+// auth disabled — the platform gates VS Code access, so no code-server
+// password is generated; see images/hopper-vm/config/code-server-config.yaml.)
 func generateRandomPassword() (string, error) {
 	buf := make([]byte, 18)
 	if _, err := rand.Read(buf); err != nil {
@@ -37,19 +33,19 @@ func generateRandomPassword() (string, error) {
 }
 
 type PodManager struct {
-	client    *kubernetes.Clientset
-	metrics   *metricsv.Clientset
+	client    kubernetes.Interface
+	metrics   metricsv.Interface
 	namespace string
 }
 
-func NewPodManager(client *kubernetes.Clientset, namespace string) *PodManager {
+func NewPodManager(client kubernetes.Interface, namespace string) *PodManager {
 	return &PodManager{client: client, namespace: namespace}
 }
 
 // SetMetricsClient wires in the metrics-server client used by GetPodMetrics.
 // Optional — without it, GetPodMetrics still returns the configured limit
 // (so memory_limit_bytes is correct) but used CPU/memory stay at zero.
-func (pm *PodManager) SetMetricsClient(m *metricsv.Clientset) {
+func (pm *PodManager) SetMetricsClient(m metricsv.Interface) {
 	pm.metrics = m
 }
 
@@ -67,6 +63,10 @@ type CreatePodOpts struct {
 	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
 	// uses the cluster default.
 	StorageClass string
+	// NetworkGroup places the VM in a network isolation group (HOP-19 18.3):
+	// the pod gets the group label and a NetworkPolicy allowing same-group
+	// traffic is ensured. Empty = fully isolated (the default).
+	NetworkGroup string
 	// ExtraEnv is injected verbatim into the VM container as environment
 	// variables (e.g. HOPPER_POD_ID / HOPPER_API_URL / HOPPER_POD_TOKEN for the
 	// in-VM idle + provisioner agents). Deliberately kept OUT of the k8s label
@@ -75,10 +75,9 @@ type CreatePodOpts struct {
 }
 
 type PodPorts struct {
-	SSHPort            int32
-	VSCodePort         int32
-	SSHPassword        string
-	CodeServerPassword string
+	SSHPort     int32
+	VSCodePort  int32
+	SSHPassword string
 }
 
 // cpuRequestFor returns the scheduling CPU request for a VM: a quarter of the
@@ -105,14 +104,19 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		"hopper.dev/user-id": opts.UserID,
 		"hopper.dev/plan":    opts.Plan,
 	}
+	if opts.NetworkGroup != "" {
+		// Ensure the same-group allow policy BEFORE the pod exists — if this
+		// fails we fail the whole create rather than silently launching a VM
+		// that can't reach its teammates (default-deny keeps it isolated).
+		if err := pm.EnsureGroupNetworkPolicy(ctx, opts.NetworkGroup); err != nil {
+			return PodPorts{}, fmt.Errorf("ensuring network-group policy: %w", err)
+		}
+		labels[NetworkGroupLabel] = opts.NetworkGroup
+	}
 
 	sshPassword, err := generateRandomPassword()
 	if err != nil {
 		return PodPorts{}, fmt.Errorf("generating ssh password: %w", err)
-	}
-	codePassword, err := generateRandomPassword()
-	if err != nil {
-		return PodPorts{}, fmt.Errorf("generating code-server password: %w", err)
 	}
 
 	// LXCFS bind-mounts: make /proc/{meminfo,cpuinfo,...} reflect the pod's
@@ -198,14 +202,13 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	// total termination at 5s and run pkill on sshd as a preStop.
 	// Base container env + any HOPPER_* values the API asked us to inject
 	// (used by the in-VM idle + provisioner agents to call back to the gateway).
+	// code-server runs with `auth: none` (platform-gated), so no
+	// CODE_SERVER_PASSWORD is injected — see PR #75 / supervisor.conf.
 	containerEnv := []corev1.EnvVar{
 		// code-server picks this up so asset URLs are relative to the proxy path.
 		// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
 		{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
 		{Name: "ROOT_PASSWORD", Value: sshPassword},
-		// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
-		// to set $PASSWORD for code-server; never set in shell history.
-		{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
 	}
 	for k, v := range opts.ExtraEnv {
 		containerEnv = append(containerEnv, corev1.EnvVar{Name: k, Value: v})
@@ -232,10 +235,9 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 			Namespace: pm.namespace,
 			Labels:    labels,
 			// Stored on the Pod so reconciliation after orchestrator restart can
-			// recover the password without an extra Secret.
+			// recover the SSH password without an extra Secret.
 			Annotations: map[string]string{
-				SshPasswordAnnotation:        sshPassword,
-				CodeServerPasswordAnnotation: codePassword,
+				SshPasswordAnnotation: sshPassword,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -265,6 +267,14 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				{
 					Name:  "vm",
 					Image: opts.Image,
+					// VM images (hopper/vm-*:22.04) are built locally and imported
+					// into the node's containerd (`make vm-images-load`); they are
+					// NOT in a pullable registry. IfNotPresent uses the local copy
+					// and never reaches out to Docker Hub (which would fail with
+					// ErrImagePull). If the image is ever evicted from the node,
+					// rebuild+reimport it — a missing image is the one thing that
+					// makes a "created" VM never actually run.
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					// Override the image CMD so we can set a unique root password
 					// from $ROOT_PASSWORD before sshd comes up. exec replaces the
 					// shell so signals reach supervisord normally.
@@ -369,7 +379,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		return PodPorts{}, fmt.Errorf("creating service for %s: %w", opts.PodName, err)
 	}
 
-	ports := PodPorts{SSHPassword: sshPassword, CodeServerPassword: codePassword}
+	ports := PodPorts{SSHPassword: sshPassword}
 	for _, p := range createdSvc.Spec.Ports {
 		switch p.Name {
 		case "ssh":
@@ -429,6 +439,12 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 
 	var result []NodeInfo
 	for _, n := range nodes.Items {
+		// Skip nodes VMs can't actually land on, so capacity accounting reflects
+		// real schedulable space. VM pods carry no tolerations, so any NoSchedule/
+		// NoExecute taint (e.g. the control-plane) or a cordoned node is excluded.
+		if !schedulableForVMs(&n) {
+			continue
+		}
 		ready := false
 		for _, c := range n.Status.Conditions {
 			if c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue {
@@ -447,6 +463,20 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 		})
 	}
 	return result, nil
+}
+
+// schedulableForVMs reports whether a VM pod (which carries no tolerations) could
+// be scheduled onto the node: not cordoned and free of NoSchedule/NoExecute taints.
+func schedulableForVMs(n *corev1.Node) bool {
+	if n.Spec.Unschedulable {
+		return false
+	}
+	for _, t := range n.Spec.Taints {
+		if t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute {
+			return false
+		}
+	}
+	return true
 }
 
 type NodeInfo struct {

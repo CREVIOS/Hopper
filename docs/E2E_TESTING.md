@@ -94,7 +94,7 @@ AND     no data is leaked in the response body
 ```
 GIVEN   a student with 100 credits is logged in
 WHEN    they click "New Pod"
-AND     select GPU tier "Standard (RTX 4090)"
+AND     select VM plan "Medium (2 CPU, 4 GB)"
 AND     select template "PyTorch 2.5"
 AND     set session duration to "2 hours"
 AND     click "Launch"
@@ -102,7 +102,7 @@ THEN    a loading state is shown with progress indicators
 AND     the pod status transitions: Requested → Provisioning → Running
 AND     the pod appears in the "Active Pods" list
 AND     the SSH connection command is displayed
-AND     the estimated credit cost is shown (20 credits for 2hr at 10/hr)
+AND     the estimated credit cost is shown (4 credits for 2hr at 2/hr)
 AND     the total time from click to "Running" is < 60 seconds
 ```
 
@@ -167,16 +167,16 @@ AND     no pod is created
 
 #### TC-CREDIT-001: Real-Time Credit Deduction
 ```
-GIVEN   a student with 100 credits has a running pod (10 credits/hr)
+GIVEN   a student with 100 credits has a running Medium VM (2 credits/hr)
 WHEN    1 minute passes
-THEN    the credit balance on the dashboard decreases by ~0.17 credits
+THEN    the credit balance on the dashboard decreases by ~0.033 credits
 AND     the balance update happens without page refresh
 AND     the transaction appears in the usage history
 ```
 
 #### TC-CREDIT-002: Low Balance Warning
 ```
-GIVEN   a student with 15 credits has a running pod (10 credits/hr)
+GIVEN   a student with 15 credits has a running Medium VM (2 credits/hr)
 WHEN    the balance drops below 10% of their starting allocation (< 10 credits)
 THEN    a yellow warning banner appears: "Low balance: X credits remaining"
 AND     an estimated time remaining is shown
@@ -184,7 +184,7 @@ AND     an estimated time remaining is shown
 
 #### TC-CREDIT-003: Zero Balance Auto-Termination
 ```
-GIVEN   a student with 5 credits has a running pod (10 credits/hr)
+GIVEN   a student with 5 credits has a running Medium VM (2 credits/hr)
 WHEN    the balance reaches 0
 THEN    a 5-minute grace period starts with a countdown warning
 AND     the warning says "Pod will be terminated in X:XX. Save your work."
@@ -394,7 +394,11 @@ AND     the student is notified when the pod is ready
 
 ---
 
-### Suite 8: Scavenger Queue (Preemptible Pods)
+### Suite 8: Scavenger Queue (Future/Not Yet Supported)
+
+Scavenger/preemptible plans are not part of the current `small`/`medium`/`large`
+catalogue. These cases are retained as future acceptance criteria and must not
+be counted as implemented coverage.
 
 #### TC-SCAV-001: Scavenger Pod on Idle GPU
 ```

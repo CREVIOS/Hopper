@@ -20,7 +20,7 @@
     X
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
-  import type { SvelteComponent } from 'svelte';
+  import { onMount, type SvelteComponent } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import {
@@ -133,16 +133,17 @@
   }
 
   let tab = $state('overview');
+  let hydrated = $state(false);
   let userQuery = $state('');
   let vmQuery = $state('');
 
   // Role mutation state — kept local so the dropdown updates instantly
   // before invalidateAll() refreshes the list from the server.
-  let users = $state<AdminUser[]>(data.users);
+  let users = $derived(data.users);
   let pendingRoleChange = $state<string | null>(null);
 
-  $effect(() => {
-    users = data.users;
+  onMount(() => {
+    hydrated = true;
   });
 
   async function changeRole(u: AdminUser, newRole: string) {
@@ -384,7 +385,7 @@
   </span>
 {/snippet}
 
-<div class="space-y-8">
+<div class="space-y-8" data-admin-hydrated={hydrated}>
   <PageTitle
     title="Admin"
     eyebrow="Admin console"
@@ -727,7 +728,9 @@
                   </Table.Cell>
                   <Table.Cell class="w-32 text-right">
                     <Tooltip content="Allocate credits to this user">
+                      {#snippet children(props)}
                       <Button
+                        {...props}
                         variant="outline"
                         size="sm"
                         class="opacity-70 transition-opacity group-hover:opacity-100"
@@ -735,6 +738,7 @@
                       >
                         <Coins class="size-3.5" /> Allocate
                       </Button>
+                      {/snippet}
                     </Tooltip>
                   </Table.Cell>
                 </Table.Row>
@@ -776,7 +780,7 @@
                   <Table.Head>User</Table.Head>
                   <Table.Head class="hidden w-56 md:table-cell">Email</Table.Head>
                   <Table.Head class="hidden w-28 sm:table-cell">Requested</Table.Head>
-                  <Table.Head class="w-44 text-right">Decision</Table.Head>
+                  <Table.Head class="w-56 text-right">Decision</Table.Head>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -795,7 +799,7 @@
                     <Table.Cell class="hidden w-28 text-muted-foreground sm:table-cell">
                       {r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}
                     </Table.Cell>
-                    <Table.Cell class="w-44 text-right">
+                    <Table.Cell class="w-56 text-right">
                       <div class="flex items-center justify-end gap-2">
                         <Button variant="outline" size="sm" disabled={processingReq === r.id} onclick={() => rejectTeacher(r)}>
                           <X class="size-3.5" /> Reject

@@ -9,7 +9,12 @@ from app.models.credit_ledger import Account, Transfer, LedgerEntry
 SYSTEM_ACCOUNT_ID = "00000000-0000-0000-0000-000000000000"
 
 
-async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
+async def get_or_create_account(
+    db: AsyncSession,
+    user_id: str,
+    *,
+    persist: bool = False,
+) -> Account:
     """Find or create a credit account for a user."""
     result = await db.execute(
         select(Account).where(Account.owner_id == user_id, Account.owner_type == "user")
@@ -27,6 +32,9 @@ async def get_or_create_account(db: AsyncSession, user_id: str) -> Account:
     )
     db.add(account)
     await db.flush()
+    if persist:
+        await db.commit()
+        await db.refresh(account)
     return account
 
 
@@ -53,7 +61,7 @@ async def ensure_system_account(db: AsyncSession) -> Account:
 
 async def get_balance(db: AsyncSession, user_id: str) -> float:
     """Get the current credit balance for a user by reading last ledger entry."""
-    account = await get_or_create_account(db, user_id)
+    account = await get_or_create_account(db, user_id, persist=True)
 
     result = await db.execute(
         select(LedgerEntry.current_balance)
@@ -211,6 +219,8 @@ async def deduct_credits(
         existing = await db.execute(select(Transfer).where(Transfer.id == tx_id))
         existing_transfer = existing.scalar_one_or_none()
         if existing_transfer is not None:
+            # Note: no balance attributes on this path (see below) — replays
+            # must not re-trigger balance-crossing side effects.
             return existing_transfer
 
     balance = await get_balance(db, user_id)
@@ -260,4 +270,9 @@ async def deduct_credits(
     ))
 
     await db.commit()
+    # Expose the user-balance movement to callers (the billing consumer uses
+    # it to detect low-credit threshold crossings). Plain instance attributes,
+    # not mapped columns — deliberately absent on the idempotent-replay path.
+    transfer.previous_user_balance = balance
+    transfer.new_user_balance = balance - amount
     return transfer

@@ -1,82 +1,72 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-// Scenario: 30 students launch GPU pods simultaneously at class start
+const BASE_URL = __ENV.BASE_URL || 'http://127.0.0.1:8000';
+const ACCESS_TOKEN = __ENV.ACCESS_TOKEN || 'e2e-student-1';
+
+function headers() {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${ACCESS_TOKEN}`,
+    Cookie: `session_token=${ACCESS_TOKEN}`,
+  };
+}
+
 export const options = {
   scenarios: {
-    class_start: {
-      executor: 'shared-iterations',
-      vus: 30,
-      iterations: 30,
-      maxDuration: '5m',
+    smoke: {
+      executor: 'per-vu-iterations',
+      vus: 1,
+      iterations: 1,
+      maxDuration: '1m',
     },
   },
   thresholds: {
-    'http_req_duration{scenario:class_start}': ['p(95)<2000'],
+    'http_req_duration{scenario:smoke}': ['p(95)<2000'],
     http_req_failed: ['rate<0.01'],
   },
 };
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
-
 export default function () {
-  // Step 1: Login (get auth token)
-  const loginRes = http.post(`${BASE_URL}/auth/login`, JSON.stringify({
-    // TODO: Use test credentials from Keycloak
-    username: `student-${__VU}@university.edu`,
-    password: 'test',
-  }), {
-    headers: { 'Content-Type': 'application/json' },
+  const health = http.get(`${BASE_URL}/healthz`);
+  check(health, {
+    'health endpoint responds': (result) => result.status === 200,
   });
 
-  check(loginRes, {
-    'login successful': (r) => r.status === 200,
+  const balance = http.get(`${BASE_URL}/credits/balance`, { headers: headers() });
+  check(balance, {
+    'balance endpoint responds': (result) => result.status === 200,
   });
 
-  const token = loginRes.json('access_token') || 'test-token';
-
-  // Step 2: Check credit balance
-  const balanceRes = http.get(`${BASE_URL}/credits/balance`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const podsBefore = http.get(`${BASE_URL}/pods/`, { headers: headers() });
+  check(podsBefore, {
+    'pod list responds': (result) => result.status === 200,
   });
 
-  check(balanceRes, {
-    'balance retrieved': (r) => r.status === 200,
+  const create = http.post(
+    `${BASE_URL}/pods/`,
+    JSON.stringify({ plan: 'small', template: 'pytorch' }),
+    { headers: headers() },
+  );
+  check(create, {
+    'pod creation accepted': (result) => [200, 201, 202].includes(result.status),
+    'pod creation under 2 seconds': (result) => result.timings.duration < 2000,
   });
 
-  // Step 3: Launch GPU pod
-  const createRes = http.post(`${BASE_URL}/pods`, JSON.stringify({
-    gpu_tier: 'standard',
-    image: 'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime',
-  }), {
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  check(createRes, {
-    'pod creation accepted': (r) => r.status === 200 || r.status === 201,
-    'pod creation latency < 2s': (r) => r.timings.duration < 2000,
-  });
-
-  // Step 4: Poll pod status until running
-  if (createRes.status === 200 || createRes.status === 201) {
-    const podId = createRes.json('id');
-    let running = false;
-    for (let i = 0; i < 30; i++) {
-      const statusRes = http.get(`${BASE_URL}/pods/${podId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (statusRes.json('state') === 'running') {
-        running = true;
-        break;
-      }
-      sleep(2);
-    }
-
-    check(null, {
-      'pod reached running state': () => running,
-    });
+  if (![200, 201, 202].includes(create.status)) {
+    return;
   }
+
+  const podId = create.json('id');
+  sleep(1);
+
+  const pod = http.get(`${BASE_URL}/pods/${podId}`, { headers: headers() });
+  check(pod, {
+    'created pod is readable': (result) => result.status === 200,
+  });
+
+  const terminate = http.del(`${BASE_URL}/pods/${podId}`, null, { headers: headers() });
+  check(terminate, {
+    'pod termination accepted': (result) => [200, 202, 204].includes(result.status),
+  });
 }

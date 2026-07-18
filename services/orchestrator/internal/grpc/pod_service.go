@@ -84,12 +84,20 @@ func podToProto(p *pod.Pod) *podv1.PodStatus {
 func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.CreatePodRequest) (*podv1.PodStatus, error) {
 	podName := fmt.Sprintf("vm-%d", time.Now().UnixNano())
 
+	// Optional network isolation group (HOP-19 18.3), carried in the labels
+	// map. Validated here because label values flow into K8s objects.
+	networkGroup := req.Labels[k8s.NetworkGroupLabel]
+	if networkGroup != "" && !k8s.ValidNetworkGroup(networkGroup) {
+		return nil, fmt.Errorf("invalid network group %q", networkGroup)
+	}
+
 	s.server.logger.Info("CreatePod",
 		zap.String("user_id", req.UserId),
 		zap.String("plan", req.Plan),
 		zap.String("image", req.Image),
 		zap.String("cpu", req.Cpu),
 		zap.String("memory", req.Memory),
+		zap.String("network_group", networkGroup),
 	)
 
 	// 1. Register in the in-memory state machine
@@ -121,21 +129,25 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		apiPodID = podName
 	}
 	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
-		PodName:  podName,
-		PodID:    apiPodID,
-		UserID:   req.UserId,
-		Plan:     req.Plan,
-		Image:    req.Image,
-		CPU:      req.Cpu,
-		Memory:   req.Memory,
-		ExtraEnv: hopperEnvFromLabels(req.Labels),
+		PodName:      podName,
+		PodID:        apiPodID,
+		UserID:       req.UserId,
+		Plan:         req.Plan,
+		Image:        req.Image,
+		CPU:          req.Cpu,
+		Memory:       req.Memory,
+		NetworkGroup: networkGroup,
+		ExtraEnv:     hopperEnvFromLabels(req.Labels),
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
 		_ = events.Publish(s.server.nc, events.SubjectPodFailed, map[string]string{
-			"pod_id":  p.ID,
-			"user_id": req.UserId,
-			"error":   err.Error(),
+			"pod_id": p.ID,
+			// The gateway's DB row is keyed by the API UUID, not our
+			// internal name — include it so consumers can find the session.
+			"api_pod_id": apiPodID,
+			"user_id":    req.UserId,
+			"error":      err.Error(),
 		})
 		return nil, fmt.Errorf("creating k8s pod: %w", err)
 	}
@@ -148,6 +160,7 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 	// 5. Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodCreated, map[string]interface{}{
 		"pod_id":      p.ID,
+		"api_pod_id":  apiPodID,
 		"user_id":     req.UserId,
 		"ssh_port":    ports.SSHPort,
 		"vscode_port": ports.VSCodePort,
@@ -211,7 +224,8 @@ func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.Po
 
 	// Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodStopped, map[string]string{
-		"pod_id": req.Id,
+		"pod_id":  req.Id,
+		"user_id": p.UserID,
 	})
 
 	return &podv1.TerminateResponse{Success: true, Message: "pod terminated"}, nil

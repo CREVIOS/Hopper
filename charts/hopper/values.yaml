@@ -1,0 +1,152 @@
+# Default values for the hopper chart (HOP-22 25.2).
+#
+# These defaults are a complete, working single-node shape. Environment
+# overlays live next to this file:
+#   values-dev.yaml      — local k3d/k3s development
+#   values-staging.yaml  — staging cluster
+#   values-prod.yaml     — hopper.farefin.com (matches the live cluster)
+#
+#   helm install hopper ./charts/hopper -n hopper --create-namespace \
+#     -f charts/hopper/values-prod.yaml
+
+global:
+  # Public hostname the platform is served on (ingress host, Keycloak
+  # external URL, CORS origin, OIDC callback).
+  host: hopper.local
+  # Scheme for externally visible URLs.
+  scheme: https
+  # Default tag for the three service images (CI pushes ghcr images tagged
+  # with the 12-char commit SHA). Per-component image.tag overrides this.
+  imageTag: b19bbd699a03
+
+# ---------------------------------------------------------------------------
+# Secrets (25.4): `create: false` means the Secrets already exist in the
+# cluster (provisioned out-of-band — the safe production setting, since this
+# repo is public and several live secrets must never be overwritten by a
+# deploy). `create: true` renders them with the dev-default values below —
+# ONLY for disposable dev environments.
+# ---------------------------------------------------------------------------
+secrets:
+  create: false
+  db:
+    username: hopper
+    password: hopper_dev
+  keycloakAdmin:
+    username: admin
+    password: admin
+  # hopper-admin confidential client secret (Keycloak service account).
+  keycloakAdminClient:
+    clientSecret: REPLACE_ME_hopper_admin_client_secret
+  brevo:
+    apiKey: ""
+  smtp:
+    host: ""
+    user: ""
+    password: ""
+    from: "Hopper <no-reply@hopper.local>"
+
+postgres:
+  # Pinned by digest to the image live on prod — `latest-pg16` is a moving
+  # tag and a silent major upgrade would break pgdata.
+  image: timescale/timescaledb:latest-pg16@sha256:0af03ecf697825f6ddae76fd275d16bf46007bed6d00eb3d754779cb7db96fa6
+  storage: 10Gi
+  storageClassName: ""
+  database: hopper
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 2Gi }
+
+nats:
+  image: nats:2.10-alpine
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+keycloak:
+  image: quay.io/keycloak/keycloak:25.0
+  # false = production `start` (hostname-strict, proxy headers) as in the
+  # manifest; true = `start-dev` for local development.
+  startDev: false
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }
+
+apiGateway:
+  image:
+    repository: ghcr.io/crevios/hopper-api-gateway
+    tag: ""
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+  workers: 2
+  debug: false
+  # Node-local SMTP relay workaround: pods on the prod cluster cannot egress
+  # to SMTP ports, so a socat unit on the node forwards :2525 →
+  # smtp.gmail.com:587 and a hostAlias points smtp.gmail.com at the node.
+  # See k8s/deploy/node/hopper-smtp-relay.service. Disable everywhere the
+  # cluster can reach SMTP directly (or Brevo HTTPS is the transport).
+  smtpRelay:
+    enabled: false
+    nodeIP: ""
+    port: 2525
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+orchestrator:
+  image:
+    repository: ghcr.io/crevios/hopper-orchestrator
+    tag: ""
+  imagePullPolicy: IfNotPresent
+  # Gate billing tickers / pod watcher behind a K8s Lease (leave on in any
+  # real cluster; harmless with 1 replica).
+  leaderElection: true
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+frontend:
+  image:
+    repository: ghcr.io/crevios/hopper-frontend
+    tag: ""
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  # Public host NodePort SSH / VS Code services are reachable on. Defaults
+  # to global.host when empty.
+  nodeIP: ""
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+ingress:
+  enabled: true
+  className: nginx
+  # TLS secret shared by all four ingresses. cert-manager fills it when
+  # certManager.enabled and the api-ingress annotation is present.
+  tlsSecretName: hopper-farefin-tls
+
+certManager:
+  # Renders the two Let's Encrypt ClusterIssuers and annotates the API
+  # ingress. Requires cert-manager to be installed in the cluster first.
+  enabled: true
+  email: asif@askturing.ai
+  # Which ClusterIssuer the API ingress requests certs from.
+  clusterIssuer: letsencrypt-prod
+
+networkPolicies:
+  # Zero-trust namespace baseline + VM isolation (see the template for the
+  # full teaching commentary). Requires a CNI that enforces NetworkPolicy
+  # (prod runs Cilium; flannel does NOT enforce).
+  enabled: true
+  podCIDR: 10.42.0.0/16
+  serviceCIDR: 10.43.0.0/16
+  # The orchestrator→kube-apiserver rule is a CiliumNetworkPolicy CRD.
+  cilium: true
+
+backup:
+  # Nightly pg_dump CronJob to a local-path PVC (HOP-21 §24.2).
+  enabled: true
+  schedule: "0 21 * * *"
+  storage: 10Gi
+  storageClassName: local-path
+  retentionDays: 14
+  image: postgres:16-alpine

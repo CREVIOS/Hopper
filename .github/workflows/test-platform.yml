@@ -1,0 +1,245 @@
+name: Test Platform
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      cross_browser:
+        description: Run cross-browser real-stack E2E
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+  schedule:
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-auth-events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}/services/api-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry==1.8.4
+
+      - name: Install API dependencies
+        working-directory: services/api-gateway
+        run: poetry install --no-interaction
+
+      - name: Run Keycloak integration tests
+        run: ./scripts/test/run.sh test-integration-keycloak
+
+      - name: Run NATS integration tests
+        run: ./scripts/test/run.sh test-integration-nats
+
+      - name: Upload integration auth/event reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-integration-artifacts
+          path: test-results/integration
+          if-no-files-found: error
+
+  real-stack-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: services/orchestrator/go.sum
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            tests/e2e/pnpm-lock.yaml
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry==1.8.4
+
+      - name: Install API dependencies
+        working-directory: services/api-gateway
+        run: poetry install --no-interaction
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install E2E dependencies
+        working-directory: tests/e2e
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: tests/e2e
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start real stack
+        run: ./scripts/test/run.sh test-real-stack-up
+
+      - name: Run real-stack Playwright E2E
+        env:
+          CI: "true"
+        run: ./scripts/test/run.sh test-e2e-real-stack
+
+      - name: Capture real-stack logs
+        if: always()
+        run: ./scripts/test/run.sh test-real-stack-logs
+
+      - name: Stop real stack
+        if: always()
+        run: ./scripts/test/run.sh test-real-stack-down
+
+      - name: Upload real-stack E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-stack-e2e-artifacts
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+            test-results/e2e
+            test-results/real-stack
+            test-results/services
+          if-no-files-found: error
+
+  load-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Start deterministic services
+        run: ./scripts/test/run.sh test-services-up
+
+      - name: Run load smoke test
+        env:
+          BASE_URL: "http://127.0.0.1:8000"
+          ACCESS_TOKEN: "e2e-student-1"
+        run: ./scripts/test/run.sh test-load-smoke
+
+      - name: Capture mock service logs
+        if: always()
+        run: ./scripts/test/run.sh test-service-logs
+
+      - name: Stop deterministic services
+        if: always()
+        run: ./scripts/test/run.sh test-services-down
+
+      - name: Upload load smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-smoke-artifacts
+          path: |
+            test-results/load
+            test-results/services
+          if-no-files-found: error
+
+  cross-browser-real-stack-e2e:
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.cross_browser == 'true') || vars.CROSS_BROWSER_E2E == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            tests/e2e/pnpm-lock.yaml
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry==1.8.4
+
+      - name: Install API dependencies
+        working-directory: services/api-gateway
+        run: poetry install --no-interaction
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install E2E dependencies
+        working-directory: tests/e2e
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium, Firefox, and WebKit
+        working-directory: tests/e2e
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: Start real stack
+        run: ./scripts/test/run.sh test-real-stack-up
+
+      - name: Run cross-browser real-stack E2E
+        env:
+          CI: "true"
+          E2E_CROSS_BROWSER: "true"
+        run: ./scripts/test/run.sh test-e2e-real-stack
+
+      - name: Capture real-stack logs
+        if: always()
+        run: ./scripts/test/run.sh test-real-stack-logs
+
+      - name: Stop real stack
+        if: always()
+        run: ./scripts/test/run.sh test-real-stack-down
+
+      - name: Upload cross-browser E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-browser-real-stack-e2e-artifacts
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+            test-results/e2e
+            test-results/real-stack
+            test-results/services
+          if-no-files-found: error

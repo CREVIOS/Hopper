@@ -1,0 +1,6 @@
+[run]
+omit =
+    */app/proto/*_pb2.py
+    */app/proto/*_pb2_grpc.py
+    */app/proto/**/*_pb2.py
+    */app/proto/**/*_pb2_grpc.py

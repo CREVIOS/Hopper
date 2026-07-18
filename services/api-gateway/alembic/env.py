@@ -23,8 +23,31 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def run_migrations_offline() -> None:
+def _database_url() -> str:
+    """Resolve the migration target URL (HOP-22 25.4).
+
+    Precedence:
+      1. An explicitly-set ``sqlalchemy.url`` (programmatic ``set_main_option``
+         — how the integration tests point at their Testcontainer, and how
+         one-off scripts can override).
+      2. The app settings' ``database_url`` — which itself honours the
+         ``HOPPER_DATABASE_URL`` env var and the service ``.env`` file, and
+         defaults to the local compose Postgres. This is what makes
+         ``alembic upgrade head`` work inside the deployed pod with NO extra
+         flags (historically env.py read only alembic.ini's hardcoded
+         localhost URL, so prod migrations needed a set_main_option dance).
+    """
     url = config.get_main_option("sqlalchemy.url")
+    if url:
+        return url
+    from app.config import settings
+
+    # Escape % so ConfigParser interpolation can't mangle passwords.
+    return settings.database_url.replace("%", "%%")
+
+
+def run_migrations_offline() -> None:
+    url = _database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -42,8 +65,10 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
+    section = config.get_section(config.config_ini_section, {})
+    section["sqlalchemy.url"] = _database_url()
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

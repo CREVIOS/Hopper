@@ -14,8 +14,11 @@
     Terminal,
     Code2,
     Filter,
-    AlertTriangle
+    AlertTriangle,
+    ListOrdered,
+    Gauge
   } from 'lucide-svelte';
+  import { onMount, untrack } from 'svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
   import {
@@ -23,9 +26,13 @@
     VM_TEMPLATE_INFO,
     type VmPlan,
     type VmTemplate,
-    type Pod
+    type Pod,
+    type Availability,
+    type CreatePodResult
   } from '$lib/types';
+  import { capacityTone, fmtCapacity } from '$lib/capacity/format';
   import { api, ApiError } from '$lib/api/client';
+  import StatCard from '$lib/components/StatCard.svelte';
   import {
     Button,
     Card,
@@ -46,7 +53,46 @@
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
-  let { data }: { data: { pods: Pod[]; nodeIp: string; balance: number } } = $props();
+  let {
+    data
+  }: {
+    data: {
+      pods: Pod[];
+      nodeIp: string;
+      balance: number;
+      availability: Availability | null;
+    };
+  } = $props();
+
+  // Live cluster availability readout. Seeded once from SSR (untrack keeps this
+  // to the initial value), then polled so the free-capacity and queue-length
+  // figures stay fresh while the page is open.
+  let availability = $state<Availability | null>(untrack(() => data.availability));
+
+  async function refreshAvailability() {
+    try {
+      availability = await api.get<Availability>('/pods/availability');
+    } catch {
+      // Keep the last known value on a transient failure — the endpoint is
+      // best-effort and must never disrupt the page.
+    }
+  }
+
+  onMount(() => {
+    const timer = setInterval(refreshAvailability, 5000);
+    return () => clearInterval(timer);
+  });
+
+  const cpuTone = $derived(
+    capacityTone(availability?.cpu.free_cores, availability?.cpu.total_cores)
+  );
+  const memTone = $derived(
+    capacityTone(availability?.memory.free_gib, availability?.memory.total_gib)
+  );
+  const storageTone = $derived(
+    capacityTone(availability?.storage.free_gib, availability?.storage.total_gib)
+  );
+  const queueLength = $derived(availability?.queue_length ?? 0);
 
   // Modest, vibrant per-image accent — visual only, used on the small icon tile.
   // Kept as static class strings so Tailwind's JIT can detect them.
@@ -140,15 +186,26 @@
     creating = true;
     const id = toast.loading(`Launching ${selectedPlan} VM…`);
     try {
-      await api.post('/pods/', {
+      const res = await api.post<CreatePodResult>('/pods/', {
         plan: selectedPlan,
         template: selectedTemplate
       });
+      // The cluster was full: the request was enqueued (HTTP 202) rather than
+      // started. The API client hides the status code, so we branch on the
+      // `queued` discriminator in the body.
+      if ('queued' in res && res.queued) {
+        toast.info(`Cluster is full — you're queued at position ${res.position}`, {
+          id,
+          description: 'Your VM starts automatically as capacity frees up.'
+        });
+        await goto('/pods/queue');
+        return;
+      }
       toast.success('VM launched', {
         id,
         description: 'It will be running in a few seconds.'
       });
-      await invalidateAll();
+      await Promise.all([invalidateAll(), refreshAvailability()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to launch VM';
       toast.error('Launch failed', { id, description: msg });
@@ -171,7 +228,7 @@
     try {
       await api.delete(`/pods/${pod.id}`);
       toast.success('VM terminated', { id });
-      await invalidateAll();
+      await Promise.all([invalidateAll(), refreshAvailability()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to terminate VM';
       toast.error('Termination failed', { id, description: msg });
@@ -204,6 +261,69 @@
     title="Virtual Machines"
     description="Launch new VMs and manage your existing instances."
   />
+
+  <!-- Cluster availability: free vs total capacity + queue depth. Polls every
+       5s and degrades to em dashes when the orchestrator can't be reached. -->
+  <section class="animate-fade-up" aria-label="Cluster availability">
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <h2 class="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+        <Gauge class="size-4" />
+        Cluster availability
+      </h2>
+      {#if availability?.nodes_ready != null}
+        <span class="text-xs text-muted-foreground">
+          {availability.nodes_ready} node{availability.nodes_ready === 1 ? '' : 's'} ready
+        </span>
+      {/if}
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard
+        compact
+        label="Free CPU"
+        value="{fmtCapacity(availability?.cpu.free_cores)} / {fmtCapacity(availability?.cpu.total_cores)}"
+        sub="cores left to reserve"
+        icon={Cpu}
+        tone={cpuTone}
+      />
+      <StatCard
+        compact
+        label="Free memory"
+        value="{fmtCapacity(availability?.memory.free_gib)} / {fmtCapacity(availability?.memory.total_gib)}"
+        sub="GiB available"
+        icon={MemoryStick}
+        tone={memTone}
+      />
+      <StatCard
+        compact
+        label="Free storage"
+        value="{fmtCapacity(availability?.storage.free_gib)} / {fmtCapacity(availability?.storage.total_gib)}"
+        sub="GiB workspace quota"
+        icon={HardDrive}
+        tone={storageTone}
+      />
+      <StatCard
+        compact
+        label="In queue"
+        value={queueLength}
+        sub={queueLength > 0 ? 'waiting for capacity' : 'no waiting requests'}
+        icon={ListOrdered}
+        tone={queueLength > 0 ? 'warning' : 'default'}
+        href="/pods/queue"
+      />
+    </div>
+    <!-- Without this the CPU figure looks broken: a "1 CPU" VM only moves it by
+         0.25, because CPU is reserved at a quarter of the plan limit while
+         memory and storage are reserved in full. Only worth saying once there
+         are real figures to explain — the cards are all em dashes until then. -->
+    {#if availability}
+      <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
+        A VM reserves a <strong class="font-medium text-foreground">quarter</strong> of its plan's
+        CPU and bursts up to the full limit whenever cores are idle — so a 1 CPU VM takes 0.25 from
+        free CPU. Memory and storage are reserved in full. Free storage is a workspace quota, not
+        measured disk.
+      </p>
+    {/if}
+  </section>
 
   <!-- Launch panel -->
   <Card class="animate-fade-up surface-glow overflow-hidden">
@@ -295,6 +415,7 @@
           {#each Object.entries(VM_TEMPLATE_INFO) as [key, info] (key)}
             <button
               type="button"
+              aria-label={info.name}
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
                 selectedTemplate === key

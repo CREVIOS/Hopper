@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load
+.PHONY: help dev dev-up dev-down deploy-local proto frontend api orchestrator test lint clean vm-images vm-images-load frontend-validate test-unit test-integration test-integration-keycloak test-integration-nats test-frontend test-orchestrator test-contract test-migrate test-e2e test-e2e-real test-e2e-real-stack test-load-smoke test-load test-load-stress test-load-spike test-load-soak test-security test-chaos test-coverage test-all test-ci test-services-up test-services-down test-service-logs test-real-stack-up test-real-stack-down test-real-stack-logs test-clean
 
 # Development environment
 dev-up:
@@ -46,24 +46,101 @@ orchestrator-dev:
 	cd services/orchestrator && go run ./cmd/orchestrator/
 
 # Testing
+help:
+	@./scripts/test/run.sh help
+
+frontend-validate:
+	@./scripts/test/run.sh frontend-validate
+
 test-unit:
-	cd services/api-gateway && poetry run pytest tests/unit/ -v
-	cd services/orchestrator && go test ./... -v -race
+	@./scripts/test/run.sh test-unit
 
 test-integration:
-	cd services/api-gateway && poetry run pytest tests/integration/ -v
+	@./scripts/test/run.sh test-integration
+
+test-integration-keycloak:
+	@./scripts/test/run.sh test-integration-keycloak
+
+test-integration-nats:
+	@./scripts/test/run.sh test-integration-nats
+
+test-frontend:
+	@./scripts/test/run.sh test-frontend
+
+test-orchestrator:
+	@./scripts/test/run.sh test-orchestrator
+
+test-contract:
+	@./scripts/test/run.sh test-contract
+
+test-migrate:
+	@./scripts/test/run.sh test-migrate
 
 test-e2e:
-	cd tests/e2e && npx playwright test
+	@./scripts/test/run.sh test-e2e
+
+test-e2e-real:
+	@./scripts/test/run.sh test-e2e-real
+
+test-e2e-real-stack:
+	@./scripts/test/run.sh test-e2e-real-stack
+
+test-load-smoke:
+	@./scripts/test/run.sh test-load-smoke
 
 test-load:
-	cd tests/load && k6 run class-start.js
+	@./scripts/test/run.sh test-load
+
+test-load-stress:
+	@./scripts/test/run.sh test-load-stress
+
+test-load-spike:
+	@./scripts/test/run.sh test-load-spike
+
+test-load-soak:
+	@./scripts/test/run.sh test-load-soak
+
+test-security:
+	@./scripts/test/run.sh test-security
+
+test-chaos:
+	@./scripts/test/run.sh test-chaos
+
+test-coverage:
+	@./scripts/test/run.sh test-coverage
+
+test-all:
+	@./scripts/test/run.sh test-all
+
+test-ci:
+	@./scripts/test/run.sh test-ci
+
+test-services-up:
+	@./scripts/test/run.sh test-services-up
+
+test-services-down:
+	@./scripts/test/run.sh test-services-down
+
+test-service-logs:
+	@./scripts/test/run.sh test-service-logs
+
+test-real-stack-up:
+	@./scripts/test/run.sh test-real-stack-up
+
+test-real-stack-down:
+	@./scripts/test/run.sh test-real-stack-down
+
+test-real-stack-logs:
+	@./scripts/test/run.sh test-real-stack-logs
+
+test-clean:
+	@./scripts/test/run.sh test-clean
 
 test: test-unit test-integration
 
 # Linting
 lint:
-	cd frontend && pnpm lint
+	cd frontend && npx eslint .
 	cd services/api-gateway && poetry run ruff check .
 	cd services/orchestrator && golangci-lint run
 

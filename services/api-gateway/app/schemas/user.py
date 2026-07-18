@@ -3,7 +3,12 @@ from pydantic import BaseModel, Field
 
 class SignupRequest(BaseModel):
     email: str = Field(max_length=254)
-    password: str = Field(min_length=8, max_length=128)
+    # Policy rules (length, character classes, not-the-username) are enforced
+    # by app.services.password_policy, which mirrors the Keycloak realm and can
+    # name every unmet rule. A min_length here would instead fail as a pydantic
+    # 422 whose `detail` is a list, which the client renders as "[object
+    # Object]". max_length stays as a plain input-size guard.
+    password: str = Field(max_length=128)
     name: str = Field(min_length=1, max_length=120)
     # "student" (active immediately) or "teacher" (created as student, pending
     # admin approval). Anything else is rejected by the router.
@@ -33,7 +38,8 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     email: str = Field(max_length=254)
     code: str = Field(min_length=4, max_length=12)
-    password: str = Field(min_length=8, max_length=128)
+    # Policy enforced in app.services.password_policy — see SignupRequest.
+    password: str = Field(max_length=128)
 
 
 class TokenPayload(BaseModel):

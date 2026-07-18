@@ -1,0 +1,36 @@
+# Child Application: the hopper platform Helm chart with the prod overlay.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hopper-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/CREVIOS/Hopper
+    targetRevision: main
+    path: charts/hopper
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hopper
+  # Manual sync until the set-image CD pipeline is retired — see
+  # k8s/argocd/README.md. NO automated prune (out-of-band Secrets +
+  # dynamically-created vm-net-group-* NetworkPolicies and VM pods live in
+  # this namespace) and NO self-heal (it would revert CI's kubectl set image
+  # rollouts).
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    # CI deploys by `kubectl set image`; the git-pinned tag is a bootstrap
+    # fallback. Ignore the live image field so a sync doesn't roll pods back.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/spec/containers/0/image

@@ -20,17 +20,13 @@ APP_ROLES = {"admin", "professor", "student"}
 
 
 def _require_admin(current_user: TokenPayload):
-    """Read-only admin endpoints accept admin OR professor.
+    """All admin endpoints are admin-only.
 
-    Mutating endpoints (role changes) tighten this further to admin-only.
+    Teachers (professors) have the Teaching console instead — they must not
+    reach any admin data or action, so professors are rejected here too.
     """
-    if current_user.role not in ("admin", "professor"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-
-def _require_admin_only(current_user: TokenPayload):
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required")
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 @router.get("/users")
@@ -38,7 +34,7 @@ async def list_users(
     current_user: TokenPayload = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all users (admin/professor only)."""
+    """List all users (admin only)."""
     _require_admin(current_user)
 
     result = await db.execute(
@@ -65,7 +61,7 @@ async def list_teacher_requests(
     db: AsyncSession = Depends(get_db),
 ):
     """Users who signed up as a teacher and await approval (admin only)."""
-    _require_admin_only(current_user)
+    _require_admin(current_user)
     result = await db.execute(
         select(User).where(User.pending_teacher.is_(True)).order_by(User.created_at.desc())
     )
@@ -87,7 +83,7 @@ async def approve_teacher(
     db: AsyncSession = Depends(get_db),
 ):
     """Approve a pending teacher: promote to professor and clear the flag."""
-    _require_admin_only(current_user)
+    _require_admin(current_user)
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="user not found")
@@ -122,7 +118,7 @@ async def reject_teacher(
     db: AsyncSession = Depends(get_db),
 ):
     """Reject a pending teacher: clear the flag, the user stays a student."""
-    _require_admin_only(current_user)
+    _require_admin(current_user)
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="user not found")
@@ -245,7 +241,7 @@ async def change_user_role(
       - assign an unknown role
     Writes an audit_logs row with old/new role for accountability.
     """
-    _require_admin_only(current_user)
+    _require_admin(current_user)
     if body.role not in APP_ROLES:
         raise HTTPException(status_code=400, detail=f"role must be one of {sorted(APP_ROLES)}")
     if user_id == current_user.sub and body.role != "admin":

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PodState(str, Enum):
@@ -47,6 +47,16 @@ class CreatePodRequest(BaseModel):
     # `image` is kept for backward-compat / direct image overrides (admin/CLI).
     # When unset, it's resolved from `template` via VM_TEMPLATE_IMAGES.
     image: str | None = None
+    # Network isolation group (HOP-19 18.3). VMs sharing a group can reach
+    # each other over the pod network (team projects); unset = fully isolated
+    # (the default). Teacher/admin only — the router enforces the role, since
+    # without course membership a student could otherwise join any group and
+    # defeat tenant isolation. Must be a DNS-label-safe slug (it becomes a
+    # K8s label value and part of a NetworkPolicy name).
+    network_group: str | None = Field(
+        default=None, min_length=1, max_length=32,
+        pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+    )
 
     def resolved_image(self) -> str:
         if self.image:
@@ -67,6 +77,7 @@ class PodResponse(BaseModel):
     ssh_port: int | None = None
     vscode_port: int | None = None
     ssh_password: str | None = None
+    network_group: str | None = None
     created_at: datetime
     updated_at: datetime
 
