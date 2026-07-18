@@ -10,7 +10,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hopper}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hopper_dev}
     ports:
-      - "5433:5432"
+      # Default 5433 (what CI and the test-suite dial). Override per-machine via
+      # POSTGRES_PORT in the gitignored root .env — e.g. 5434 when a host
+      # Postgres already squats on 5433.
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

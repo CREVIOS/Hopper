@@ -84,3 +84,4 @@ docs/*.run.xml
 
 # Local operational scratch (helper scripts, may contain creds) — never commit
 scratchpad/
+.local-logs/

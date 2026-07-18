@@ -68,6 +68,7 @@
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Hopper — Cloud VMs for students & teams" />
   <meta name="twitter:description" content={DESCRIPTION} />
+  <!-- eslint-disable-next-line svelte/no-at-html-tags — static JSON.stringify output, no user input -->
   {@html `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
