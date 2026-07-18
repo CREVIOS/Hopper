@@ -40,8 +40,8 @@ test.describe('Accessibility, performance, and edge coverage', () => {
   }) => {
     const loginStart = Date.now();
     await page.goto('/login');
-    await page.getByLabel('Email').fill('student-1@test.edu');
-    await page.getByLabel('Password').fill('e2e');
+    await page.getByLabel('Email', { exact: true }).fill('student-1@test.edu');
+    await page.getByLabel('Password', { exact: true }).fill('e2e');
     await page.getByRole('button', { name: /^sign in$/i }).click();
     await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
     expect(Date.now() - loginStart).toBeLessThan(3000);

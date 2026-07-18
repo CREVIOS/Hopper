@@ -142,6 +142,7 @@
           type="email"
           bind:value={email}
           required
+          aria-label="Email"
           autocomplete="email"
           placeholder="University email"
           class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-3 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
@@ -155,6 +156,7 @@
             type={showPw ? 'text' : 'password'}
             bind:value={password}
             required
+            aria-label="Password"
             autocomplete="current-password"
             placeholder="Password"
             class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-10 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
