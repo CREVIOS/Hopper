@@ -24,7 +24,7 @@ test.describe('Suite 1: Authentication and authorization', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: /Cloud VMs for\s*students\s*&\s*teams\./i })
     ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in' }).first()).toBeVisible();
   });
 
   test('TC-AUTH-001: student login reaches the dashboard and sets HttpOnly session cookies', async ({
