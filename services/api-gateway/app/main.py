@@ -11,7 +11,19 @@ from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core import nats as nats_client
 from app.middleware.audit import AuditMiddleware
-from app.routers import auth, pods, credits, admin, files, issues, notifications, ssh_keys, usage
+from app.routers import (
+    auth,
+    pods,
+    credits,
+    admin,
+    files,
+    issues,
+    notifications,
+    ssh_keys,
+    usage,
+    sandbox,
+    agents,
+)
 from app.routers import settings as settings_router
 from app.services.orchestrator_client import orchestrator_client
 from slowapi import _rate_limit_exceeded_handler
@@ -36,8 +48,21 @@ async def lifespan(app: FastAPI):
     from app.services.session_reaper import run_session_reaper
     reaper_stop = asyncio.Event()
     reaper_task = asyncio.create_task(run_session_reaper(reaper_stop), name="session-reaper")
+    print(">>> Startup: starting idle agent...", flush=True)
+    from app.services.idle_agent import start_idle_agent
+    await start_idle_agent()
+    print(">>> Startup: starting telemetry agent...", flush=True)
+    from app.agents.telemetry_agent import start_telemetry_agent
+    try:
+        await start_telemetry_agent()
+    except Exception as exc:  # noqa: BLE001 - monitoring must never block boot
+        logger.warning("telemetry agent failed to start: %s", exc)
     print(">>> Startup: complete.", flush=True)
     yield
+    from app.agents.telemetry_agent import stop_telemetry_agent
+    await stop_telemetry_agent()
+    from app.services.idle_agent import stop_idle_agent
+    await stop_idle_agent()
     reaper_stop.set()
     await reaper_task
     await nats_client.disconnect()
@@ -94,6 +119,8 @@ def create_app() -> FastAPI:
     app.include_router(issues.router, prefix="/issues", tags=["issues"])
     app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
     app.include_router(usage.router, prefix="/usage", tags=["usage"])
+    app.include_router(sandbox.router, prefix="/sandbox", tags=["sandbox"])
+    app.include_router(agents.router, prefix="/agents", tags=["agents"])
     # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
     # to the GET handler — load balancers and uptime probes that issue HEAD
     # would see 405 without this. Same body, same status, no payload.
