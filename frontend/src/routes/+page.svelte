@@ -11,8 +11,14 @@
   } from 'lucide-svelte';
   import { Button } from '$lib/ui';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
-  const navLinks = ['Product', 'Use Cases', 'Docs', 'Pricing'];
+  const navLinks = [
+    { label: 'Product', href: '#product' },
+    { label: 'Use Cases', href: '#use-cases' },
+    { label: 'Docs', href: '#docs' },
+    { label: 'Pricing', href: '#pricing' }
+  ];
   const trusted = [
     { icon: 'university', label: 'Univ. of Dhaka' },
     { icon: 'cpu', label: 'CSE Dept' },
@@ -48,18 +54,27 @@
       <span class="text-lg font-bold tracking-tight">Hopper</span>
     </a>
     <nav class="hidden items-center gap-1 rounded-full border border-border bg-card px-1.5 py-1.5 shadow-sm md:flex">
-      {#each navLinks as l}
-        <a href="#features" class="rounded-full px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">{l}</a>
+      {#each navLinks as link}
+        <a
+          href={link.href}
+          class="rounded-full px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {link.label}
+        </a>
       {/each}
     </nav>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 sm:gap-3">
+      <ThemeToggle />
       <a href="/login" class="text-sm font-medium text-foreground transition-colors hover:text-primary">Sign in</a>
       <Button href="/signup" data-sveltekit-reload class="rounded-full">Sign up</Button>
     </div>
   </header>
 
   <!-- Hero -->
-  <section class="relative z-10 mx-auto grid max-w-6xl items-center gap-8 px-6 pb-16 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:pt-16">
+  <section
+    id="product"
+    class="relative z-10 mx-auto grid max-w-6xl scroll-mt-24 items-center gap-8 px-6 pb-16 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:pt-16"
+  >
     <!-- glow -->
     <div class="pointer-events-none absolute right-0 top-0 h-[560px] w-[560px] rounded-full opacity-60 blur-3xl" style="background: radial-gradient(closest-side, rgba(196,181,253,0.55), transparent 70%);"></div>
 
@@ -174,7 +189,7 @@
         </div>
 
         <!-- Row 3: Zero idle — line chart LEFT, text RIGHT -->
-        <div class="grid items-center gap-8 py-10 sm:grid-cols-2">
+        <div id="pricing" class="grid scroll-mt-24 items-center gap-8 py-10 sm:grid-cols-2">
           <div class="relative h-56 rounded-xl">
             <svg viewBox="0 0 380 150" class="h-full w-full">
               <defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa" stop-opacity="0.3" /><stop offset="1" stop-color="#a78bfa" stop-opacity="0" /></linearGradient></defs>
@@ -211,7 +226,7 @@
   </section>
 
   <!-- Flow: timeline + cap cards -->
-  <section class="relative z-10 mx-auto max-w-6xl px-6 py-20">
+  <section id="use-cases" class="relative z-10 mx-auto max-w-6xl scroll-mt-24 px-6 py-20">
     <div class="mx-auto max-w-2xl text-center">
       <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">From plan to running in one flow.</h2>
       <p class="mt-3 text-muted-foreground">One account. No migrations between stages.</p>
@@ -256,7 +271,7 @@
   </section>
 
   <!-- FAQ -->
-  <section class="relative z-10 border-t border-border bg-card">
+  <section id="docs" class="relative z-10 scroll-mt-24 border-t border-border bg-card">
     <div class="mx-auto max-w-3xl px-6 py-20">
       <div class="text-center">
         <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Questions? Answers.</h2>
