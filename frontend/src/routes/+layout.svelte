@@ -5,7 +5,7 @@
   import type { User } from '$lib/types';
   import { ModeWatcher } from 'mode-watcher';
   import { Menu, X } from 'lucide-svelte';
-  import { page } from '$app/state';
+  import { page, navigating } from '$app/state';
   import { Toaster, Button } from '$lib/ui';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
@@ -14,6 +14,7 @@
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import ConfirmHost from '$lib/components/ConfirmHost.svelte';
+  import DashboardSkeleton from '$lib/components/DashboardSkeleton.svelte';
 
   let {
     data,
@@ -71,6 +72,17 @@
   });
 
   const isLogin = $derived(page.url.pathname === '/login');
+  const loadingSkeleton = $derived.by(() => {
+    if (!data.isAuthenticated) return null;
+
+    const pathname = navigating.to?.url.pathname;
+    if (!pathname) return null;
+    if (pathname === '/dashboard') return 'dashboard';
+    if (pathname === '/admin') return 'admin';
+    if (pathname === '/teacher') return 'teacher';
+    if (pathname === '/credits') return 'credits';
+    return null;
+  });
 </script>
 
 <ModeWatcher defaultMode="light" />
@@ -150,7 +162,11 @@
 
       <main class="flex-1 overflow-x-hidden">
         <div class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {@render children()}
+          {#if loadingSkeleton}
+            <DashboardSkeleton variant={loadingSkeleton} />
+          {:else}
+            {@render children()}
+          {/if}
         </div>
       </main>
     </div>
