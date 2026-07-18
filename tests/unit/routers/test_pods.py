@@ -94,6 +94,27 @@ def _stub_image_catalogue(monkeypatch):
     monkeypatch.setattr("app.routers.pods.image_service.list_images", fake_list_images)
 
 
+@pytest.fixture(autouse=True)
+def _stub_workspace(monkeypatch):
+    """create_pod ensures a per-user workspace PVC (workspace_service). Stub it
+    with a fixed row so these router unit tests stay hermetic (no DB)."""
+    from types import SimpleNamespace
+
+    async def fake_get_or_create_workspace(db, user_id, plan, capacity_gb=None):
+        return SimpleNamespace(
+            id="ws-1",
+            user_id=user_id,
+            pvc_name=f"ws-user-{user_id}",
+            capacity_gb=capacity_gb or 20,
+            storage_class="",
+        )
+
+    monkeypatch.setattr(
+        "app.routers.pods.workspace_service.get_or_create_workspace",
+        fake_get_or_create_workspace,
+    )
+
+
 def _payload() -> TokenPayload:
     return TokenPayload(
         sub="user-1",

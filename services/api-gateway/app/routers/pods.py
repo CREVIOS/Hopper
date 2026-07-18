@@ -31,7 +31,14 @@ from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.notification_service import notify
 from app.services.orchestrator_client import orchestrator_client
-from app.services import image_service, plan_service, port_forward, vm_queue, vm_scheduler
+from app.services import (
+    image_service,
+    plan_service,
+    port_forward,
+    vm_queue,
+    vm_scheduler,
+    workspace_service,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -242,6 +249,13 @@ async def create_pod(
     else:
         session = await db.get(PodSession, pod_id)  # the reserved pending row
 
+    # The per-user persistent workspace (FR-HC-28). get_or_create is idempotent,
+    # so a returning user reuses the same PVC (files/venvs survive across
+    # sessions); capacity comes from the plan's DB-backed workspace_gb.
+    workspace = await workspace_service.get_or_create_workspace(
+        db, current_user.sub, body.plan, capacity_gb=plan_row.workspace_gb
+    )
+
     # Call orchestrator to create the actual K8s pod
     try:
         resp = await orchestrator_client.create_pod(
@@ -251,6 +265,9 @@ async def create_pod(
             cpu=plan_row.cpu,
             memory=plan_row.memory,
             pod_id=pod_id,
+            workspace_pvc_name=workspace.pvc_name,
+            workspace_capacity_gb=workspace.capacity_gb,
+            storage_class=workspace.storage_class or "",
             network_group=body.network_group or "",
         )
         session.state = resp.state

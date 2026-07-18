@@ -96,7 +96,8 @@ class OrchestratorClient:
 
     async def create_pod(
         self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
-        pod_id: str = "", network_group: str = "",
+        pod_id: str = "", workspace_pvc_name: str = "", workspace_capacity_gb: int = 0,
+        storage_class: str = "", network_group: str = "",
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -115,6 +116,12 @@ class OrchestratorClient:
             memory=memory,
             disk=disk,
             pod_id=pod_id,
+            # Persistent per-user workspace (FR-HC-28): when set, the orchestrator
+            # ensures + mounts this RWO PVC at /workspace so files survive across
+            # sessions. Empty ⇒ ephemeral (legacy behaviour).
+            workspace_pvc_name=workspace_pvc_name,
+            workspace_capacity_gb=workspace_capacity_gb,
+            storage_class=storage_class,
             labels=labels,
         )
         resp = await stub.CreatePod(req, timeout=30)
