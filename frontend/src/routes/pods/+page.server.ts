@@ -14,9 +14,10 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [podsRes, balanceRes, availabilityRes] = await Promise.all([
+  const [podsRes, balanceRes, plansRes, availabilityRes] = await Promise.all([
     fetch(apiUrl('/pods/'), { headers }).catch(() => null),
     fetch(apiUrl('/credits/balance'), { headers }).catch(() => null),
+    fetch(apiUrl('/pods/plans'), { headers }).catch(() => null),
     fetch(apiUrl('/pods/availability'), { headers }).catch(() => null)
   ]);
 
@@ -27,9 +28,19 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   // renders placeholders instead of breaking the page.
   const availability = availabilityRes?.ok ? await availabilityRes.json() : null;
 
+  // The plan catalogue is a { name: {...} } map; flatten to a sorted array for
+  // the picker. Empty on failure — the page falls back to its static list.
+  const plansObj: Record<string, Record<string, unknown>> = plansRes?.ok
+    ? await plansRes.json()
+    : {};
+  const plans = Object.entries(plansObj)
+    .sort(([, a], [, b]) => Number(a.credits_per_hour) - Number(b.credits_per_hour))
+    .map(([name, v]) => ({ name, ...v }));
+
   return {
     pods,
     balance,
+    plans,
     availability,
     nodeIp: env.NODE_IP ?? '127.0.0.1'
   };

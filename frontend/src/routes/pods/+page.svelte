@@ -24,7 +24,6 @@
   import {
     VM_PLAN_INFO,
     VM_TEMPLATE_INFO,
-    type VmPlan,
     type VmTemplate,
     type Pod,
     type Availability,
@@ -53,6 +52,16 @@
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
+  type PlanOption = {
+    name: string;
+    display_name: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    credits_per_hour: number;
+    workspace_gb: number;
+  };
+
   let {
     data
   }: {
@@ -60,10 +69,30 @@
       pods: Pod[];
       nodeIp: string;
       balance: number;
+      plans: PlanOption[];
       availability: Availability | null;
     };
   } = $props();
   let livePods = $state<Pod[]>(data.pods);
+
+  // Plans come from the admin-managed catalogue (/pods/plans). If that returned
+  // nothing (API hiccup), fall back to the static list so launches still work.
+  const planOptions = $derived<PlanOption[]>(
+    data.plans && data.plans.length
+      ? data.plans
+      : Object.entries(VM_PLAN_INFO).map(([name, i]) => ({
+          name,
+          display_name: name,
+          cpu: i.cpu,
+          memory: i.memory,
+          disk: i.disk,
+          credits_per_hour: i.rate,
+          workspace_gb: 0
+        }))
+  );
+  const planMap = $derived(
+    Object.fromEntries(planOptions.map((p) => [p.name, p])) as Record<string, PlanOption>
+  );
   let hydrated = $state(false);
 
   // Live cluster availability readout. Seeded once from SSR (untrack keeps this
@@ -118,9 +147,17 @@
     red: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
   };
 
-  let selectedPlan = $state<VmPlan>('small');
+  let selectedPlan = $state<string>('small');
   let selectedTemplate = $state<VmTemplate>('ubuntu');
   let creating = $state(false);
+
+  // Keep the selection valid as the catalogue loads/changes (e.g. 'small' was
+  // retired, or the catalogue is admin-defined and doesn't include it).
+  $effect(() => {
+    if (planOptions.length && !planMap[selectedPlan]) {
+      selectedPlan = planOptions[0].name;
+    }
+  });
 
   // List filters
   let query = $state('');
@@ -139,7 +176,7 @@
   let sshDialogOpen = $state(false);
   let sshDialogPod = $state<Pod | null>(null);
 
-  const planRate = $derived(VM_PLAN_INFO[selectedPlan].rate);
+  const planRate = $derived(planMap[selectedPlan]?.credits_per_hour ?? 0);
   const canAfford = $derived(data.balance >= planRate);
 
   const filteredPods = $derived.by(() => {
@@ -192,7 +229,7 @@
 
     const ok = await confirm({
       title: 'Launch new VM?',
-      description: `Plan: ${selectedPlan} (${VM_PLAN_INFO[selectedPlan].cpu}, ${VM_PLAN_INFO[selectedPlan].memory}). Billing starts at ${planRate} credit/hour.`,
+      description: `Plan: ${selectedPlan} (${planMap[selectedPlan]?.cpu}, ${planMap[selectedPlan]?.memory}). Billing starts at ${planRate} credit/hour.`,
       confirmLabel: 'Launch',
       variant: 'default'
     });
@@ -364,34 +401,34 @@
       <div>
         <h3 class="mb-3 text-sm font-semibold">1. Resource plan</h3>
         <div class="grid gap-3 sm:grid-cols-3">
-          {#each Object.entries(VM_PLAN_INFO) as [plan, info] (plan)}
+          {#each planOptions as info (info.name)}
             <button
               type="button"
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all',
                 'hover:border-primary/50 hover:shadow-sm',
-                selectedPlan === plan
+                selectedPlan === info.name
                   ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
-              onclick={() => (selectedPlan = plan as VmPlan)}
+              onclick={() => (selectedPlan = info.name)}
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <div class="text-sm font-semibold capitalize">{plan}</div>
+                  <div class="text-sm font-semibold capitalize">{info.display_name}</div>
                   <p class="mt-0.5 text-xs leading-snug text-muted-foreground">
-                    {info.description}
+                    {info.workspace_gb ? `${info.workspace_gb} GB persistent workspace` : ''}
                   </p>
                 </div>
                 <div
                   class={cn(
                     'flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
-                    selectedPlan === plan
+                    selectedPlan === info.name
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border bg-card group-hover:border-primary/40'
                   )}
                 >
-                  {#if selectedPlan === plan}<Check class="size-3" />{/if}
+                  {#if selectedPlan === info.name}<Check class="size-3" />{/if}
                 </div>
               </div>
 
@@ -416,7 +453,7 @@
                 class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
               >
                 <Coins class="size-3.5" />
-                {info.rate} credit{info.rate === 1 ? '' : 's'}<span
+                {info.credits_per_hour} credit{info.credits_per_hour === 1 ? '' : 's'}<span
                   class="font-normal text-muted-foreground">/hr</span
                 >
               </div>

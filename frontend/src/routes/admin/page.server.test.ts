@@ -57,6 +57,12 @@ describe('admin page server load', () => {
       if (url.endsWith('/admin/audit-logs?limit=500')) {
         return { ok: true, json: async () => [{ id: 'audit-1' }] };
       }
+      if (url.endsWith('/issues/admin')) {
+        return { ok: true, json: async () => [{ id: 'issue-1' }] };
+      }
+      if (url.endsWith('/admin/plans')) {
+        return { ok: true, json: async () => [{ name: 'small' }] };
+      }
       return { ok: true, json: async () => [{ id: 'req-1' }] };
     });
 
@@ -74,7 +80,9 @@ describe('admin page server load', () => {
       users: [{ id: 'user-1' }],
       activeVms: [{ id: 'pod-1' }],
       auditLogs: [{ id: 'audit-1' }],
-      teacherRequests: [{ id: 'req-1' }]
+      teacherRequests: [{ id: 'req-1' }],
+      issues: [{ id: 'issue-1' }],
+      plans: [{ name: 'small' }]
     });
   });
 });

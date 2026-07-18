@@ -19,7 +19,10 @@
     Check,
     X,
     MessageSquareWarning,
-    CheckCircle2
+    CheckCircle2,
+    Plus,
+    Pencil,
+    Power
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { onMount, type SvelteComponent } from 'svelte';
@@ -94,6 +97,16 @@
     created_at: string;
     resolved_at: string | null;
   };
+  type Plan = {
+    name: string;
+    display_name: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    credits_per_hour: number;
+    workspace_gb: number;
+    is_active: boolean;
+  };
 
   let {
     data
@@ -112,6 +125,7 @@
       auditLogs: AuditLog[];
       teacherRequests: { id: string; email: string; name: string; created_at: string | null }[];
       issues: Issue[];
+      plans: Plan[];
     };
   } = $props();
 
@@ -243,6 +257,117 @@
       toast.error('Could not allocate credits', { id, description: msg });
     } finally {
       allocating = false;
+    }
+  }
+
+  // VM plan catalogue management (admin CRUD).
+  type PlanForm = {
+    name: string;
+    display_name: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    credits_per_hour: number | string;
+    workspace_gb: number | string;
+  };
+  let planDialogOpen = $state(false);
+  let planEditing = $state<string | null>(null); // plan name when editing, null = creating
+  let planSaving = $state(false);
+  let planBusy = $state<string | null>(null);
+  let planForm = $state<PlanForm>({
+    name: '',
+    display_name: '',
+    cpu: '',
+    memory: '',
+    disk: '',
+    credits_per_hour: '',
+    workspace_gb: ''
+  });
+
+  const planFormValid = $derived(
+    (planEditing !== null || /^[a-z0-9][a-z0-9-]*$/.test(planForm.name)) &&
+      planForm.display_name.trim().length > 0 &&
+      String(planForm.cpu).trim().length > 0 &&
+      String(planForm.memory).trim().length > 0 &&
+      String(planForm.disk).trim().length > 0 &&
+      Number(planForm.credits_per_hour) > 0 &&
+      Number(planForm.workspace_gb) > 0
+  );
+
+  function openCreatePlan() {
+    planEditing = null;
+    planForm = { name: '', display_name: '', cpu: '2', memory: '4Gi', disk: '10Gi', credits_per_hour: 2, workspace_gb: 50 };
+    planDialogOpen = true;
+  }
+  function openEditPlan(p: Plan) {
+    planEditing = p.name;
+    planForm = {
+      name: p.name,
+      display_name: p.display_name,
+      cpu: p.cpu,
+      memory: p.memory,
+      disk: p.disk,
+      credits_per_hour: p.credits_per_hour,
+      workspace_gb: p.workspace_gb
+    };
+    planDialogOpen = true;
+  }
+  async function savePlan() {
+    planSaving = true;
+    const tid = toast.loading('Saving plan…');
+    try {
+      const payload = {
+        display_name: planForm.display_name,
+        cpu: String(planForm.cpu),
+        memory: String(planForm.memory),
+        disk: String(planForm.disk),
+        credits_per_hour: Number(planForm.credits_per_hour),
+        workspace_gb: Number(planForm.workspace_gb)
+      };
+      if (planEditing) {
+        await api.put(`/admin/plans/${planEditing}`, payload);
+      } else {
+        await api.post('/admin/plans', { name: planForm.name, ...payload });
+      }
+      toast.success('Plan saved', { id: tid });
+      planDialogOpen = false;
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not save plan', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      planSaving = false;
+    }
+  }
+  async function deactivatePlan(p: Plan) {
+    if (
+      !confirm(
+        `Deactivate plan "${p.name}"? It will be hidden from new VM launches. Existing VMs keep billing at their current rate.`
+      )
+    )
+      return;
+    planBusy = p.name;
+    const tid = toast.loading('Deactivating…');
+    try {
+      await api.delete(`/admin/plans/${p.name}`);
+      toast.success('Plan deactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not deactivate', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      planBusy = null;
+    }
+  }
+  async function reactivatePlan(p: Plan) {
+    planBusy = p.name;
+    const tid = toast.loading('Reactivating…');
+    try {
+      await api.put(`/admin/plans/${p.name}`, { is_active: true });
+      toast.success('Plan reactivated', { id: tid });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not reactivate', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      planBusy = null;
     }
   }
 
@@ -488,6 +613,7 @@
           </span>
         {/if}
       </Tabs.Trigger>
+      <Tabs.Trigger value="plans"><Coins /> Plans</Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
     </Tabs.List>
@@ -1071,6 +1197,100 @@
       </div>
     </Tabs.Content>
 
+    <!-- Plans (VM plan catalogue) -->
+    <Tabs.Content value="plans" class="mt-5">
+      <Card class="animate-fade-up">
+        <div class="flex flex-wrap items-center justify-between gap-3 px-5 pb-3 pt-5">
+          <SectionHeader
+            icon={Coins}
+            title="VM plans"
+            description="Resources + pricing for every plan. Changes take effect on the next VM launch."
+          />
+          <Button size="sm" onclick={openCreatePlan}>
+            <Plus class="size-4" /> New plan
+          </Button>
+        </div>
+        <CardContent class="pt-0">
+          <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head class="w-40">Plan</Table.Head>
+                <Table.Head class="hidden w-48 md:table-cell">Resources</Table.Head>
+                <Table.Head class="w-28">Credits/hr</Table.Head>
+                <Table.Head class="hidden w-28 sm:table-cell">Workspace</Table.Head>
+                <Table.Head class="w-24">Status</Table.Head>
+                <Table.Head class="w-32 text-right">Actions</Table.Head>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {#each data.plans as p (p.name)}
+                <Table.Row class="group {p.is_active ? '' : 'opacity-60'}">
+                  <Table.Cell>
+                    <div class="font-medium">{p.display_name}</div>
+                    <div class="font-mono text-xs text-muted-foreground">{p.name}</div>
+                  </Table.Cell>
+                  <Table.Cell class="hidden font-mono text-xs text-muted-foreground md:table-cell">
+                    {p.cpu} CPU · {p.memory} · {p.disk}
+                  </Table.Cell>
+                  <Table.Cell class="font-mono">{p.credits_per_hour}</Table.Cell>
+                  <Table.Cell class="hidden font-mono text-xs sm:table-cell">{p.workspace_gb} GB</Table.Cell>
+                  <Table.Cell>
+                    {#if p.is_active}
+                      <Badge variant="outline" class="border-success/30 text-success">Active</Badge>
+                    {:else}
+                      <Badge variant="outline" class="text-muted-foreground">Inactive</Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="text-right">
+                    <div class="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onclick={() => openEditPlan(p)} aria-label={`Edit ${p.name}`}>
+                        <Pencil class="size-3.5" />
+                      </Button>
+                      {#if p.is_active}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onclick={() => deactivatePlan(p)}
+                          disabled={planBusy === p.name}
+                          aria-label={`Deactivate ${p.name}`}
+                        >
+                          {#if planBusy === p.name}
+                            <Spinner class="size-3.5" />
+                          {:else}
+                            <Power class="size-3.5 text-destructive" />
+                          {/if}
+                        </Button>
+                      {:else}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onclick={() => reactivatePlan(p)}
+                          disabled={planBusy === p.name}
+                          aria-label={`Reactivate ${p.name}`}
+                        >
+                          {#if planBusy === p.name}
+                            <Spinner class="size-3.5" />
+                          {:else}
+                            <Check class="size-3.5 text-success" />
+                          {/if}
+                        </Button>
+                      {/if}
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              {:else}
+                <Table.Row>
+                  <Table.Cell colspan={6} class="py-10 text-center text-sm text-muted-foreground">
+                    No plans yet. Create one to let students launch VMs.
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+            </Table.Body>
+          </Table.Root>
+        </CardContent>
+      </Card>
+    </Tabs.Content>
+
     <!-- Nodes -->
     <Tabs.Content value="nodes" class="mt-5">
       <div class="animate-fade-up space-y-3">
@@ -1321,6 +1541,64 @@
         <Spinner class="size-4" /> Allocating…
       {:else}
         <Coins class="size-4" /> Allocate
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<!-- Plan editor (create / edit a VM plan) -->
+<Dialog
+  bind:open={planDialogOpen}
+  title={planEditing ? `Edit plan “${planEditing}”` : 'New plan'}
+  description="Resources and pricing apply to VMs launched after saving."
+>
+  <div class="space-y-4">
+    {#if !planEditing}
+      <div>
+        <Label for="plan-name">Key</Label>
+        <Input id="plan-name" bind:value={planForm.name} placeholder="gpu-large" class="mt-1 font-mono" />
+        <p class="mt-1 text-xs text-muted-foreground">
+          Lowercase letters, digits and hyphens. Immutable once created.
+        </p>
+      </div>
+    {/if}
+    <div>
+      <Label for="plan-display">Display name</Label>
+      <Input id="plan-display" bind:value={planForm.display_name} placeholder="GPU Large" class="mt-1" />
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+        <Label for="plan-cpu">CPU</Label>
+        <Input id="plan-cpu" bind:value={planForm.cpu} placeholder="4" class="mt-1 font-mono" />
+      </div>
+      <div>
+        <Label for="plan-mem">Memory</Label>
+        <Input id="plan-mem" bind:value={planForm.memory} placeholder="8Gi" class="mt-1 font-mono" />
+      </div>
+      <div>
+        <Label for="plan-disk">Disk</Label>
+        <Input id="plan-disk" bind:value={planForm.disk} placeholder="20Gi" class="mt-1 font-mono" />
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <Label for="plan-rate">Credits / hour</Label>
+        <Input id="plan-rate" type="number" step="0.5" min="0.5" bind:value={planForm.credits_per_hour} class="mt-1 font-mono" />
+      </div>
+      <div>
+        <Label for="plan-ws">Workspace (GB)</Label>
+        <Input id="plan-ws" type="number" step="1" min="1" bind:value={planForm.workspace_gb} class="mt-1 font-mono" />
+      </div>
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (planDialogOpen = false)}>Cancel</Button>
+    <Button onclick={savePlan} disabled={planSaving || !planFormValid}>
+      {#if planSaving}
+        <Spinner class="size-4" /> Saving…
+      {:else}
+        <Check class="size-4" /> Save plan
       {/if}
     </Button>
   {/snippet}

@@ -39,7 +39,7 @@ describe('pods page server load', () => {
     });
   });
 
-  it('returns pod data, balance, and availability', async () => {
+  it('returns pod data, balance, plans, and availability', async () => {
     const { load } = await importPage('10.0.0.5');
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/pods/')) {
@@ -47,6 +47,15 @@ describe('pods page server load', () => {
       }
       if (url.endsWith('/credits/balance')) {
         return { ok: true, json: async () => ({ balance: 7 }) };
+      }
+      if (url.endsWith('/pods/plans')) {
+        return {
+          ok: true,
+          json: async () => ({
+            medium: { display_name: 'Medium', cpu: '2', memory: '4Gi', disk: '10Gi', credits_per_hour: 2, workspace_gb: 50 },
+            small: { display_name: 'Small', cpu: '1', memory: '2Gi', disk: '5Gi', credits_per_hour: 1, workspace_gb: 20 }
+          })
+        };
       }
       return { ok: true, json: async () => ({ available: true }) };
     });
@@ -60,6 +69,11 @@ describe('pods page server load', () => {
     expect(result).toEqual({
       pods: [{ id: 'pod-1' }],
       balance: 7,
+      // Catalogue map is flattened to an array sorted by credits_per_hour.
+      plans: [
+        { name: 'small', display_name: 'Small', cpu: '1', memory: '2Gi', disk: '5Gi', credits_per_hour: 1, workspace_gb: 20 },
+        { name: 'medium', display_name: 'Medium', cpu: '2', memory: '4Gi', disk: '10Gi', credits_per_hour: 2, workspace_gb: 50 }
+      ],
       availability: { available: true },
       nodeIp: '10.0.0.5'
     });
