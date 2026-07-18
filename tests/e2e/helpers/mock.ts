@@ -6,6 +6,10 @@ type MockSetup = {
     expired?: boolean;
     refresh_valid?: boolean;
   };
+  terminal?: {
+    disconnect_on_connect?: boolean;
+    disconnect_after_ms?: number;
+  };
   balances?: Record<string, number>;
   availability?: {
     cpu?: { total_cores?: number | null; used_cores?: number | null; free_cores?: number | null };

@@ -118,6 +118,10 @@ function newState() {
       expired: false,
       refresh_valid: true
     },
+    terminal: {
+      disconnect_on_connect: false,
+      disconnect_after_ms: 0
+    },
     availability: {
       cpu: { total_cores: 8, used_cores: 2, free_cores: 6 },
       memory: { total_gib: 32, used_gib: 8, free_gib: 24 },
@@ -220,6 +224,9 @@ function findUser(state, id) {
 function applySetup(state, payload) {
   if (payload.session) {
     state.session = { ...state.session, ...payload.session };
+  }
+  if (payload.terminal) {
+    state.terminal = { ...state.terminal, ...payload.terminal };
   }
   if (payload.balances) {
     for (const [userId, balance] of Object.entries(payload.balances)) {
@@ -580,6 +587,10 @@ const server = http.createServer(async (req, res) => {
       template: input.template || 'ubuntu'
     });
     state.pods.unshift(pod);
+    const actor = findUser(state, user.id);
+    if (actor) {
+      actor.balance = Math.max(0, actor.balance - rate);
+    }
     state.transactions.unshift({
       id: `tx-${state.nextTx++}`,
       account_id: user.id,
@@ -759,6 +770,15 @@ server.on('upgrade', (req, socket) => {
 
   let buffer = '';
   writeTerminalFrame(socket, 'Connected!\r\nroot@hopper:/workspace# ');
+  if (state.terminal.disconnect_on_connect) {
+    const delay = Number(state.terminal.disconnect_after_ms || 0);
+    state.terminal.disconnect_on_connect = false;
+    setTimeout(() => {
+      try {
+        socket.end();
+      } catch {}
+    }, Number.isFinite(delay) ? delay : 0);
+  }
 
   socket.on('data', (chunk) => {
     const input = decodeWsFrame(chunk);

@@ -10,7 +10,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reportsDirectory: '../coverage/frontend',
-      reporter: ['text', 'json-summary', 'lcov'],
+      reporter: ['text', 'json-summary', 'lcov', 'html'],
       include: ['src/lib/**/*.ts', 'src/routes/**/*.ts'],
       exclude: [
         'src/**/*.test.ts',
