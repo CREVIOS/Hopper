@@ -869,12 +869,21 @@ async def websocket_terminal(
         await _reconcile_state(db, session)
 
     if not session or session.user_id != payload.sub or not session.ssh_port or session.state != "running":
-        real = session.state if session else "unknown"
-        await _safe_send(
-            websocket,
-            f"\r\nVM is {real} — the terminal needs a running VM. "
-            "If it stays pending, the node can't schedule it (e.g. disk-pressure).\r\n",
-        )
+        if session and session.user_id == payload.sub and session.state == "running":
+            # Running but no SSH endpoint recorded yet (orchestrator hasn't
+            # reported the port back). Distinct from the "not running" case —
+            # saying "VM is running, needs a running VM" would be nonsense.
+            msg = (
+                "\r\nSSH is not available for this VM yet — its terminal endpoint "
+                "hasn't come up. Please retry in a moment.\r\n"
+            )
+        else:
+            real = session.state if session else "unknown"
+            msg = (
+                f"\r\nVM is {real} — the terminal needs a running VM. "
+                "If it stays pending, the node can't schedule it (e.g. disk-pressure).\r\n"
+            )
+        await _safe_send(websocket, msg)
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
