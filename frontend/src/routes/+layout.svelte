@@ -73,7 +73,7 @@
   const isLogin = $derived(page.url.pathname === '/login');
 </script>
 
-<ModeWatcher defaultMode="system" />
+<ModeWatcher defaultMode="light" />
 <Toaster />
 <ConfirmHost />
 

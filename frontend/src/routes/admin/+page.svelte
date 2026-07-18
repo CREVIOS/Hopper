@@ -780,7 +780,7 @@
                   <Table.Head>User</Table.Head>
                   <Table.Head class="hidden w-56 md:table-cell">Email</Table.Head>
                   <Table.Head class="hidden w-28 sm:table-cell">Requested</Table.Head>
-                  <Table.Head class="w-44 text-right">Decision</Table.Head>
+                  <Table.Head class="w-56 text-right">Decision</Table.Head>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -799,7 +799,7 @@
                     <Table.Cell class="hidden w-28 text-muted-foreground sm:table-cell">
                       {r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}
                     </Table.Cell>
-                    <Table.Cell class="w-44 text-right">
+                    <Table.Cell class="w-56 text-right">
                       <div class="flex items-center justify-end gap-2">
                         <Button variant="outline" size="sm" disabled={processingReq === r.id} onclick={() => rejectTeacher(r)}>
                           <X class="size-3.5" /> Reject
