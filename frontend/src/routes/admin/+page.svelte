@@ -49,6 +49,7 @@
   import PageTitle from '$lib/components/PageTitle.svelte';
   import Avatar from '$lib/ui/avatar.svelte';
   import { api, ApiError } from '$lib/api/client';
+  import { confirm } from '$lib/confirm.svelte';
   import { relTime, shortId } from '$lib/utils';
 
   type ActiveVm = {
@@ -348,12 +349,14 @@
     }
   }
   async function deactivatePlan(p: Plan) {
-    if (
-      !confirm(
-        `Deactivate plan "${p.name}"? It will be hidden from new VM launches. Existing VMs keep billing at their current rate.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Deactivate plan "${p.name}"?`,
+      description:
+        'It will be hidden from new VM launches. Existing VMs keep billing at their current rate.',
+      confirmLabel: 'Deactivate',
+      variant: 'destructive'
+    });
+    if (!ok) return;
     planBusy = p.name;
     const tid = toast.loading('Deactivating…');
     try {
@@ -447,7 +450,13 @@
     }
   }
   async function deactivateImage(i: Image) {
-    if (!confirm(`Deactivate template "${i.template}"? It will be hidden from new VM launches.`)) return;
+    const ok = await confirm({
+      title: `Deactivate template "${i.template}"?`,
+      description: 'It will be hidden from new VM launches.',
+      confirmLabel: 'Deactivate',
+      variant: 'destructive'
+    });
+    if (!ok) return;
     imageBusy = i.template;
     const tid = toast.loading('Deactivating…');
     try {
