@@ -132,6 +132,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+            # Pull VM base images from GHCR so every node gets them without a
+            # manual `k3s ctr images import`. Published by the vm-images workflow.
+            - name: HOPPER_VM_IMAGE_PREFIX
+              value: "ghcr.io/crevios/hopper-"
           # Readiness = deep dependency checks (/readyz probes DB + NATS and
           # reports orchestrator health); a degraded pod is pulled from the
           # Service without being killed. Liveness stays on the shallow
