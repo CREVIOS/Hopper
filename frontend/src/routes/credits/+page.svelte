@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    Coins,
     TrendingDown,
     TrendingUp,
     Search,
@@ -30,6 +29,7 @@
   import StatCard from '$lib/components/StatCard.svelte';
   import SpendChart from '$lib/components/SpendChart.svelte';
   import PageTitle from '$lib/components/PageTitle.svelte';
+  import Donut from '$lib/components/Donut.svelte';
   import { relTime } from '$lib/utils';
 
   let {
@@ -204,6 +204,10 @@
   const balanceTone = $derived(
     data.balance > 50 ? 'success' : data.balance > 10 ? 'warning' : 'destructive'
   );
+  // Share of received credits already spent — powers the hero gauge ring.
+  const spendPct = $derived(
+    totals.credited > 0 ? Math.min(100, (totals.vmSpend / totals.credited) * 100) : 0
+  );
   const toneText: Record<string, string> = {
     success: 'text-success',
     warning: 'text-warning',
@@ -230,33 +234,41 @@
   <!-- Stat band: balance hero on the left, a 2×2 metric grid filling the right. -->
   <section class="animate-fade-up grid gap-4 lg:grid-cols-[1.05fr_1.4fr]">
     <div
-      class="relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border bg-card p-6"
+      class="relative flex items-center gap-6 overflow-hidden rounded-2xl border border-border bg-card p-6"
       style="background-image: radial-gradient(110% 120% at 100% 0%, {toneGlow[balanceTone]} 0%, transparent 55%);"
     >
       <span class={`absolute inset-y-0 left-0 w-1 ${toneRail[balanceTone]} opacity-70`}></span>
-      <div class="flex items-center justify-between">
+      <div class="min-w-0 flex-1">
         <p class="font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
           Available balance
         </p>
-        <span class="grid size-9 place-items-center rounded-lg bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/60">
-          <Coins class="size-4" strokeWidth={1.75} />
-        </span>
+        <div class="mt-5 flex items-end gap-2.5">
+          <span class={`font-mono text-5xl font-bold leading-none tracking-tight tabular-nums ${toneText[balanceTone]}`}>
+            {data.balance.toFixed(2)}
+          </span>
+          <span class="pb-1 text-sm font-medium text-muted-foreground">credits</span>
+        </div>
+        <p class="mt-3 text-sm text-muted-foreground">
+          {#if balanceTone === 'destructive'}
+            Running low. Top up to keep your VMs alive.
+          {:else if balanceTone === 'warning'}
+            Getting low. Plan a top-up soon.
+          {:else}
+            Healthy balance for your active VMs.
+          {/if}
+        </p>
       </div>
-      <div class="mt-6 flex items-end gap-2.5">
-        <span class={`font-mono text-5xl font-bold leading-none tracking-tight tabular-nums sm:text-[3.75rem] ${toneText[balanceTone]}`}>
-          {data.balance.toFixed(2)}
-        </span>
-        <span class="pb-1 text-sm font-medium text-muted-foreground">credits</span>
+      <div class="hidden shrink-0 flex-col items-center gap-1.5 sm:flex">
+        <Donut
+          percent={spendPct}
+          size={116}
+          thickness={12}
+          accent="hsl(var(--primary))"
+          centerValue={`${Math.round(spendPct)}%`}
+          centerLabel="spent"
+        />
+        <span class="text-[11px] text-muted-foreground">of received</span>
       </div>
-      <p class="mt-3 text-sm text-muted-foreground">
-        {#if balanceTone === 'destructive'}
-          Running low. Top up to keep your VMs alive.
-        {:else if balanceTone === 'warning'}
-          Getting low. Plan a top-up soon.
-        {:else}
-          Healthy balance for your active VMs.
-        {/if}
-      </p>
     </div>
 
     <div class="grid grid-cols-2 gap-3">
@@ -383,11 +395,13 @@
       </Card>
     {:else}
       <Card class="overflow-hidden">
-        <!-- Fixed header lives OUTSIDE the scroll area so the scrollbar only
-             spans the body, never the column names. Both tables use table-fixed
-             + matching widths + a stable scrollbar gutter so columns line up. -->
-        <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
-          <Table.Header class="bg-muted/40">
+        <!-- One table so header cells and body cells share the exact same
+             column layout — no drift. The header sticks while the body scrolls. -->
+        <Table.Root
+          class="table-fixed"
+          containerClass="max-h-[34rem] overflow-y-auto [scrollbar-gutter:stable]"
+        >
+          <Table.Header class="sticky top-0 z-10 bg-muted">
             <Table.Row class="hover:bg-transparent">
               <Table.Head>Activity</Table.Head>
               <Table.Head class="hidden w-44 md:table-cell">Source</Table.Head>
@@ -395,12 +409,6 @@
               <Table.Head class="w-28 text-right">Amount</Table.Head>
             </Table.Row>
           </Table.Header>
-        </Table.Root>
-        <!-- Scrolling body: bounded height; paginated at {PER_PAGE}/page. -->
-        <Table.Root
-          class="table-fixed"
-          containerClass="max-h-[34rem] [scrollbar-gutter:stable]"
-        >
           <Table.Body>
             {#each ['today', 'yesterday', 'week', 'older'] as g (g)}
               {#if bucketed[g as Group].length > 0}

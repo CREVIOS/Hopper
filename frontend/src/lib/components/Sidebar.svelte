@@ -36,12 +36,17 @@
     role?: 'admin' | 'professor';
   };
 
-  const items: NavItem[] = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/pods', label: 'Virtual Machines', icon: Server },
-    { href: '/pods/queue', label: 'Queue', icon: ListOrdered },
-    { href: '/credits', label: 'Credits', icon: CreditCard },
-    { href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound }
+  const sections: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'Platform',
+      items: [
+        { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { href: '/pods', label: 'Virtual Machines', icon: Server },
+        { href: '/pods/queue', label: 'Queue', icon: ListOrdered }
+      ]
+    },
+    { label: 'Billing', items: [{ href: '/credits', label: 'Credits', icon: CreditCard }] },
+    { label: 'Account', items: [{ href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound }] }
   ];
 
   const adminItems: NavItem[] = [
@@ -55,6 +60,17 @@
   // therefore see only the Teaching console, never the admin panel.
   const visibleAdminItems = $derived(
     adminItems.filter((i) => !i.role || i.role === user?.role)
+  );
+
+  // Initials for the footer avatar — first letters of up to two name parts.
+  const initials = $derived(
+    (user?.name ?? user?.email ?? 'U')
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
   );
 
   function isActive(href: string): boolean {
@@ -95,9 +111,12 @@
         />
       </button>
     {:else}
-      <a href="/dashboard" class="group/brand flex min-w-0 items-center gap-2" onclick={onNavigate}>
-        <HopperLogo size={28} />
-        <span class="truncate text-lg font-bold tracking-tight">Hopper</span>
+      <a href="/dashboard" class="group/brand flex min-w-0 items-center gap-2.5" onclick={onNavigate}>
+        <HopperLogo size={30} />
+        <div class="flex min-w-0 flex-col leading-none">
+          <span class="truncate text-[15px] font-bold tracking-tight">Hopper</span>
+          <span class="mt-1 truncate text-[11px] font-medium text-muted-foreground">Cloud VM Platform</span>
+        </div>
       </a>
       {#if onToggleCollapse}
         <button
@@ -113,96 +132,76 @@
     {/if}
   </div>
 
-  <nav class={cn('flex-1 space-y-6 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')}>
+  {#snippet navLink(item: NavItem)}
+    <li>
+      <a
+        href={item.href}
+        onclick={onNavigate}
+        title={collapsed ? item.label : undefined}
+        class={cn(
+          'group flex items-center rounded-md text-sm font-medium transition-colors',
+          collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2',
+          isActive(item.href)
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
+        )}
+      >
+        <item.icon
+          class={cn(
+            'size-4 shrink-0 transition-transform duration-200 group-hover:scale-110',
+            isActive(item.href) && 'scale-110'
+          )}
+        />
+        {#if !collapsed}<span class="truncate">{item.label}</span>{/if}
+      </a>
+    </li>
+  {/snippet}
+
+  {#snippet navGroup(label: string, groupItems: NavItem[])}
     <div>
       {#if collapsed}
         <div class="mx-2 mb-2 h-px bg-sidebar-border"></div>
       {:else}
-        <div class="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Workspace
+        <div class="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
         </div>
       {/if}
       <ul class="space-y-1">
-        {#each items as item (item.href)}
-          <li>
-            <a
-              href={item.href}
-              onclick={onNavigate}
-              title={collapsed ? item.label : undefined}
-              class={cn(
-                'group flex items-center rounded-md text-sm font-medium transition-colors',
-                collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2',
-                isActive(item.href)
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
-              )}
-            >
-              <item.icon
-                class={cn(
-                  'size-4 shrink-0 transition-transform duration-200 group-hover:scale-110',
-                  isActive(item.href) && 'scale-110'
-                )}
-              />
-              {#if !collapsed}<span class="truncate">{item.label}</span>{/if}
-            </a>
-          </li>
+        {#each groupItems as item (item.href)}
+          {@render navLink(item)}
         {/each}
       </ul>
     </div>
+  {/snippet}
 
-    {#if isAdmin}
-      <div>
-        {#if collapsed}
-          <div class="mx-2 mb-2 h-px bg-sidebar-border"></div>
-        {:else}
-          <div class="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Manage
-          </div>
-        {/if}
-        <ul class="space-y-1">
-          {#each visibleAdminItems as item (item.href)}
-            <li>
-              <a
-                href={item.href}
-                onclick={onNavigate}
-                title={collapsed ? item.label : undefined}
-                class={cn(
-                  'group flex items-center rounded-md text-sm font-medium transition-colors',
-                  collapsed ? 'justify-center p-2.5' : 'gap-2.5 px-2.5 py-2',
-                  isActive(item.href)
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-sidebar-muted hover:text-foreground'
-                )}
-              >
-                <item.icon
-                class={cn(
-                  'size-4 shrink-0 transition-transform duration-200 group-hover:scale-110',
-                  isActive(item.href) && 'scale-110'
-                )}
-              />
-                {#if !collapsed}<span class="truncate">{item.label}</span>{/if}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </div>
+  <nav class={cn('flex-1 space-y-5 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')}>
+    {#each sections as sec (sec.label)}
+      {@render navGroup(sec.label, sec.items)}
+    {/each}
+    {#if isAdmin && visibleAdminItems.length}
+      {@render navGroup('Administration', visibleAdminItems)}
     {/if}
   </nav>
 
   {#if collapsed}
-    <div
-      class="flex items-center justify-center border-t border-sidebar-border p-4"
-      title="Cluster online · Self-hosted on Kubernetes"
-    >
-      <span class="size-2 animate-pulse rounded-full bg-success"></span>
+    <div class="flex items-center justify-center border-t border-sidebar-border p-3" title={user?.name ?? 'User'}>
+      <span class="relative grid size-9 place-items-center rounded-full bg-muted text-sm font-semibold text-foreground">
+        {initials}
+        <span class="absolute -bottom-0.5 -right-0.5 size-2.5 animate-pulse rounded-full border-2 border-sidebar bg-success"></span>
+      </span>
     </div>
   {:else}
-    <div class="border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-      <div class="flex items-center gap-1.5">
-        <span class="size-2 animate-pulse rounded-full bg-success"></span>
-        <span>Cluster online</span>
+    <div class="border-t border-sidebar-border p-3">
+      <div class="flex items-center gap-2.5 rounded-lg p-2">
+        <span class="relative grid size-9 shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold text-foreground">
+          {initials}
+          <span class="absolute -bottom-0.5 -right-0.5 size-2.5 animate-pulse rounded-full border-2 border-sidebar bg-success"></span>
+        </span>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-foreground">{user?.name ?? 'User'}</p>
+          <p class="truncate text-[11px] text-muted-foreground">{user?.email ?? 'Cluster online'}</p>
+        </div>
       </div>
-      <p class="mt-1 text-[11px] opacity-70">Self-hosted on Kubernetes</p>
     </div>
   {/if}
 </aside>

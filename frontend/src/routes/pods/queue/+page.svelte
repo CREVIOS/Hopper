@@ -5,7 +5,8 @@
     XCircle,
     Cpu,
     MemoryStick,
-    Info
+    Info,
+    Server
   } from 'lucide-svelte';
   import { onMount, untrack } from 'svelte';
   import { invalidateAll, goto } from '$app/navigation';
@@ -18,7 +19,7 @@
     type QueueEntry
   } from '$lib/types';
   import { api, ApiError } from '$lib/api/client';
-  import { Button, Card, CardContent, Table, Badge } from '$lib/ui';
+  import { Button, Card, CardContent, Badge } from '$lib/ui';
   import PageTitle from '$lib/components/PageTitle.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import { confirm } from '$lib/confirm.svelte';
@@ -136,74 +137,66 @@
       </p>
     </div>
 
-    <Card class="overflow-hidden">
-      <Table.Root containerClass="[scrollbar-gutter:stable]">
-        <Table.Header class="bg-muted/40">
-          <Table.Row class="hover:bg-transparent">
-            <Table.Head class="w-20">Position</Table.Head>
-            <Table.Head>Plan</Table.Head>
-            <Table.Head class="hidden sm:table-cell">Image</Table.Head>
-            <Table.Head class="hidden text-right md:table-cell">Requested</Table.Head>
-            <Table.Head class="w-32">Status</Table.Head>
-            <Table.Head class="w-28 text-right">Action</Table.Head>
-          </Table.Row>
-        </Table.Header>
-        <Table.Body>
-          {#each entries as entry (entry.id)}
-            <Table.Row>
-              <Table.Cell>
-                <span
-                  class="inline-flex size-8 items-center justify-center rounded-full bg-primary/10 font-mono text-sm font-semibold tabular-nums text-primary"
-                >
-                  {entry.position}
-                </span>
-              </Table.Cell>
-              <Table.Cell>
-                <div class="text-sm font-medium">{planLabel(entry.plan)}</div>
-                {#if VM_PLAN_INFO[entry.plan as VmPlan]}
-                  <div
-                    class="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground"
-                  >
-                    <span class="inline-flex items-center gap-1">
-                      <Cpu class="size-3" />
-                      {VM_PLAN_INFO[entry.plan as VmPlan].cpu}
-                    </span>
-                    <span class="inline-flex items-center gap-1">
-                      <MemoryStick class="size-3" />
-                      {VM_PLAN_INFO[entry.plan as VmPlan].memory}
-                    </span>
-                  </div>
+    <div class="space-y-3">
+      {#each entries as entry (entry.id)}
+        {@const starting = entry.state !== 'queued'}
+        {@const info = VM_PLAN_INFO[entry.plan as VmPlan]}
+        <Card
+          class={`flex items-center gap-4 p-4 transition-colors sm:gap-5 ${starting ? 'border-primary/50 ring-1 ring-primary/15' : ''}`}
+        >
+          <!-- Position ring -->
+          <span
+            class={`grid size-11 shrink-0 place-items-center rounded-full font-mono text-sm font-bold tabular-nums ${
+              starting ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+            }`}
+          >
+            {entry.position}
+          </span>
+
+          <!-- VM info -->
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-foreground">
+              <Server class="size-4" />
+            </span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold">{planLabel(entry.plan)}</div>
+              <div class="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span class="truncate">{templateLabel(entry.template)}</span>
+                {#if info}
+                  <span class="inline-flex items-center gap-1"><Cpu class="size-3" /> {info.cpu}</span>
+                  <span class="inline-flex items-center gap-1"><MemoryStick class="size-3" /> {info.memory}</span>
                 {/if}
-              </Table.Cell>
-              <Table.Cell class="hidden sm:table-cell">
-                <span class="text-sm text-muted-foreground">
-                  {templateLabel(entry.template)}
-                </span>
-              </Table.Cell>
-              <Table.Cell class="hidden text-right md:table-cell">
-                <span class="whitespace-nowrap text-xs text-muted-foreground">
-                  {relTime(new Date(entry.created_at))}
-                </span>
-              </Table.Cell>
-              <Table.Cell>
-                <StatusBadge state={entry.state} />
-              </Table.Cell>
-              <Table.Cell class="text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  class="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={entry.state !== 'queued' || cancelling === entry.id}
-                  onclick={() => cancelEntry(entry)}
-                >
-                  <XCircle class="size-4" />
-                  Cancel
-                </Button>
-              </Table.Cell>
-            </Table.Row>
-          {/each}
-        </Table.Body>
-      </Table.Root>
-    </Card>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status + progress / wait -->
+          <div class="hidden w-48 shrink-0 flex-col items-end gap-2 sm:flex">
+            <StatusBadge state={entry.state} />
+            {#if starting}
+              <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div class="h-full w-2/3 animate-pulse rounded-full bg-primary"></div>
+              </div>
+            {:else}
+              <span class="whitespace-nowrap text-xs text-muted-foreground">
+                Requested {relTime(new Date(entry.created_at))}
+              </span>
+            {/if}
+          </div>
+
+          <!-- Cancel -->
+          <Button
+            variant="ghost"
+            size="sm"
+            class="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={entry.state !== 'queued' || cancelling === entry.id}
+            onclick={() => cancelEntry(entry)}
+          >
+            <XCircle class="size-4" />
+            <span class="hidden sm:inline">Cancel</span>
+          </Button>
+        </Card>
+      {/each}
+    </div>
   {/if}
 </div>

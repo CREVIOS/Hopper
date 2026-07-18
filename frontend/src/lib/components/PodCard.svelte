@@ -84,9 +84,10 @@
     <span>Created {relTime(pod.created_at)}</span>
     {#if href}
       <span
-        class="inline-flex items-center gap-1 font-medium text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        class="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground"
       >
-        Open <ArrowUpRight class="size-3" />
+        {isRunning ? 'Connect' : 'Open'}
+        <ArrowUpRight class="size-3" />
       </span>
     {/if}
   </div>
