@@ -25,13 +25,13 @@ from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
 from app.models.vm_queue_entry import VmQueueEntry
-from app.schemas.pod import CreatePodRequest, PodResponse, VM_PLAN_RESOURCES
+from app.schemas.pod import CreatePodRequest, PodResponse
 from app.schemas.user import TokenPayload
 from app.middleware.auth import verify_token
 from app.services.credit_service import get_balance
 from app.services.notification_service import notify
 from app.services.orchestrator_client import orchestrator_client
-from app.services import port_forward, vm_queue, vm_scheduler
+from app.services import plan_service, port_forward, vm_queue, vm_scheduler
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -69,16 +69,19 @@ def _session_to_response(s: PodSession) -> PodResponse:
 
 
 @router.get("/plans")
-async def list_plans():
-    """List available VM plans with their resource allocations and pricing."""
+async def list_plans(db: AsyncSession = Depends(get_db)):
+    """List available VM plans (admin-managed catalogue) with resources + pricing."""
+    plans = await plan_service.list_plans(db)
     return {
-        plan.value: {
-            "cpu": res["cpu"],
-            "memory": res["memory"],
-            "disk": res["disk"],
-            "credits_per_hour": res["credits_per_hour"],
+        p.name: {
+            "display_name": p.display_name,
+            "cpu": p.cpu,
+            "memory": p.memory,
+            "disk": p.disk,
+            "credits_per_hour": float(p.credits_per_hour),
+            "workspace_gb": p.workspace_gb,
         }
-        for plan, res in VM_PLAN_RESOURCES.items()
+        for p in plans
     }
 
 
@@ -123,13 +126,21 @@ async def create_pod(
             detail="Only teachers and admins can place VMs in a network group",
         )
 
+    # Resolve the plan from the admin-managed catalogue (active plans only).
+    plan_row = await plan_service.get_plan(db, body.plan, active_only=True)
+    if plan_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown or unavailable plan: {body.plan}",
+        )
+    credits_per_hour = float(plan_row.credits_per_hour)
+
     # Check credit balance — need at least 1 hour's worth
-    resources = VM_PLAN_RESOURCES[body.plan]
     balance = await get_balance(db, current_user.sub)
-    if balance < resources["credits_per_hour"]:
+    if balance < credits_per_hour:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Insufficient credits. Need {resources['credits_per_hour']}, have {balance:.2f}",
+            detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
         )
 
     # Check max concurrent pods per user (limit to 3)
@@ -158,15 +169,15 @@ async def create_pod(
     pod_id: str | None = None
     if nodes is not None:
         pod_id = await vm_scheduler.reserve_sync_slot(
-            db, nodes, current_user.sub, body.plan.value, image,
-            resources["cpu"], resources["memory"],
+            db, nodes, current_user.sub, body.plan, image,
+            plan_row.cpu, plan_row.memory,
             network_group=body.network_group,
         )
         if pod_id is None:
             # Cluster full, or someone is already waiting -> join the queue.
             try:
                 entry = await vm_queue.enqueue_vm_request(
-                    db, current_user, body.plan.value, body.template,
+                    db, current_user, body.plan, body.template,
                     network_group=body.network_group,
                 )
             except vm_queue.EnqueueError as exc:
@@ -191,10 +202,10 @@ async def create_pod(
         session = PodSession(
             id=pod_id,
             user_id=current_user.sub,
-            plan=body.plan.value,
+            plan=body.plan,
             image=image,
-            cpu=resources["cpu"],
-            memory=resources["memory"],
+            cpu=plan_row.cpu,
+            memory=plan_row.memory,
             namespace="hopper",
             pod_name=f"vm-{pod_id[:8]}",
             state="pending",
@@ -210,10 +221,10 @@ async def create_pod(
     try:
         resp = await orchestrator_client.create_pod(
             user_id=current_user.sub,
-            plan=body.plan.value,
+            plan=body.plan,
             image=image,
-            cpu=resources["cpu"],
-            memory=resources["memory"],
+            cpu=plan_row.cpu,
+            memory=plan_row.memory,
             pod_id=pod_id,
             network_group=body.network_group or "",
         )

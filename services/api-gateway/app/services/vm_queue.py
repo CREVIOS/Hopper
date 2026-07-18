@@ -19,11 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import (
     DEFAULT_TEMPLATE,
-    VM_PLAN_RESOURCES,
     VM_TEMPLATE_IMAGES,
-    VmPlan,
 )
 from app.schemas.user import TokenPayload
+from app.services import plan_service
 from app.services.credit_service import get_balance
 
 logger = logging.getLogger(__name__)
@@ -48,13 +47,6 @@ class EnqueueError(Exception):
         self.detail = detail
 
 
-def _resolve_plan(plan: str) -> VmPlan:
-    try:
-        return VmPlan(plan)
-    except ValueError as exc:
-        raise EnqueueError(422, f"Unknown VM plan: {plan}") from exc
-
-
 def _resolve_image(template: str) -> str:
     """Resolve a friendly template key to a container image tag.
 
@@ -76,25 +68,27 @@ async def enqueue_vm_request(
     queue. The plan's resource limits are frozen onto the entry so the
     scheduler admits exactly what was requested even if plan defaults change.
     """
-    vm_plan = _resolve_plan(plan)
-    resources = VM_PLAN_RESOURCES[vm_plan]
+    plan_row = await plan_service.get_plan(db, plan, active_only=True)
+    if plan_row is None:
+        raise EnqueueError(422, f"Unknown VM plan: {plan}")
+    credits_per_hour = float(plan_row.credits_per_hour)
 
     balance = await get_balance(db, user.sub)
-    if balance < resources["credits_per_hour"]:
+    if balance < credits_per_hour:
         raise EnqueueError(
             402,
-            f"Insufficient credits. Need {resources['credits_per_hour']}, "
+            f"Insufficient credits. Need {credits_per_hour}, "
             f"have {balance:.2f}",
         )
 
     entry = VmQueueEntry(
         id=str(uuid.uuid4()),
         user_id=user.sub,
-        plan=vm_plan.value,
+        plan=plan,
         template=template,
         image=_resolve_image(template),
-        cpu=resources["cpu"],
-        memory=resources["memory"],
+        cpu=plan_row.cpu,
+        memory=plan_row.memory,
         state="queued",
         network_group=network_group,
     )

@@ -42,6 +42,29 @@ def _no_cluster_capacity(monkeypatch):
     monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
 
 
+@pytest.fixture(autouse=True)
+def _stub_plan_catalogue(monkeypatch):
+    """create_pod/list_plans resolve resources from the DB-backed plan catalogue
+    (plan_service). Stub it with the built-in small/medium/large so these router
+    unit tests stay hermetic. Tests still stub get_balance + orchestrator."""
+    from types import SimpleNamespace
+
+    plans = {
+        "small": SimpleNamespace(name="small", display_name="Small", cpu="1", memory="2Gi", disk="5Gi", credits_per_hour=1.0, workspace_gb=20),
+        "medium": SimpleNamespace(name="medium", display_name="Medium", cpu="2", memory="4Gi", disk="10Gi", credits_per_hour=2.0, workspace_gb=50),
+        "large": SimpleNamespace(name="large", display_name="Large", cpu="4", memory="8Gi", disk="20Gi", credits_per_hour=4.0, workspace_gb=100),
+    }
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return plans.get(name)
+
+    async def fake_list_plans(db, *, include_inactive=False):
+        return list(plans.values())
+
+    monkeypatch.setattr("app.routers.pods.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.pods.plan_service.list_plans", fake_list_plans)
+
+
 def _payload() -> TokenPayload:
     return TokenPayload(
         sub="user-1",
@@ -184,7 +207,7 @@ def test_session_to_response_keeps_connection_details_for_running_pod():
 
 
 async def test_list_plans_returns_all_vm_plans():
-    result = await list_plans()
+    result = await list_plans(db=object())
 
     assert set(result) == {"small", "medium", "large"}
     assert result["small"]["credits_per_hour"] == 1.0
