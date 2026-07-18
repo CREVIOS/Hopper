@@ -61,6 +61,18 @@ services:
       postgres:
         condition: service_healthy
 
+  # Local mail-catcher: captures signup/verification/reset emails so the flow is
+  # testable without a real mail server. SMTP on :1025 (plain), web inbox on
+  # :8025. Point the API at it with HOPPER_SMTP_HOST=localhost /
+  # HOPPER_SMTP_PORT=1025 / HOPPER_SMTP_TLS=none. Swap for a real relay
+  # (Gmail/SendGrid, STARTTLS on 587) in production.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   natsdata:

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -66,6 +67,11 @@ type CreatePodOpts struct {
 	// the pod gets the group label and a NetworkPolicy allowing same-group
 	// traffic is ensured. Empty = fully isolated (the default).
 	NetworkGroup string
+	// ExtraEnv is injected verbatim into the VM container as environment
+	// variables (e.g. HOPPER_POD_ID / HOPPER_API_URL / HOPPER_POD_TOKEN for the
+	// in-VM idle + provisioner agents). Deliberately kept OUT of the k8s label
+	// map — values like the API URL are not valid label values.
+	ExtraEnv map[string]string
 }
 
 type PodPorts struct {
@@ -194,6 +200,34 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	// ssh sessions to see "Connection closed by remote host" (sshd SIGTERM
 	// emits SSH_DISCONNECT) instead of waiting for TCP to time out, so we cap
 	// total termination at 5s and run pkill on sshd as a preStop.
+	// Base container env + any HOPPER_* values the API asked us to inject
+	// (used by the in-VM idle + provisioner agents to call back to the gateway).
+	// code-server runs with `auth: none` (platform-gated), so no
+	// CODE_SERVER_PASSWORD is injected — see PR #75 / supervisor.conf.
+	containerEnv := []corev1.EnvVar{
+		// code-server picks this up so asset URLs are relative to the proxy path.
+		// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
+		{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
+		{Name: "ROOT_PASSWORD", Value: sshPassword},
+	}
+	for k, v := range opts.ExtraEnv {
+		containerEnv = append(containerEnv, corev1.EnvVar{Name: k, Value: v})
+	}
+
+	// Single-node dev clusters can get a *stuck* disk-pressure / memory-pressure
+	// taint (the kubelet leaves DiskPressure=True even after free space climbs
+	// back above the eviction threshold), which leaves every VM stuck Pending.
+	// When HOPPER_TOLERATE_NODE_PRESSURE=1 we let VMs schedule despite it. This
+	// is opt-in and OFF by default, so production still steers clear of nodes
+	// under genuine resource pressure.
+	var tolerations []corev1.Toleration
+	if os.Getenv("HOPPER_TOLERATE_NODE_PRESSURE") == "1" {
+		tolerations = []corev1.Toleration{
+			{Key: "node.kubernetes.io/disk-pressure", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+			{Key: "node.kubernetes.io/memory-pressure", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+		}
+	}
+
 	gracePeriod := int64(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -208,6 +242,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		},
 		Spec: corev1.PodSpec{
 			TerminationGracePeriodSeconds: &gracePeriod,
+			Tolerations:                   tolerations,
 			// Don't expose the orchestrator's K8s API token inside user VMs —
 			// otherwise a user with shell access can hit the cluster API.
 			AutomountServiceAccountToken: &automount,
@@ -251,12 +286,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
 						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 					},
-					Env: []corev1.EnvVar{
-						// code-server picks this up so asset URLs are relative to the proxy path.
-						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
-						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
-						{Name: "ROOT_PASSWORD", Value: sshPassword},
-					},
+					Env: containerEnv,
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs
 						// bin-pack onto the node while still bursting to the full
