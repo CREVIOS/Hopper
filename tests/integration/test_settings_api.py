@@ -80,4 +80,9 @@ async def test_save_vscode_settings_returns_saved_status(client):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"status": "saved"}
+    # The settings router now persists the blob and echoes it back (was a stub
+    # that returned only {"status": "saved"} and discarded the body).
+    assert response.json() == {
+        "status": "saved",
+        "vscode": {"editor.fontSize": 16, "files.autoSave": "afterDelay"},
+    }
