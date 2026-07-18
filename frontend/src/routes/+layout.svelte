@@ -57,7 +57,31 @@
   });
 
   const isLogin = $derived(page.url.pathname === '/login');
+
+  // One source of truth for document titles — pages don't set their own.
+  const TITLES: [RegExp, string][] = [
+    [/^\/dashboard/, 'Dashboard'],
+    [/^\/pods\/queue/, 'Queue'],
+    [/^\/pods\/[^/]+/, 'VM Detail'],
+    [/^\/pods/, 'Virtual Machines'],
+    [/^\/credits/, 'Credits'],
+    [/^\/admin/, 'Admin'],
+    [/^\/teacher/, 'Teaching'],
+    [/^\/settings\/ssh-keys/, 'SSH Keys'],
+    [/^\/login/, 'Sign in'],
+    [/^\/signup/, 'Sign up'],
+    [/^\/forgot-password/, 'Reset password'],
+    [/^\/verify-email/, 'Verify email']
+  ];
+  const pageTitle = $derived.by(() => {
+    const hit = TITLES.find(([re]) => re.test(page.url.pathname));
+    return hit ? `${hit[1]} · Hopper` : 'Hopper — Cloud VMs for students & teams';
+  });
 </script>
+
+<svelte:head>
+  <title>{pageTitle}</title>
+</svelte:head>
 
 <ModeWatcher defaultMode="light" />
 <Toaster />

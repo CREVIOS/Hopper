@@ -20,6 +20,7 @@
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
   import UsageTrend from '$lib/components/UsageTrend.svelte';
+  import HeroArt from '$lib/components/HeroArt.svelte';
   import PageTitle from '$lib/components/PageTitle.svelte';
   import SectionHeader from '$lib/components/SectionHeader.svelte';
   import Donut from '$lib/components/Donut.svelte';
@@ -112,19 +113,22 @@
 </script>
 
 <div class="space-y-6">
-  <!-- Hero -->
-  <PageTitle
-    eyebrow="Welcome back"
-    eyebrowIcon={Sparkles}
-    title="Dashboard"
-    description="Manage your virtual machines, monitor usage, and track credit spend."
-  >
-    {#snippet action()}
-      <Button href="/pods" size="lg">
-        <Plus class="size-4" /> Launch a VM
-      </Button>
-    {/snippet}
-  </PageTitle>
+  <!-- Hero with warm decorative art -->
+  <div class="relative">
+    <HeroArt class="absolute -top-6 right-24 hidden h-28 w-auto opacity-70 lg:block" />
+    <PageTitle
+      eyebrow="Welcome back"
+      eyebrowIcon={Sparkles}
+      title="Dashboard"
+      description="Manage your virtual machines, monitor usage, and track credit spend."
+    >
+      {#snippet action()}
+        <Button href="/pods" size="lg">
+          <Plus class="size-4" /> Launch a VM
+        </Button>
+      {/snippet}
+    </PageTitle>
+  </div>
 
   {#if data.user?.pending_teacher}
     <div
