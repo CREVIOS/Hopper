@@ -45,6 +45,20 @@ export default defineConfig(({ mode }) => {
     ? (path: string) => path.replace(/^\/api/, '')
     : undefined;
 
+  // The local api-gateway serves code-server under /pods/{podId}/vscode/*, but
+  // the browser (like a deployed ingress) addresses it as /{userId}/code/{podId}/*.
+  // Against the LOCAL gateway (stripApiPrefix), mirror the production ingress
+  // rewrite (k8s/deploy/03-ingress.yaml: /<uid>/code/<pid>/<rest> →
+  // /pods/<pid>/vscode/<rest>); against a remote ingress, leave the path as-is
+  // since the ingress performs that rewrite itself.
+  const codeRewrite = stripApiPrefix
+    ? (path: string) =>
+        path.replace(
+          /^\/[^/]+\/code\/([^/]+)(?:\/(.*))?$/,
+          (_m, podId, rest) => `/pods/${podId}/vscode/${rest ?? ''}`
+        )
+    : rewrite;
+
   // Don't reject self-signed/staging certs when proxying to an https backend.
   const secure = (env.API_PROXY_SECURE ?? 'false') === 'true';
 
@@ -90,7 +104,7 @@ export default defineConfig(({ mode }) => {
         // These aren't under /api, so without this rule they'd hit SvelteKit and
         // 404. Regex key (leading ^) matches the user-id segment. ws:true for
         // code-server's RPC socket; followRedirects so its internal 302s resolve.
-        '^/[^/]+/code/': { ...common, followRedirects: true, ws: true },
+        '^/[^/]+/code/': { ...common, rewrite: codeRewrite, followRedirects: true, ws: true },
         // Everything else
         '/api': { ...common, followRedirects: false },
       }
