@@ -1,7 +1,18 @@
 <script lang="ts">
-  import { GraduationCap, UserRound, ShieldCheck, ArrowRight, AlertCircle, Check } from 'lucide-svelte';
-  import { Button, Input, Label } from '$lib/ui';
-  import HopperLogo from '$lib/brand/HopperLogo.svelte';
+  import {
+    GraduationCap,
+    UserRound,
+    AlertCircle,
+    Check,
+    UserPlus,
+    MailCheck,
+    Mail,
+    Lock,
+    Eye,
+    EyeOff
+  } from 'lucide-svelte';
+  import { Button } from '$lib/ui';
+  import AuthLayout from '$lib/auth/AuthLayout.svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { api, ApiError } from '$lib/api/client';
   import PasswordRequirements from '$lib/auth/PasswordRequirements.svelte';
@@ -10,11 +21,10 @@
   let name = $state('');
   let email = $state('');
   let password = $state('');
+  let showPw = $state(false);
   let role = $state<'student' | 'teacher'>('student');
   let submitting = $state(false);
   let error = $state<string | null>(null);
-  // Set once a submit is rejected, so the checklist flags what's missing
-  // rather than staying neutral while an error sits above the form.
   let passwordRejected = $state(false);
 
   // Two-step flow: 'form' collects details, 'verify' collects the emailed code.
@@ -25,14 +35,12 @@
 
   const roles = [
     { value: 'student', label: 'Student', desc: 'Launch VMs with credits from your teacher.', icon: UserRound },
-    { value: 'teacher', label: 'Teacher', desc: 'Allocate credits to students (needs admin approval).', icon: GraduationCap }
+    { value: 'teacher', label: 'Teacher', desc: 'Allocate credits to students (needs approval).', icon: GraduationCap }
   ] as const;
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     error = null;
-    // Mirrors the realm policy the gateway enforces, so the user is told which
-    // rules they missed instead of the request failing with a generic error.
     const unmet = unmetRules(password, email);
     if (unmet.length > 0) {
       error = explainFailures(unmet);
@@ -52,8 +60,6 @@
       step = 'verify';
     } catch (err) {
       error = err instanceof ApiError ? err.message : 'Sign-up failed. Please try again.';
-      // The gateway rejects on rules this page can't check (Keycloak owns
-      // password history) — flag the field for those too.
       passwordRejected =
         err instanceof ApiError && err.status === 400 && /password/i.test(err.message);
     } finally {
@@ -67,8 +73,6 @@
     submitting = true;
     try {
       await api.post('/auth/verify-email', { email, code });
-      // Verified — log in with the password still held in memory, then a full
-      // navigation so SSR picks up the freshly-set session cookies.
       await api.post('/auth/login', { email, password });
       window.location.href = pendingTeacher ? '/dashboard?welcome=teacher-pending' : '/dashboard';
     } catch (err) {
@@ -89,154 +93,140 @@
   }
 </script>
 
-<div class="grid min-h-[100dvh] bg-background lg:grid-cols-[1.1fr_1fr]">
-  <!-- Brand panel -->
-  <aside class="brand-panel relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-12">
-    <div class="dot-grid pointer-events-none absolute inset-0 opacity-[0.4]"></div>
-    <div class="animate-fade-up relative flex items-center gap-3">
-      <HopperLogo size={40} idle />
-      <span class="text-lg font-semibold tracking-tight">Hopper</span>
-    </div>
-    <div class="relative max-w-lg">
-      <p class="animate-fade-up mb-5 font-mono text-[11px] font-medium uppercase tracking-[0.2em] text-white/45" style="animation-delay: 40ms">
-        Join your campus cloud
-      </p>
-      <h1 class="animate-fade-up text-[2.75rem] font-bold leading-[1.05] tracking-tight xl:text-6xl" style="animation-delay: 80ms; text-wrap: balance">
-        Create your
-        <span class="text-white/55">Hopper account.</span>
-      </h1>
-      <p class="animate-fade-up mt-5 max-w-md text-[15px] leading-relaxed text-white/65" style="animation-delay: 120ms">
-        Students launch VMs with credits allocated by their teachers. Teachers
-        manage a credit budget for their class. Sign up with your email.
-      </p>
-    </div>
-    <div class="animate-fade-up relative flex items-center gap-2 text-xs text-white/45" style="animation-delay: 420ms">
-      <ShieldCheck class="size-4" strokeWidth={1.75} />
-      <span>Secured by Keycloak.</span>
-    </div>
-  </aside>
-
-  <!-- Form panel -->
-  <main class="relative flex items-center justify-center px-6 py-10 sm:px-10">
-    <div class="relative w-full max-w-sm">
-      <div class="animate-fade-up mb-8 text-center lg:text-left">
-        <h2 class="text-[1.7rem] font-bold leading-tight tracking-tight">
-          {step === 'form' ? 'Create account' : 'Verify your email'}
-        </h2>
-        <p class="mt-1 text-sm text-muted-foreground">
+<AuthLayout>
+  <div
+    class="w-full max-w-[440px] rounded-3xl border border-white bg-white/95 p-8 shadow-2xl shadow-indigo-950/10 backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/90 sm:p-9"
+  >
+    <div class="flex flex-col items-center gap-4 text-center">
+      <div
+        class="grid size-14 place-items-center rounded-2xl bg-white shadow-md ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-white/10"
+      >
+        {#if step === 'form'}
+          <UserPlus class="size-6 text-slate-900 dark:text-white" strokeWidth={2} />
+        {:else}
+          <MailCheck class="size-6 text-slate-900 dark:text-white" strokeWidth={2} />
+        {/if}
+      </div>
+      <div class="space-y-1.5">
+        <h1 class="text-[1.6rem] font-bold leading-tight tracking-tight">
+          {step === 'form' ? 'Create your account' : 'Verify your email'}
+        </h1>
+        <p class="text-sm text-muted-foreground">
           {#if step === 'form'}
-            Enter your details to get started.
+            Start deploying cloud VMs in minutes.
           {:else}
-            We sent a 6-digit code to <span class="font-medium text-foreground">{email}</span>. Enter it below.
+            We sent a 6-digit code to <span class="font-medium text-foreground">{email}</span>.
           {/if}
         </p>
       </div>
+    </div>
 
-      {#if error}
-        <div class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>{error}</span>
+    {#if error}
+      <div
+        class="mt-6 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+      >
+        <AlertCircle class="mt-0.5 size-4 shrink-0" />
+        <span>{error}</span>
+      </div>
+    {/if}
+
+    {#if step === 'verify'}
+      <form onsubmit={verify} class="mt-6 space-y-4">
+        <input
+          bind:value={code}
+          required
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          placeholder="000000"
+          class="h-14 w-full rounded-xl border border-input bg-secondary/60 text-center text-2xl font-bold tracking-[0.5em] outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+        />
+        <Button type="submit" disabled={submitting} class="h-11 w-full rounded-xl text-[15px] font-semibold">
+          {#if submitting}<Spinner class="size-4" /> Verifying…{:else}Verify & continue{/if}
+        </Button>
+        <div class="flex items-center justify-between text-sm">
+          <button type="button" onclick={() => { step = 'form'; error = null; }} class="text-muted-foreground hover:underline">← Back</button>
+          <button type="button" onclick={resend} class="font-medium text-primary hover:underline">Resend code</button>
         </div>
-      {/if}
+        {#if resent}
+          <p class="flex items-center gap-1.5 text-xs text-muted-foreground"><Check class="size-3.5" /> A new code is on its way.</p>
+        {/if}
+      </form>
+    {:else}
+      <form onsubmit={submit} class="mt-6 space-y-4">
+        <div class="grid grid-cols-2 gap-2.5">
+          {#each roles as r}
+            <button
+              type="button"
+              onclick={() => (role = r.value)}
+              class={`relative flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
+                role === r.value
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border hover:bg-muted/50'
+              }`}
+            >
+              <r.icon class={`size-4 ${role === r.value ? 'text-primary' : 'text-muted-foreground'}`} />
+              <span class="text-sm font-semibold">{r.label}</span>
+              <span class="text-[11px] leading-tight text-muted-foreground">{r.desc}</span>
+              {#if role === r.value}
+                <Check class="absolute right-2 top-2 size-3.5 text-primary" />
+              {/if}
+            </button>
+          {/each}
+        </div>
 
-      {#if step === 'verify'}
-        <form onsubmit={verify} class="animate-fade-up space-y-4" style="animation-delay: 60ms">
-          <div>
-            <Label for="su-code">Verification code</Label>
-            <Input
-              id="su-code"
-              bind:value={code}
+        <input
+          bind:value={name}
+          required
+          autocomplete="name"
+          placeholder="Full name"
+          class="h-11 w-full rounded-xl border border-input bg-secondary/60 px-3.5 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+        />
+        <div class="relative">
+          <Mail class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="email"
+            bind:value={email}
+            required
+            autocomplete="email"
+            placeholder="University email"
+            class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-3 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+          />
+        </div>
+        <div>
+          <div class="relative">
+            <Lock class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type={showPw ? 'text' : 'password'}
+              bind:value={password}
               required
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              placeholder="123456"
-              class="mt-1 text-center text-lg tracking-[0.4em]"
+              autocomplete="new-password"
+              placeholder="Password"
+              aria-describedby="su-password-reqs"
+              class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-10 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
             />
-          </div>
-          <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
-            <span class="flex items-center gap-2.5">
-              {#if submitting}<Spinner class="size-4" /> Verifying…{:else}Verify &amp; continue{/if}
-            </span>
-            {#if !submitting}<ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />{/if}
-          </Button>
-          <div class="flex items-center justify-between text-sm">
-            <button type="button" onclick={() => { step = 'form'; error = null; }} class="text-muted-foreground hover:underline">
-              ← Back
-            </button>
-            <button type="button" onclick={resend} class="font-medium text-foreground hover:underline">
-              Resend code
+            <button
+              type="button"
+              onclick={() => (showPw = !showPw)}
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+            >
+              {#if showPw}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
             </button>
           </div>
-          {#if resent}
-            <p class="flex items-center gap-1.5 text-xs text-muted-foreground"><Check class="size-3.5" /> A new code is on its way.</p>
-          {/if}
-        </form>
-      {:else}
-      <form onsubmit={submit} class="animate-fade-up space-y-4" style="animation-delay: 60ms">
-        <!-- Role selector -->
-        <div>
-          <Label>I am a…</Label>
-          <div class="mt-1.5 grid grid-cols-2 gap-2.5">
-            {#each roles as r}
-              <button
-                type="button"
-                onclick={() => (role = r.value)}
-                class={`relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
-                  role === r.value
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-border hover:bg-muted/50'
-                }`}
-              >
-                <r.icon class={`size-4 ${role === r.value ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span class="text-sm font-medium">{r.label}</span>
-                <span class="text-[11px] leading-tight text-muted-foreground">{r.desc}</span>
-                {#if role === r.value}
-                  <Check class="absolute right-2 top-2 size-3.5 text-primary" />
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div>
-          <Label for="su-name">Full name</Label>
-          <Input id="su-name" bind:value={name} required autocomplete="name" placeholder="Jane Doe" class="mt-1" />
-        </div>
-        <div>
-          <Label for="su-email">Email</Label>
-          <Input id="su-email" type="email" bind:value={email} required autocomplete="email" placeholder="you@example.com" class="mt-1" />
-        </div>
-        <div>
-          <Label for="su-password">Password</Label>
-          <Input id="su-password" type="password" bind:value={password} required autocomplete="new-password" placeholder="Choose a strong password" class="mt-1" aria-describedby="su-password-reqs" />
           <div id="su-password-reqs">
             <PasswordRequirements {password} username={email} showErrors={passwordRejected} />
           </div>
         </div>
 
-        <Button type="submit" disabled={submitting} size="lg" class="group h-12 w-full justify-between text-[15px] shadow-sm">
-          <span class="flex items-center gap-2.5">
-            {#if submitting}<Spinner class="size-4" /> Creating…{:else}Create account{/if}
-          </span>
-          {#if !submitting}<ArrowRight class="size-4 transition-transform group-hover:translate-x-1" />{/if}
+        <Button type="submit" disabled={submitting} class="h-11 w-full rounded-xl text-[15px] font-semibold">
+          {#if submitting}<Spinner class="size-4" /> Creating…{:else}Create account{/if}
         </Button>
       </form>
-      {/if}
+    {/if}
 
-      <p class="animate-fade-up mt-6 text-center text-sm text-muted-foreground lg:text-left" style="animation-delay: 130ms">
-        Already have an account?
-        <a href="/login" data-sveltekit-reload class="font-medium text-foreground hover:underline">Sign in</a>
-      </p>
-    </div>
-  </main>
-</div>
-
-<style>
-  .brand-panel {
-    background: linear-gradient(160deg, hsl(250 47% 10%) 0%, hsl(255 48% 13%) 55%, hsl(258 50% 16%) 100%);
-  }
-  .dot-grid {
-    background-image: radial-gradient(hsl(0 0% 100% / 0.07) 1px, transparent 1px);
-    background-size: 22px 22px;
-  }
-</style>
+    <p class="mt-6 text-center text-sm text-muted-foreground">
+      Already have an account?
+      <a href="/login" data-sveltekit-reload class="font-semibold text-primary hover:underline">Sign in</a>
+    </p>
+  </div>
+</AuthLayout>
