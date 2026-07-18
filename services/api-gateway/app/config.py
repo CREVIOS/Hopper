@@ -106,6 +106,18 @@ class Settings(BaseSettings):
     default_max_concurrent_vms: int = 3
     default_max_workspace_gb: int = 100
 
+    # Idle auto-shutdown. A VM whose CPU stays below idle_cpu_percent for
+    # idle_window_minutes is considered idle: the user is warned and the VM is
+    # terminated idle_grace_minutes later unless activity resumes. CPU is the
+    # signal because an in-browser editor left open but untouched still just
+    # looks idle by that measure — hence the warning + grace rather than an
+    # instant kill.
+    idle_shutdown_enabled: bool = True
+    idle_cpu_percent: float = 5.0
+    idle_window_minutes: float = 30.0
+    idle_grace_minutes: float = 10.0
+    idle_monitor_interval_seconds: float = 60.0
+
     # extra="ignore": a shared local .env may carry keys this service doesn't
     # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars
     # for a feature branch. Ignore them instead of refusing to boot.
