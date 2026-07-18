@@ -95,35 +95,18 @@ class OrchestratorClient:
             return False
 
     async def create_pod(
-        self,
-        user_id: str,
-        plan: str,
-        image: str,
-        cpu: str,
-        memory: str,
-        disk: str = "",
-        pod_id: str = "",
-        network_group: str = "",
-        labels: dict[str, str] | None = None,
+        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
+        pod_id: str = "", network_group: str = "",
     ) -> PodStatusResponse:
-        """Call orchestrator.CreatePod and return the response.
-
-        ``labels`` carries per-pod key/value pairs to the orchestrator via the
-        proto ``labels`` map. Keys prefixed ``HOPPER_`` are promoted to container
-        env vars (not k8s labels) by the orchestrator — this is how the in-VM
-        provisioner receives HOPPER_POD_ID / HOPPER_API_URL / HOPPER_POD_TOKEN.
-
-        ``network_group`` also travels in the labels map (no proto change): the
-        orchestrator turns it into a pod label + a same-group NetworkPolicy
-        (HOP-19 18.3).
-        """
+        """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
         from app.proto.hopper.pod.v1 import pod_pb2, pod_pb2_grpc
 
         stub = pod_pb2_grpc.PodOrchestratorStub(self._channel)
-        merged_labels = dict(labels or {})
-        if network_group:
-            merged_labels["hopper.dev/network-group"] = network_group
+        # The network group travels in the existing labels map (no proto
+        # change): the orchestrator turns it into a pod label + a same-group
+        # NetworkPolicy (HOP-19 18.3).
+        labels = {"hopper.dev/network-group": network_group} if network_group else {}
         req = pod_pb2.CreatePodRequest(
             user_id=user_id,
             plan=plan,
@@ -132,7 +115,7 @@ class OrchestratorClient:
             memory=memory,
             disk=disk,
             pod_id=pod_id,
-            labels=merged_labels,
+            labels=labels,
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(

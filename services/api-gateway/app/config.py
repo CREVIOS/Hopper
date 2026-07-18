@@ -1,13 +1,4 @@
-from pathlib import Path
-
-from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
-
-# Export .env into the real process environment (not just pydantic's private
-# read) so SDKs that look at os.environ directly can see it — notably the
-# google-genai client, which reads GEMINI_API_KEY / GOOGLE_API_KEY itself. Real
-# env vars (e.g. injected by the k8s manifest in prod) always win: override=False.
-load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 
 class Settings(BaseSettings):
@@ -76,80 +67,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "Hopper <no-reply@localhost>"
     smtp_starttls: bool = True  # True=STARTTLS on 587; False+465 = implicit TLS
-    # Transport encryption. Empty = derive from smtp_starttls (back-compat).
-    # Explicit values: "starttls" (587), "ssl" (implicit TLS, 465),
-    # "none" (plain SMTP — for local mail-catchers like Mailpit on :1025).
-    smtp_tls: str = ""
     # Verification / reset one-time codes.
     email_code_ttl_seconds: int = 600  # 10 min
     email_code_length: int = 6
     email_code_max_attempts: int = 5
-
-    # --- Idle-detection agent (protects students from credit exhaustion) ----
-    # A VM is reclaimed only when it looks abandoned across several dimensions
-    # for the whole window AND still holds credits. All values are overridable
-    # via HOPPER_* env vars.
-    idle_agent_enabled: bool = True
-    idle_cpu_threshold_percent: float = 2.0    # CPU >= this counts as "active"
-    idle_cpu_window_seconds: int = 1800        # 30 min inactive => idle
-    idle_grace_seconds: int = 600              # 10 min warning countdown
-    idle_check_interval_seconds: int = 30      # scanner cadence
-    idle_metrics_stale_seconds: int = 180      # no metrics this long => blind => never kill
-    idle_forget_seconds: int = 3600            # drop tracking rows for long-gone pods
-    idle_flush_seconds: int = 60               # throttle metric-driven DB writes per pod
-    idle_heartbeat_interval_seconds: int = 60  # advised in-VM agent cadence
-
-    # --- Smart Sandbox provisioner (NL project description -> ready workspace) --
-    sandbox_agent_enabled: bool = True
-    # LLM planner. Real natural-language parsing runs through Google Gemini when a
-    # GEMINI_API_KEY / GOOGLE_API_KEY is present in the environment (the google-genai
-    # SDK reads it directly). With no key the agent falls back to a deterministic
-    # keyword planner, so the flow works with zero API keys. No Anthropic dependency.
-    sandbox_agent_model: str = "gemini-2.5-flash"
-    # Authorized package mirrors baked into every generated provision.sh. Point
-    # these at an internal Artifactory/Verdaccio/apt mirror in production so a
-    # student VM can only pull bytes from infrastructure the platform trusts.
-    sandbox_pip_index_url: str = "https://pypi.org/simple"
-    sandbox_npm_registry: str = "https://registry.npmjs.org"
-    sandbox_apt_mirror: str = ""  # empty = keep the base image's default apt sources
-    # Internal URL the in-VM provisioner uses to fetch its script. Injected into
-    # the pod env (HOPPER_API_URL) via the orchestrator labels channel.
-    sandbox_internal_api_url: str = "http://api-gateway:8000"
-
-    # --- Free open-source agent layer (Hermes / Clawbot / OpenCode) ----------
-    # Adapter over FREE LLM backends only — no paid APIs. Provider *secrets*
-    # (GROQ_API_KEY, HF_TOKEN) live in .env / env and are read from os.environ,
-    # exactly like GEMINI_API_KEY — they are NOT fields here. These are only the
-    # non-secret routing knobs.
-    #   auto: Groq if GROQ_API_KEY, else HuggingFace if HF_TOKEN, else local
-    #   Ollama, else a deterministic stub. Or force: groq | huggingface | ollama.
-    agent_provider: str = "auto"
-    groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_model: str = "llama-3.3-70b-versatile"
-    hf_base_url: str = "https://router.huggingface.co/v1"
-    hf_model: str = "meta-llama/Llama-3.1-8B-Instruct"
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
-    agent_temperature: float = 0.3
-    agent_timeout_seconds: float = 60.0
-
-    # --- Always-on telemetry / monitoring agent ------------------------------
-    # Alert-channel secrets (RESEND_API_KEY, GREEN_API_*) also live in
-    # .env / env, not here. These are behaviour + non-secret routing only.
-    telemetry_agent_enabled: bool = True
-    telemetry_interval_seconds: int = 300      # sample + evaluate cadence
-    telemetry_cpu_warn_percent: float = 85.0
-    telemetry_mem_warn_percent: float = 85.0
-    telemetry_disk_warn_percent: float = 90.0
-    telemetry_error_rate_warn: float = 0.05    # 5% VM failures/hour
-    telemetry_alert_min_severity: str = "warning"  # info | warning | critical
-    telemetry_use_llm_summary: bool = True     # phrase the report via a free LLM
-    alert_email_to: str = ""                   # comma-separated recipients
-    alert_email_from: str = ""                 # defaults to smtp_from
-    # Chat alerts go over Telegram via the Green API Telegram gateway
-    # (GREEN_API_ID_INSTANCE / GREEN_API_TOKEN in .env). Optional global
-    # recipients, comma-separated phone numbers e.g. +8801XXXXXXXXX.
-    telegram_to: str = ""
 
     # Rate limiting (HOP-19 18.2). Buckets are in-memory per worker process,
     # so the effective ceiling scales with workers × replicas — these are
@@ -180,15 +101,7 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
-    # extra="ignore": the .env also holds non-HOPPER_ keys (e.g. GEMINI_API_KEY,
-    # read from os.environ by the google-genai SDK, not by this Settings class).
-    # Without this, pydantic surfaces them as unknown fields and refuses to load.
-    model_config = {
-        "env_prefix": "HOPPER_",
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "extra": "ignore",
-    }
+    model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()

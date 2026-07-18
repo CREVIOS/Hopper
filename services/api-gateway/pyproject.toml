@@ -20,16 +20,10 @@ grpcio-tools = "^1.65.0"
 structlog = "^24.0.0"
 slowapi = "^0.1.9"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-# ^0.28 required by google-genai; no 0.27-era APIs (proxies=/app=) are used.
-httpx = "^0.28.1"
+httpx = "^0.27.0"
 sse-starlette = "^2.0.0"
 asyncssh = "^2.22.0"
-# >=15 keeps the modern asyncio API used in routers/pods.py while staying
-# co-resolvable with google-genai's websockets bound.
-websockets = ">=15.0"
-# Sandbox agent LLM planner (optional at runtime — imported lazily; the agent
-# falls back to a deterministic keyword planner when no GEMINI_API_KEY is set).
-google-genai = "^1.0.0"
+websockets = "^16.0"
 python-multipart = "^0.0.18"
 
 [tool.poetry.group.dev.dependencies]
@@ -55,7 +49,3 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# `poetry install` runs in package-mode=false, so `app` isn't installed on the
-# path. Add the project root so `poetry run pytest` (as the Makefile invokes it)
-# can import the app without a PYTHONPATH prefix.
-pythonpath = ["."]

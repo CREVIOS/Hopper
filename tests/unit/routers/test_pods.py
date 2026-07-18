@@ -41,18 +41,6 @@ def _no_cluster_capacity(monkeypatch):
 
     monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
 
-    # _reconcile_state shells `kubectl` (via _k8s_phase) to sync a session's
-    # stored state with its real pod phase. There's no cluster in unit tests, so
-    # kubectl exits non-zero and the pod reads as "gone" -> "terminated", which
-    # would flip these tests' "running" fixtures and trip the proxy's 503 guard.
-    # Return None = the documented "phase unreadable, leave the row" no-op, so a
-    # session's fixture state stays authoritative (matches a healthy running pod,
-    # which is what the proxy/terminal tests set up).
-    async def fake_k8s_phase(pod_name, namespace):
-        return None
-
-    monkeypatch.setattr("app.routers.pods._k8s_phase", fake_k8s_phase)
-
 
 def _payload() -> TokenPayload:
     return TokenPayload(

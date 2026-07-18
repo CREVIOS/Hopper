@@ -39,12 +39,6 @@ COPY config/vscode-settings.json /root/.local/share/code-server/User/settings.js
 RUN mkdir -p /etc/supervisor/conf.d
 COPY config/supervisor.conf /etc/supervisor/conf.d/hopper.conf
 
-# 6a. In-VM agents (idle reporter + Smart Sandbox first-boot provisioner).
-# supervisor.conf launches these from /usr/local/bin.
-COPY scripts/hopper-idle-agent.py /usr/local/bin/hopper-idle-agent.py
-COPY scripts/hopper-provisioner.py /usr/local/bin/hopper-provisioner.py
-RUN chmod +x /usr/local/bin/hopper-idle-agent.py /usr/local/bin/hopper-provisioner.py
-
 # 7. Workspace directory
 RUN mkdir -p /workspace
 

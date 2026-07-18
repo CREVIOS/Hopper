@@ -2,12 +2,9 @@
   import {
     LayoutDashboard,
     Server,
-    Sparkles,
-    Bot,
     ListOrdered,
     CreditCard,
     KeyRound,
-    Bell,
     Shield,
     GraduationCap,
     PanelLeftClose,
@@ -45,19 +42,11 @@
       items: [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/pods', label: 'Virtual Machines', icon: Server },
-        { href: '/pods/queue', label: 'Queue', icon: ListOrdered },
-        { href: '/sandbox', label: 'Smart Sandbox', icon: Sparkles },
-        { href: '/agents', label: 'AI Agents', icon: Bot }
+        { href: '/pods/queue', label: 'Queue', icon: ListOrdered }
       ]
     },
     { label: 'Billing', items: [{ href: '/credits', label: 'Credits', icon: CreditCard }] },
-    {
-      label: 'Account',
-      items: [
-        { href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound },
-        { href: '/settings/notifications', label: 'Notifications', icon: Bell }
-      ]
-    }
+    { label: 'Account', items: [{ href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound }] }
   ];
 
   const adminItems: NavItem[] = [
