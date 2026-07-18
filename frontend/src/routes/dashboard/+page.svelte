@@ -10,6 +10,7 @@
     Sparkles,
     Clock
   } from 'lucide-svelte';
+  import { VM_PLAN_INFO } from '$lib/types';
   import type { Pod, CreditTransaction, User } from '$lib/types';
   import {
     Button,
@@ -45,33 +46,39 @@
     };
   } = $props();
 
-  const isActive = (s: string) => ['running', 'pending', 'creating'].includes(s);
-  const activePods = $derived(data.pods.filter((p) => isActive(p.state)));
-  // Dashboard shows a preview, not the full fleet — active VMs first, then the
-  // most recent, capped. The complete list lives on the My VMs page.
-  const previewPods = $derived.by(() => {
-    const active = data.pods.filter((p) => isActive(p.state));
-    const rest = data.pods
-      .filter((p) => !isActive(p.state))
-      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-    return [...active, ...rest].slice(0, 6);
+  const activePods = $derived(
+    data.pods.filter((p) => ['running', 'pending', 'creating'].includes(p.state))
+  );
+  const recentInactive = $derived(
+    data.pods
+      .filter((p) => !['running', 'pending', 'creating'].includes(p.state))
+      .slice(0, 3)
+  );
+  const activeBurnRate = $derived.by(() =>
+    activePods.reduce((total, pod) => total + (VM_PLAN_INFO[pod.plan as keyof typeof VM_PLAN_INFO]?.rate ?? 0), 0)
+  );
+  const lowBalanceThreshold = 10;
+  const showLowBalanceWarning = $derived(data.balance < lowBalanceThreshold);
+  const estimatedRuntime = $derived.by(() => {
+    if (activeBurnRate <= 0 || data.balance <= 0) return null;
+    const hoursRemaining = data.balance / activeBurnRate;
+    const totalMinutes = Math.max(1, Math.floor(hoursRemaining * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `About ${hours}h ${minutes}m left at the current burn rate`;
+    return `About ${minutes}m left at the current burn rate`;
   });
-  // Plan distribution — counts your VMs by plan for the donut beside usage.
-  const planColors: Record<string, string> = {
-    small: '#4f46e5',
-    medium: '#06b6d4',
-    large: '#f59e0b'
-  };
+  const previewPods = $derived(data.pods.slice(0, 5));
   const planSegments = $derived.by(() => {
-    const counts: Record<string, number> = { small: 0, medium: 0, large: 0 };
-    for (const p of data.pods) {
-      const k = (p.plan ?? '').toLowerCase();
-      if (k in counts) counts[k]++;
+    const counts = new Map<string, number>();
+    for (const pod of data.pods) {
+      counts.set(pod.plan, (counts.get(pod.plan) ?? 0) + 1);
     }
-    return (['small', 'medium', 'large'] as const).map((k) => ({
-      label: k,
-      value: counts[k],
-      color: planColors[k]
+
+    return [...counts.entries()].map(([label, value], index) => ({
+      label,
+      value,
+      color: ['hsl(var(--primary))', 'hsl(var(--info))', 'hsl(var(--warning))'][index] ?? 'hsl(var(--muted-foreground))'
     }));
   });
 
@@ -137,6 +144,24 @@
           Thanks for signing up as a teacher — an admin will review your request
           shortly. For now you have a student account: you can launch VMs, and
           allocating credits to students unlocks as soon as you're approved.
+        </p>
+      </div>
+    </div>
+  {/if}
+
+  {#if showLowBalanceWarning}
+    <div
+      class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+      role="status"
+      aria-live="polite"
+    >
+      <Clock class="mt-0.5 size-5 shrink-0 text-warning" />
+      <div class="text-sm">
+        <p class="font-medium text-foreground">
+          Low balance: {data.balance.toFixed(2)} credits remaining
+        </p>
+        <p class="mt-0.5 text-muted-foreground">
+          {estimatedRuntime ?? 'Top up soon to avoid interruptions to your running VMs.'}
         </p>
       </div>
     </div>

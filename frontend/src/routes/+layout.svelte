@@ -24,6 +24,7 @@
   } = $props();
 
   let mobileOpen = $state(false);
+  let liveBalance = $state<number | null>(typeof data.balance === 'number' ? data.balance : null);
 
   // Desktop sidebar collapse — persisted so it survives reloads.
   let collapsed = $state(false);
@@ -41,7 +42,20 @@
     const refreshTimer = setInterval(() => {
       fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
     }, 4 * 60 * 1000);
-    return () => clearInterval(refreshTimer);
+    const balanceTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/credits/balance', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (typeof json?.balance === 'number') {
+          liveBalance = json.balance;
+        }
+      } catch {}
+    }, 5000);
+    return () => {
+      clearInterval(refreshTimer);
+      clearInterval(balanceTimer);
+    };
   });
 
   $effect(() => {
@@ -123,8 +137,8 @@
           </a>
         </div>
         <div class="flex items-center gap-2 sm:gap-3">
-          {#if typeof data.balance === 'number'}
-            <CreditBadge balance={data.balance} class="hidden sm:inline-flex" />
+          {#if typeof liveBalance === 'number'}
+            <CreditBadge balance={liveBalance} class="hidden sm:inline-flex" />
           {/if}
           <NotificationBell />
           <ThemeToggle />

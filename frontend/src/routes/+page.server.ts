@@ -6,6 +6,8 @@ export const load: PageServerLoad = async ({ parent }) => {
   // Signed-in users go straight to the app; everyone else sees the landing page.
   if (isAuthenticated) {
     redirect(302, '/dashboard');
+  } else {
+    redirect(302, '/login');
   }
   return {};
 };

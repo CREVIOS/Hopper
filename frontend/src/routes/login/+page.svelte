@@ -61,10 +61,17 @@
         return 'Verify your email address (check your inbox), then sign in again.';
       case 'oidc':
         return 'Sign-in was cancelled or rejected by the identity provider.';
+      case 'session_expired':
+        return 'Session expired, please log in again.';
       default:
         return null;
     }
   });
+  const sessionExpiredMessage = $derived(
+    page.url.searchParams.get('session_expired') === '1'
+      ? 'Session expired, please log in again.'
+      : null
+  );
   // Success redirects from the verify / reset flows.
   const successMessage = $derived.by(() => {
     if (page.url.searchParams.get('verified') === '1') return 'Email verified — you can now sign in.';
@@ -119,47 +126,59 @@
       </div>
     {/if}
 
+    {#if sessionExpiredMessage && !errorMessage && !formError}
+      <div
+        class="mt-6 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+      >
+        <AlertCircle class="mt-0.5 size-4 shrink-0" />
+        <span>{sessionExpiredMessage}</span>
+      </div>
+    {/if}
+
     <form onsubmit={handlePasswordLogin} class="mt-6 space-y-4">
       <div class="relative">
         <Mail class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
-          id="li-email"
           type="email"
           bind:value={email}
           required
+          aria-label="Email"
           autocomplete="email"
-          placeholder="Email"
+          placeholder="University email"
           class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-3 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
         />
       </div>
-      <div class="relative">
-        <Lock class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          id="li-password"
-          type={showPw ? 'text' : 'password'}
-          bind:value={password}
-          required
-          autocomplete="current-password"
-          placeholder="Password"
-          class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-10 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
-        />
-        <button
-          type="button"
-          onclick={() => (showPw = !showPw)}
-          class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
-          aria-label={showPw ? 'Hide password' : 'Show password'}
-        >
-          {#if showPw}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
-        </button>
-      </div>
 
-      <div class="flex justify-end">
-        <a
-          href="/forgot-password"
-          class="text-[13px] font-medium text-primary hover:underline"
-        >
-          Forgot password?
-        </a>
+      <div class="space-y-3">
+        <div class="relative">
+          <Lock class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type={showPw ? 'text' : 'password'}
+            bind:value={password}
+            required
+            aria-label="Password"
+            autocomplete="current-password"
+            placeholder="Password"
+            class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-10 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+          />
+          <button
+            type="button"
+            onclick={() => (showPw = !showPw)}
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+            aria-label={showPw ? 'Hide password' : 'Show password'}
+          >
+            {#if showPw}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+          </button>
+        </div>
+
+        <div class="flex justify-end">
+          <a
+            href="/forgot-password"
+            class="text-[13px] font-medium text-primary hover:underline"
+          >
+            Forgot password?
+          </a>
+        </div>
       </div>
 
       {#if needsVerify}

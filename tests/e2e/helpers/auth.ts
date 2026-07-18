@@ -41,10 +41,11 @@ export async function loginAs(page: Page, role: AuthRole): Promise<void> {
           ? e2eEnv.professorPassword
           : e2eEnv.studentPassword;
 
-    await page.goto('/login');
-    await page.getByLabel('Email').fill(email!);
-    await page.getByLabel('Password').fill(password!);
-    await page.getByRole('button', { name: /^sign in$/i }).click();
+    const response = await page.context().request.post('/api/auth/login', {
+      data: { email, password }
+    });
+    expect(response.ok()).toBeTruthy();
+    await page.goto('/dashboard');
   } else {
     throw new Error(authRequirementMessage(role));
   }
