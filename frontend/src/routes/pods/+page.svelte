@@ -64,6 +64,7 @@
     };
   } = $props();
   let livePods = $state<Pod[]>(data.pods);
+  let hydrated = $state(false);
 
   // Live cluster availability readout. Seeded once from SSR (untrack keeps this
   // to the initial value), then polled so the free-capacity and queue-length
@@ -88,6 +89,7 @@
   }
 
   onMount(() => {
+    hydrated = true;
     const availabilityTimer = setInterval(refreshAvailability, 5000);
     const podsTimer = setInterval(refreshPods, 5000);
     return () => {
@@ -268,7 +270,7 @@
   }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-6" data-pods-hydrated={hydrated}>
   <!-- Header -->
   <PageTitle
     title="Virtual Machines"
