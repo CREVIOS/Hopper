@@ -101,7 +101,15 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
-    model_config = {"env_prefix": "HOPPER_", "env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": a shared local .env may carry keys this service doesn't
+    # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars
+    # for a feature branch. Ignore them instead of refusing to boot.
+    model_config = {
+        "env_prefix": "HOPPER_",
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()
