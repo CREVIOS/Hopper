@@ -1,7 +1,10 @@
 # Hopper E2E Tests
 
-This Playwright suite stays self-contained under `tests/e2e` and targets the
-real SvelteKit frontend routes and auth flow already present in the repo.
+This Playwright suite lives entirely under `tests/e2e` and exercises the real
+SvelteKit frontend routes against the deterministic mock stack in `tests/mocks`.
+The spec files are organized around the acceptance suites in
+`docs/E2E_TESTING.md`, and the current case-by-case status is tracked in
+`tests/e2e/COVERAGE_MATRIX.md`.
 
 ## Install
 
@@ -21,12 +24,23 @@ pnpm test:debug
 pnpm report
 ```
 
-The mock API is reset before every test, so pod, credit, metrics, and admin
-workflows are deterministic and never contact the deployed Hopper environment.
+The mock API is reset before every test. Specs can also seed targeted state
+through `POST /__test/setup`, which lets the suite cover role-specific flows,
+queueing, session refresh, admin actions, and cross-tenant access checks
+without touching production code.
 
 ## Auth configuration
 
-Student and admin tests need one of these credential paths:
+The default mocked credentials are:
+
+- Student: `student-1@test.edu` / `e2e`
+- Professor: `professor@test.edu` / `e2e`
+- Admin: `admin@test.edu` / `e2e`
+
+Override them with env vars when you need to point at a different backend or
+credential source.
+
+The helper layer still supports these credential paths:
 
 - Real login:
   - `E2E_STUDENT_EMAIL` and `E2E_STUDENT_PASSWORD`
@@ -35,7 +49,5 @@ Student and admin tests need one of these credential paths:
   - `DEV_LOGIN_PASS_ALT` for `/dev-login?as=user`
   - `DEV_LOGIN_PASS` for `/dev-login?as=admin`
 
-If those values are missing, the auth-dependent tests are skipped with an
-explicit reason. The Playwright web server injects the frontend proxy defaults
-needed to run against `https://hopper.farefin.com` without requiring a
-`frontend/.env` file.
+The Playwright web server injects the frontend proxy defaults needed to run the
+suite without a `frontend/.env` file.

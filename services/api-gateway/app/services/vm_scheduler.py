@@ -30,12 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.session import PodSession
-from app.models.ssh_key import SSHKey
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import VM_PLAN_RESOURCES, VmPlan
-from app.services import plan_service, vm_capacity
+from app.services import vm_capacity
 from app.services.orchestrator_client import OrchestratorClient
-from app.services.workspace_service import get_or_create_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -396,27 +394,10 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
     # ---- Phase 2: materialize each reservation (gRPC, unlocked) ----
     admitted = 0
     for entry_id, pod_id, user_id, plan, image, cpu, memory, network_group in reserved:
-        # Provision exactly like the synchronous POST /pods path: inject the
-        # user's SSH keys, remount their persistent workspace PVC, and bill at
-        # the plan's DB-catalogue rate. Without this, queued (overflow) VMs would
-        # silently lose workspace persistence, key-based SSH, and correct billing.
-        plan_row = await plan_service.get_plan(db, plan, active_only=True)
-        credits_per_hour = float(plan_row.credits_per_hour) if plan_row else 0.0
-        workspace_gb = plan_row.workspace_gb if plan_row else None
-        keys_result = await db.execute(
-            select(SSHKey.public_key).where(SSHKey.user_id == user_id)
-        )
-        authorized_keys = list(keys_result.scalars().all())
-        workspace = await get_or_create_workspace(db, user_id, plan, capacity_gb=workspace_gb)
         try:
             resp = await orch.create_pod(
                 user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
                 pod_id=pod_id, network_group=network_group or "",
-                authorized_keys=authorized_keys,
-                workspace_pvc_name=workspace.pvc_name,
-                workspace_capacity_gb=workspace.capacity_gb,
-                storage_class=workspace.storage_class or "",
-                credits_per_hour=credits_per_hour,
             )
         except Exception as exc:
             logger.error("Admission create_pod failed entry=%s: %s", entry_id, exc)

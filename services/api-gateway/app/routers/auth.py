@@ -299,8 +299,13 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     await db.commit()
     await get_or_create_account(db, user_id)
     # Welcome credits so the new student can launch a first VM immediately
-    # (no-op when HOPPER_SIGNUP_GRANT_CREDITS=0).
-    await grant_signup_bonus(db, user_id)
+    # (no-op when HOPPER_SIGNUP_GRANT_CREDITS=0). Best-effort: the Keycloak
+    # account already exists at this point, so a failed grant must not fail the
+    # signup — the balance account is created lazily on first use anyway.
+    try:
+        await grant_signup_bonus(db, user_id)
+    except Exception:
+        logger.exception("signup welcome-credit grant failed for %s", user_id)
     await send_code_email(email, verification.VERIFY_EMAIL, code)
 
     # Do NOT issue a session here. The account is created email-unverified, so

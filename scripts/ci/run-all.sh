@@ -20,7 +20,9 @@ for arg in "$@"; do
 done
 
 "$ROOT/scripts/test/run.sh" frontend-validate
+"$ROOT/scripts/test/run.sh" test-frontend
 "$ROOT/scripts/test/run.sh" test-unit
+"$ROOT/scripts/test/run.sh" test-contract
 "$ROOT/scripts/test/run.sh" test-orchestrator
 
 if [[ "$RUN_INTEGRATION" == true ]]; then
