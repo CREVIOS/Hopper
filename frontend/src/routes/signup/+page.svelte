@@ -15,11 +15,13 @@
   import AuthLayout from '$lib/auth/AuthLayout.svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { api, ApiError } from '$lib/api/client';
+  import { page } from '$app/state';
   import PasswordRequirements from '$lib/auth/PasswordRequirements.svelte';
   import { explainFailures, unmetRules } from '$lib/auth/passwordPolicy';
 
   let name = $state('');
-  let email = $state('');
+  // Prefilled when the landing-page email capture hands the address over.
+  let email = $state(page.url.searchParams.get('email') ?? '');
   let password = $state('');
   let showPw = $state(false);
   let role = $state<'student' | 'teacher'>('student');

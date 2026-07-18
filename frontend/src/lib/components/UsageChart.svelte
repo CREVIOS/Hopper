@@ -22,6 +22,27 @@
   const tone = () => (metric === 'cpu' ? 'primary' : 'info');
   const altTone = () => (metric === 'cpu' ? 'info' : 'primary');
 
+  // Round up to a clean 1/2/5×10ⁿ ceiling so the axis reads sensibly.
+  function niceCeil(v: number): number {
+    if (v <= 0) return 1;
+    const pow = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / pow;
+    const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+    return step * pow;
+  }
+
+  // Auto-scale the Y axis to the data (idle VMs sit near 0, so a fixed 0–100%
+  // axis makes every trend look flat). Zoom to just above the peak instead —
+  // the axis ticks stay honest about the absolute values.
+  function yMaxFor(): number {
+    const isCpu = metric === 'cpu';
+    const ys = points.map((p) => (isCpu ? p.cpu_percent : p.memory_used_bytes / 1024 ** 3));
+    const dataMax = ys.length ? Math.max(...ys) : 0;
+    if (dataMax <= 0) return isCpu ? 5 : 1;
+    const scaled = niceCeil(dataMax * 1.35);
+    return isCpu ? Math.min(100, scaled) : scaled;
+  }
+
   // Soft vertical gradient fill beneath the line.
   function areaFill() {
     return (ctx: { chart: ChartType }) => {
@@ -156,7 +177,7 @@
         },
         y: {
           beginAtZero: true,
-          suggestedMax: metric === 'cpu' ? 100 : undefined,
+          suggestedMax: yMaxFor(),
           border: { display: false },
           grid: { color: chartColor('border', 0.4), tickLength: 0 },
           ticks: {
@@ -164,7 +185,14 @@
             maxTicksLimit: 4,
             padding: 10,
             font: { size: 11 },
-            callback: (v) => (metric === 'cpu' ? `${v}%` : `${(+v).toFixed(1)}G`)
+            callback: (v) => {
+              const n = +v;
+              if (metric === 'cpu') {
+                const d = n < 1 ? 2 : n < 10 ? 1 : 0;
+                return `${n.toFixed(d)}%`;
+              }
+              return `${n.toFixed(1)}G`;
+            }
           }
         }
       },

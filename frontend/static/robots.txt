@@ -1,0 +1,18 @@
+# Hopper — campus cloud VM platform
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /signup
+
+# Authenticated app surfaces — nothing useful for crawlers here.
+Disallow: /dashboard
+Disallow: /pods
+Disallow: /credits
+Disallow: /admin
+Disallow: /teacher
+Disallow: /settings
+Disallow: /api/
+Disallow: /dev-login
+Disallow: /auth/
+
+Sitemap: https://hopper.farefin.com/sitemap.xml

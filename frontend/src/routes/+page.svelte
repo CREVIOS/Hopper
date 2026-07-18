@@ -7,25 +7,41 @@
     Boxes,
     Radio,
     Minus,
-    Plus
+    Plus,
+    GraduationCap,
+    Cpu,
+    FlaskConical,
+    Network,
+    School
   } from 'lucide-svelte';
+  import { goto } from '$app/navigation';
   import { Button } from '$lib/ui';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
-  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
+  const SITE = 'https://hopper.farefin.com';
+  const DESCRIPTION =
+    'Hopper is a self-hosted campus cloud: SSH + VS Code virtual machines for students and teams, with per-minute credit billing and fair-share scheduling on your own cluster.';
+
+  // Every link goes somewhere real — section anchors or auth routes.
   const navLinks = [
-    { label: 'Product', href: '#product' },
-    { label: 'Use Cases', href: '#use-cases' },
-    { label: 'Docs', href: '#docs' },
-    { label: 'Pricing', href: '#pricing' }
+    ['Product', '#features'],
+    ['How it works', '#flow'],
+    ['FAQ', '#faq']
   ];
   const trusted = [
-    { icon: 'university', label: 'Univ. of Dhaka' },
-    { icon: 'cpu', label: 'CSE Dept' },
-    { icon: 'flask', label: 'Research Lab' },
-    { icon: 'network', label: 'Systems Group' },
-    { icon: 'cap', label: 'EdTech BD' }
+    { icon: GraduationCap, label: 'Univ. of Dhaka' },
+    { icon: Cpu, label: 'CSE Dept' },
+    { icon: FlaskConical, label: 'Research Lab' },
+    { icon: Network, label: 'Systems Group' },
+    { icon: School, label: 'EdTech BD' }
   ];
+
+  // Hero email capture → carries the address into signup.
+  let heroEmail = $state('');
+  function startSignup() {
+    const e = heroEmail.trim();
+    goto(e ? `/signup?email=${encodeURIComponent(e)}` : '/signup');
+  }
 
   // Two floating server racks. Each slot: two LED colours + a bar width.
   const leds = ['#c084fc', '#38bdf8', '#f59e0b', '#34d399', '#a78bfa', '#f472b6'];
@@ -41,11 +57,45 @@
   ];
 </script>
 
+<svelte:head>
+  <meta name="description" content={DESCRIPTION} />
+  <link rel="canonical" href="{SITE}/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Hopper" />
+  <meta property="og:title" content="Hopper — Cloud VMs for students & teams" />
+  <meta property="og:description" content={DESCRIPTION} />
+  <meta property="og:url" content="{SITE}/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Hopper — Cloud VMs for students & teams" />
+  <meta name="twitter:description" content={DESCRIPTION} />
+  {@html `<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Hopper',
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Web',
+    description: DESCRIPTION,
+    url: SITE,
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+  })}</${'script'}>`}
+</svelte:head>
+
 <div class="relative min-h-[100dvh] overflow-hidden bg-gradient-to-b from-indigo-50/80 via-background to-violet-50/50 text-foreground dark:from-slate-950 dark:via-background dark:to-indigo-950/30">
+  <!-- dot-grid texture -->
+  <div
+    class="pointer-events-none absolute inset-x-0 top-0 z-0 h-[720px] opacity-[0.5] [mask-image:radial-gradient(70%_60%_at_50%_0%,black,transparent)]"
+    style="background-image: radial-gradient(circle at 1px 1px, rgba(99,102,241,0.22) 1px, transparent 0); background-size: 22px 22px;"
+  ></div>
+
   <!-- Banner -->
-  <div class="relative z-10 flex items-center justify-center gap-2 border-b border-primary/10 bg-primary/[0.06] py-2.5 text-[13px] font-medium text-primary">
-    <Sparkles class="size-3.5" /> Hopper is live — read the launch post <ArrowRight class="size-3.5" />
-  </div>
+  <a
+    href="/signup"
+    data-sveltekit-reload
+    class="group relative z-10 flex items-center justify-center gap-2 border-b border-primary/10 bg-primary/[0.06] py-2.5 text-[13px] font-medium text-primary transition-colors hover:bg-primary/10"
+  >
+    <Sparkles class="size-3.5" /> Hopper is live — free starter credits for students
+    <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
+  </a>
 
   <!-- Nav -->
   <header class="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
@@ -54,51 +104,59 @@
       <span class="text-lg font-bold tracking-tight">Hopper</span>
     </a>
     <nav class="hidden items-center gap-1 rounded-full border border-border bg-card px-1.5 py-1.5 shadow-sm md:flex">
-      {#each navLinks as link}
-        <a
-          href={link.href}
-          class="rounded-full px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {link.label}
-        </a>
+      {#each navLinks as [label, href] (label)}
+        <a {href} class="rounded-full px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">{label}</a>
       {/each}
     </nav>
-    <div class="flex items-center gap-2 sm:gap-3">
-      <ThemeToggle />
+    <div class="flex items-center gap-3">
       <a href="/login" class="text-sm font-medium text-foreground transition-colors hover:text-primary">Sign in</a>
       <Button href="/signup" data-sveltekit-reload class="rounded-full">Sign up</Button>
     </div>
   </header>
 
   <!-- Hero -->
-  <section
-    id="product"
-    class="relative z-10 mx-auto grid max-w-6xl scroll-mt-24 items-center gap-8 px-6 pb-16 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:pt-16"
-  >
-    <!-- glow -->
-    <div class="pointer-events-none absolute right-0 top-0 h-[560px] w-[560px] rounded-full opacity-60 blur-3xl" style="background: radial-gradient(closest-side, rgba(196,181,253,0.55), transparent 70%);"></div>
+  <section class="relative z-10 mx-auto grid max-w-6xl items-center gap-8 px-6 pb-16 pt-10 lg:grid-cols-[1.05fr_0.95fr] lg:pt-16">
+    <!-- glow: violet core with a warm amber rim -->
+    <div class="pointer-events-none absolute right-0 top-0 h-[560px] w-[560px] rounded-full opacity-60 blur-3xl" style="background: radial-gradient(closest-side, rgba(196,181,253,0.55), rgba(251,191,36,0.18) 60%, transparent 75%);"></div>
 
     <div class="relative">
-      <span class="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-medium text-muted-foreground shadow-sm">
+      <span class="hero-reveal inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] font-medium text-muted-foreground shadow-sm">
         <Server class="size-3.5 text-primary" /> Self-hosted campus VM cloud
       </span>
-      <h1 class="mt-5 text-balance text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
-        Cloud VMs for<br /> students &amp; teams.
+      <h1 class="hero-reveal mt-5 text-balance text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl" style="animation-delay: 80ms">
+        Cloud VMs for<br />
+        <span class="bg-gradient-to-r from-primary via-violet-500 to-amber-500 bg-clip-text text-transparent">students &amp; teams.</span>
       </h1>
-      <p class="mt-5 max-w-md text-lg leading-relaxed text-muted-foreground">
+      <p class="hero-reveal mt-5 max-w-md text-lg leading-relaxed text-muted-foreground" style="animation-delay: 160ms">
         Spin up SSH + VS Code virtual machines in seconds. Per-minute credit billing, fair-share scheduling, on your own cluster.
       </p>
       <!-- email-capture pill -->
-      <div class="mt-8 flex max-w-md items-center gap-1.5 rounded-full border border-border bg-card p-1.5 pl-5 shadow-lg shadow-indigo-950/10">
-        <input placeholder="What's your university email?" class="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground" />
-        <Button href="/signup" data-sveltekit-reload class="shrink-0 rounded-full px-5">Get started for free</Button>
-      </div>
+      <form
+        class="hero-reveal mt-8 flex max-w-md items-center gap-1.5 rounded-full border border-border bg-card p-1.5 pl-5 shadow-lg shadow-indigo-950/10 transition-shadow focus-within:shadow-xl focus-within:ring-2 focus-within:ring-primary/25"
+        style="animation-delay: 240ms"
+        onsubmit={(e) => {
+          e.preventDefault();
+          startSignup();
+        }}
+      >
+        <input
+          type="email"
+          bind:value={heroEmail}
+          placeholder="What's your university email?"
+          aria-label="University email"
+          class="min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        <Button type="submit" class="shrink-0 rounded-full px-5">Get started for free</Button>
+      </form>
+      <p class="hero-reveal mt-3 text-xs text-muted-foreground" style="animation-delay: 300ms">
+        Free starter credits · no card required
+      </p>
     </div>
 
     <!-- Floating server racks -->
     <div class="relative hidden h-[420px] lg:block">
       <!-- Rack 1 (taller, right) -->
-      <div class="absolute right-6 top-2 rotate-[-4deg]">
+      <div class="rack-float absolute right-6 top-2 rotate-[-4deg]">
         <div class="absolute -bottom-5 left-1/2 h-16 w-3/4 -translate-x-1/2 rounded-full bg-fuchsia-500/50 blur-2xl"></div>
         <div class="relative w-[168px] rounded-[18px] border-2 border-violet-400/70 bg-gradient-to-br from-[#2a1c4d] to-[#0e0820] p-3.5 shadow-2xl shadow-violet-900/50">
           <div class="mb-2 h-[3px] w-full rounded-full bg-white/15"></div>
@@ -112,7 +170,7 @@
         </div>
       </div>
       <!-- Rack 2 (shorter, left-lower) -->
-      <div class="absolute left-2 top-[130px] rotate-[5deg]">
+      <div class="rack-float absolute left-2 top-[130px] rotate-[5deg]" style="animation-delay: 1.4s">
         <div class="absolute -bottom-5 left-1/2 h-14 w-3/4 -translate-x-1/2 rounded-full bg-fuchsia-500/50 blur-2xl"></div>
         <div class="relative w-[132px] rounded-[18px] border-2 border-violet-400/70 bg-gradient-to-br from-[#2a1c4d] to-[#0e0820] p-3 shadow-2xl shadow-violet-900/50">
           <div class="mb-2 h-[3px] w-full rounded-full bg-white/15"></div>
@@ -132,9 +190,9 @@
   <section class="relative z-10 mx-auto flex max-w-6xl flex-col items-center gap-6 px-6 pb-16">
     <p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Trusted by classrooms and labs at</p>
     <div class="flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-muted-foreground">
-      {#each trusted as o}
-        <span class="flex items-center gap-2 text-[15px] font-semibold opacity-70">
-          <Server class="size-4" /> {o.label}
+      {#each trusted as o (o.label)}
+        <span class="flex items-center gap-2 text-[15px] font-semibold opacity-70 transition-opacity hover:opacity-100">
+          <o.icon class="size-4" /> {o.label}
         </span>
       {/each}
     </div>
@@ -189,7 +247,7 @@
         </div>
 
         <!-- Row 3: Zero idle — line chart LEFT, text RIGHT -->
-        <div id="pricing" class="grid scroll-mt-24 items-center gap-8 py-10 sm:grid-cols-2">
+        <div class="grid items-center gap-8 py-10 sm:grid-cols-2">
           <div class="relative h-56 rounded-xl">
             <svg viewBox="0 0 380 150" class="h-full w-full">
               <defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#a78bfa" stop-opacity="0.3" /><stop offset="1" stop-color="#a78bfa" stop-opacity="0" /></linearGradient></defs>
@@ -226,7 +284,7 @@
   </section>
 
   <!-- Flow: timeline + cap cards -->
-  <section id="use-cases" class="relative z-10 mx-auto max-w-6xl scroll-mt-24 px-6 py-20">
+  <section id="flow" class="relative z-10 mx-auto max-w-6xl scroll-mt-20 px-6 py-20">
     <div class="mx-auto max-w-2xl text-center">
       <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">From plan to running in one flow.</h2>
       <p class="mt-3 text-muted-foreground">One account. No migrations between stages.</p>
@@ -271,7 +329,7 @@
   </section>
 
   <!-- FAQ -->
-  <section id="docs" class="relative z-10 scroll-mt-24 border-t border-border bg-card">
+  <section id="faq" class="relative z-10 scroll-mt-20 border-t border-border bg-card">
     <div class="mx-auto max-w-3xl px-6 py-20">
       <div class="text-center">
         <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">Questions? Answers.</h2>
@@ -303,19 +361,43 @@
     <p class="relative mx-auto mt-3 max-w-lg text-muted-foreground">Sign up with your university email. Free credits to get you started — no card required.</p>
     <div class="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
       <Button href="/signup" data-sveltekit-reload size="lg" class="h-12 rounded-full px-6 text-[15px]">Get started</Button>
-      <Button href="/login" variant="outline" size="lg" class="h-12 rounded-full px-6 text-[15px]">Open login</Button>
+      <Button href="/login" variant="outline" size="lg" class="h-12 rounded-full px-6 text-[15px]">Sign in</Button>
     </div>
   </section>
 
   <!-- Footer -->
   <footer class="relative z-10 border-t border-border bg-card/50">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
-      <div class="flex items-center gap-2.5">
-        <HopperLogo size={26} />
-        <span class="font-semibold text-foreground">Hopper</span>
-        <span>· Cloud VMs for campus</span>
+    <div class="mx-auto grid max-w-6xl gap-10 px-6 py-12 sm:grid-cols-[1.4fr_1fr_1fr]">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <HopperLogo size={28} />
+          <span class="text-base font-bold text-foreground">Hopper</span>
+        </div>
+        <p class="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
+          A self-hosted cloud VM platform for classrooms and labs. SSH + VS Code in seconds, billed by the minute.
+        </p>
       </div>
-      <p>© 2026 Hopper · Self-hosted on Kubernetes · Secured by Keycloak</p>
+      <nav aria-label="Product">
+        <h4 class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Product</h4>
+        <ul class="mt-3 space-y-2 text-sm">
+          <li><a href="#features" class="text-muted-foreground transition-colors hover:text-foreground">Features</a></li>
+          <li><a href="#flow" class="text-muted-foreground transition-colors hover:text-foreground">How it works</a></li>
+          <li><a href="#faq" class="text-muted-foreground transition-colors hover:text-foreground">FAQ</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Account">
+        <h4 class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Account</h4>
+        <ul class="mt-3 space-y-2 text-sm">
+          <li><a href="/signup" data-sveltekit-reload class="text-muted-foreground transition-colors hover:text-foreground">Create account</a></li>
+          <li><a href="/login" class="text-muted-foreground transition-colors hover:text-foreground">Sign in</a></li>
+          <li><a href="/forgot-password" class="text-muted-foreground transition-colors hover:text-foreground">Reset password</a></li>
+        </ul>
+      </nav>
+    </div>
+    <div class="border-t border-border/60">
+      <p class="mx-auto max-w-6xl px-6 py-5 text-center text-xs text-muted-foreground sm:text-left">
+        © 2026 Hopper · Self-hosted on Kubernetes · Secured by Keycloak
+      </p>
     </div>
   </footer>
 </div>
@@ -348,7 +430,19 @@
     animation: sparkDraw 1.8s ease-out forwards;
   }
 
+  @keyframes heroReveal {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+  .hero-reveal { animation: heroReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  @keyframes rackFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  .rack-float { animation: rackFloat 6s ease-in-out infinite; }
+
   @media (prefers-reduced-motion: reduce) {
-    .flow-shimmer, .flow-dot, .flow-step, .spark { animation: none !important; }
+    .flow-shimmer, .flow-dot, .flow-step, .spark, .hero-reveal, .rack-float { animation: none !important; }
   }
 </style>
