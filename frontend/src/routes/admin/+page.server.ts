@@ -18,13 +18,14 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [statsRes, nodesRes, usersRes, activeVmsRes, auditRes, reqRes] = await Promise.all([
+  const [statsRes, nodesRes, usersRes, activeVmsRes, auditRes, reqRes, issuesRes] = await Promise.all([
     fetch(apiUrl('/admin/stats'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/nodes'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/users'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/active-vms'), { headers }).catch(() => null),
     fetch(apiUrl('/admin/audit-logs?limit=500'), { headers }).catch(() => null),
-    fetch(apiUrl('/admin/teacher-requests'), { headers }).catch(() => null)
+    fetch(apiUrl('/admin/teacher-requests'), { headers }).catch(() => null),
+    fetch(apiUrl('/issues/admin'), { headers }).catch(() => null)
   ]);
 
   const stats = statsRes?.ok ? await statsRes.json() : { total_users: 0, active_vms: 0, total_vms_created: 0 };
@@ -33,6 +34,7 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const activeVms = activeVmsRes?.ok ? await activeVmsRes.json() : [];
   const auditLogs = auditRes?.ok ? await auditRes.json() : [];
   const teacherRequests = reqRes?.ok ? await reqRes.json() : [];
+  const issues = issuesRes?.ok ? await issuesRes.json() : [];
 
   return {
     currentUserId: user?.id ?? '',
@@ -43,5 +45,6 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     activeVms,
     auditLogs,
     teacherRequests,
+    issues,
   };
 };

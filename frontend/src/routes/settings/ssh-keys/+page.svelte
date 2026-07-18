@@ -29,7 +29,19 @@
   import { copyToClipboard, relTime } from '$lib/utils';
   import type { SshKey } from '$lib/types';
 
-  let { data }: { data: { keys: SshKey[] } } = $props();
+  type ApiKey = {
+    id: string;
+    name: string;
+    prefix: string;
+    scope: string;
+    created_at: string;
+    last_used_at: string | null;
+    revoked_at: string | null;
+  };
+
+  let { data }: { data: { keys: SshKey[]; apiKeys: ApiKey[] } } = $props();
+
+  const activeApiKeys = $derived(data.apiKeys.filter((k) => !k.revoked_at));
 
   const MAX_KEYS = 10;
   const usedPct = $derived((data.keys.length / MAX_KEYS) * 100);
@@ -134,6 +146,70 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
     try {
       await copyToClipboard(fp);
       toast.success('Fingerprint copied');
+    } catch {
+      toast.error('Could not access clipboard');
+    }
+  }
+
+  // --- API keys (programmatic access) ---
+  let apiDialogOpen = $state(false);
+  let apiKeyName = $state('');
+  let apiKeyScope = $state<'read_only' | 'full_access'>('read_only');
+  let apiKeySaving = $state(false);
+  // The plaintext token — returned exactly once at creation, shown until dismissed.
+  let createdToken = $state<string | null>(null);
+
+  async function createApiKey() {
+    if (apiKeySaving) return;
+    const name = apiKeyName.trim();
+    if (!name) {
+      toast.error('Give the key a name');
+      return;
+    }
+    apiKeySaving = true;
+    const id = toast.loading('Creating API key…');
+    try {
+      const res = await api.post<{ key: string }>('/auth/api-keys', {
+        name,
+        scope: apiKeyScope
+      });
+      createdToken = res.key;
+      toast.success('API key created', { id, description: 'Copy it now — it is shown only once.' });
+      apiKeyName = '';
+      apiKeyScope = 'read_only';
+      await invalidateAll();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Failed to create API key';
+      toast.error('Could not create API key', { id, description: msg });
+    } finally {
+      apiKeySaving = false;
+    }
+  }
+
+  async function revokeApiKey(k: ApiKey) {
+    const ok = await confirm({
+      title: `Revoke "${k.name}"?`,
+      description: 'Requests using this key will start failing immediately. This cannot be undone.',
+      confirmLabel: 'Revoke',
+      variant: 'destructive'
+    });
+    if (!ok) return;
+    const id = toast.loading('Revoking key…');
+    try {
+      await api.delete(`/auth/api-keys/${k.id}`);
+      toast.success('API key revoked', { id });
+      await invalidateAll();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Failed to revoke key';
+      toast.error('Could not revoke key', { id, description: msg });
+    }
+  }
+
+  async function copyToken() {
+    if (!createdToken) return;
+    try {
+      await copyToClipboard(createdToken);
+      toast.success('Token copied');
     } catch {
       toast.error('Could not access clipboard');
     }
@@ -313,6 +389,75 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
       </p>
     </CardContent>
   </Card>
+
+  <!-- API keys — programmatic access tokens -->
+  <div class="animate-fade-up space-y-3 pt-2" style="animation-delay: 160ms">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <Fingerprint class="size-[1.15rem] text-muted-foreground" strokeWidth={1.75} />
+          API keys
+        </h2>
+        <p class="mt-0.5 text-sm text-muted-foreground">
+          Tokens for scripts and CI — sent as a bearer token. The secret is shown once, at creation.
+        </p>
+      </div>
+      <Button variant="outline" onclick={() => (apiDialogOpen = true)}>
+        <Plus class="size-4" /> New API key
+      </Button>
+    </div>
+
+    {#if data.apiKeys.length === 0}
+      <Card class="border-dashed bg-muted/20">
+        <CardContent class="py-10 text-center text-sm text-muted-foreground">
+          No API keys yet. Create one to call the Hopper API from scripts.
+        </CardContent>
+      </Card>
+    {:else}
+      <Card class="overflow-hidden">
+        <ul class="divide-y divide-border">
+          {#each data.apiKeys as k (k.id)}
+            <li class="group flex items-center gap-3.5 p-4 transition-colors hover:bg-muted/40 {k.revoked_at ? 'opacity-55' : ''}">
+              <div class="grid size-9 shrink-0 place-items-center rounded-lg bg-info/10 text-info ring-1 ring-inset ring-info/20">
+                <Fingerprint class="size-4" strokeWidth={1.75} />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="min-w-0 break-all font-medium">{k.name}</span>
+                  <code class="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{k.prefix}…</code>
+                  <Badge variant={k.scope === 'full_access' ? 'warning' : 'muted'} class="shrink-0">
+                    {k.scope === 'full_access' ? 'Full access' : 'Read-only'}
+                  </Badge>
+                  {#if k.revoked_at}
+                    <Badge variant="destructive" class="shrink-0">Revoked</Badge>
+                  {/if}
+                </div>
+                <div class="mt-1 text-xs text-muted-foreground">
+                  Created {relTime(k.created_at)}
+                  · {k.last_used_at ? `last used ${relTime(k.last_used_at)}` : 'never used'}
+                </div>
+              </div>
+              {#if !k.revoked_at}
+                <Tooltip content="Revoke key">
+                  {#snippet children(props)}
+                  <Button
+                    {...props}
+                    variant="ghost"
+                    size="icon"
+                    class="shrink-0 opacity-60 transition-opacity hover:bg-destructive/10 group-hover:opacity-100"
+                    onclick={() => revokeApiKey(k)}
+                  >
+                    <Trash2 class="size-3.5 text-destructive" />
+                  </Button>
+                  {/snippet}
+                </Tooltip>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </Card>
+    {/if}
+  </div>
 </div>
 
 <Dialog
@@ -363,5 +508,83 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
         <Plus class="size-4" /> Add key
       {/if}
     </Button>
+  {/snippet}
+</Dialog>
+
+<!-- Create API key -->
+<Dialog
+  bind:open={apiDialogOpen}
+  title="Create an API key"
+  description="Use it as a bearer token from scripts or CI. The secret is shown only once."
+>
+  {#if createdToken}
+    <div class="space-y-3">
+      <div class="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5 text-xs text-muted-foreground">
+        Copy this token now — it won't be shown again. Only a hash is stored server-side.
+      </div>
+      <div class="relative">
+        <code class="block w-full select-all overflow-x-auto whitespace-nowrap rounded-lg border border-border bg-muted/50 py-2.5 pl-3 pr-11 font-mono text-xs">
+          {createdToken}
+        </code>
+        <button
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          onclick={copyToken}
+          aria-label="Copy token"
+          title="Copy token"
+        >
+          <Copy class="size-3.5" />
+        </button>
+      </div>
+    </div>
+  {:else}
+    <div class="space-y-4">
+      <div>
+        <Label for="ak-name">Key name</Label>
+        <Input id="ak-name" bind:value={apiKeyName} placeholder="CI pipeline" class="mt-1" />
+      </div>
+      <div>
+        <Label>Scope</Label>
+        <div class="mt-1.5 grid gap-2 sm:grid-cols-2">
+          {#each [
+            { value: 'read_only', label: 'Read-only', desc: 'GET requests only — safe for dashboards.' },
+            { value: 'full_access', label: 'Full access', desc: 'Can launch and terminate VMs.' }
+          ] as opt (opt.value)}
+            <button
+              type="button"
+              class={`rounded-xl border p-3 text-left transition-colors ${
+                apiKeyScope === opt.value
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                  : 'border-border hover:border-primary/40'
+              }`}
+              onclick={() => (apiKeyScope = opt.value as 'read_only' | 'full_access')}
+            >
+              <div class="text-sm font-medium">{opt.label}</div>
+              <div class="mt-0.5 text-xs text-muted-foreground">{opt.desc}</div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
+  {#snippet footer()}
+    {#if createdToken}
+      <Button
+        onclick={() => {
+          createdToken = null;
+          apiDialogOpen = false;
+        }}
+      >
+        Done
+      </Button>
+    {:else}
+      <Button variant="outline" onclick={() => (apiDialogOpen = false)}>Cancel</Button>
+      <Button onclick={createApiKey} disabled={apiKeySaving}>
+        {#if apiKeySaving}
+          <Spinner class="size-4" /> Creating…
+        {:else}
+          <Plus class="size-4" /> Create key
+        {/if}
+      </Button>
+    {/if}
   {/snippet}
 </Dialog>
