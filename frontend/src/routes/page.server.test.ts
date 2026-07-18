@@ -14,7 +14,7 @@ describe('root page server load', () => {
     });
   });
 
-  it('shows the landing page to anonymous users', async () => {
+  it('allows anonymous users to see the landing page', async () => {
     const { load } = await import('./+page.server');
 
     // Anonymous visitors see the public landing page (a plain load result),

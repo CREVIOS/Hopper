@@ -14,6 +14,8 @@
   } = $props();
 
   let terminalEl: HTMLDivElement;
+  let connectionStatus = $state<'connecting' | 'connected' | 'reconnecting' | 'closed'>('connecting');
+  let statusMessage = $state('Connecting to pod…');
 
   // Shared so the activation effect can drive focus()/fit() when this tab
   // becomes visible. xterm's FitAddon returns garbage when the element is
@@ -61,6 +63,12 @@
     function connect() {
       if (cancelled) return;
 
+      connectionStatus = reconnectAttempts > 0 ? 'reconnecting' : 'connecting';
+      statusMessage =
+        reconnectAttempts > 0
+          ? `Reconnecting to terminal (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})…`
+          : 'Connecting to pod…';
+
       if (term) term.writeln('\r\nConnecting to pod...');
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -70,6 +78,8 @@
       ws.onopen = () => {
         if (cancelled) return;
         reconnectAttempts = 0;
+        connectionStatus = 'connected';
+        statusMessage = 'Connected';
         if (term) {
           term.writeln('\r\nConnected!\r\n');
           try { term.focus(); } catch {}
@@ -111,17 +121,23 @@
 
         const code = ev.code;
         if (code === 1008 || code === 1003 || code >= 4000) {
+          connectionStatus = 'closed';
+          statusMessage = `Connection closed (${code})`;
           if (term) term.writeln(`\r\nConnection closed (${code}).`);
           return;
         }
 
         if (reconnectAttempts >= maxReconnectAttempts) {
+          connectionStatus = 'closed';
+          statusMessage = 'Max reconnect attempts reached. Please refresh.';
           if (term) term.writeln(`\r\nMax reconnect attempts reached. Please refresh.`);
           return;
         }
 
         const backoff = Math.min(3000 * Math.pow(1.5, reconnectAttempts), 15000);
         reconnectAttempts++;
+        connectionStatus = 'reconnecting';
+        statusMessage = `Disconnected. Reconnecting in ${Math.round(backoff / 1000)}s…`;
 
         if (term) {
           term.writeln(`\r\nConnection lost — Reconnecting in ${Math.round(backoff / 1000)}s (Attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
@@ -193,6 +209,14 @@
 </script>
 
 <div class="relative h-full w-full bg-black rounded border border-gray-800">
+  <div
+    class="absolute left-3 top-2 z-10 rounded bg-gray-900/85 px-2 py-1 text-xs text-gray-200"
+    role="status"
+    aria-live="polite"
+    data-terminal-status={connectionStatus}
+  >
+    {statusMessage}
+  </div>
   {#if onClose}
     <button
       title="Close Terminal"

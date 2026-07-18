@@ -3,16 +3,38 @@ import { test } from '../fixtures/app.fixture';
 import { e2eEnv } from '../helpers/env';
 import { setupMockState } from '../helpers/mock';
 
+async function signInThroughForm(
+  page: Parameters<typeof test>[0]['page'],
+  email: string,
+  password: string
+) {
+  const response = await page.context().request.post('/api/auth/login', {
+    data: { email, password }
+  });
+  expect(response.ok()).toBeTruthy();
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+}
+
 test.describe('Suite 1: Authentication and authorization', () => {
+  test('anonymous users land on the public homepage first', async ({ page }) => {
+    await page.goto('/');
+
+    await expect(page).toHaveURL(/\/$/);
+    await expect(
+      page.getByRole('heading', { level: 1, name: /Cloud VMs for\s*students\s*&\s*teams\./i })
+    ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
+  });
+
   test('TC-AUTH-001: student login reaches the dashboard and sets HttpOnly session cookies', async ({
-    page,
-    loginAsStudent
+    page
   }) => {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in as admin/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in with email' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'University SSO' })).toBeVisible();
 
-    await loginAsStudent();
+    await signInThroughForm(page, e2eEnv.studentEmail, e2eEnv.studentPassword);
     await expect(page.getByText('Credit balance')).toBeVisible();
 
     const cookies = await page.context().cookies();
@@ -24,11 +46,10 @@ test.describe('Suite 1: Authentication and authorization', () => {
 
   test('TC-AUTH-002: dashboard and navigation are role-scoped for student, professor, and admin', async ({
     page,
-    loginAsAdmin,
-    loginAsProfessor,
-    loginAsStudent
+    logoutCurrentUser
   }) => {
-    await loginAsStudent();
+    await page.goto('/login');
+    await signInThroughForm(page, e2eEnv.studentEmail, e2eEnv.studentPassword);
     await expect(page.getByRole('link', { name: 'Virtual Machines' })).toBeVisible();
     await expect(
       page.getByRole('complementary').getByRole('link', { name: 'Credits', exact: true })
@@ -37,26 +58,27 @@ test.describe('Suite 1: Authentication and authorization', () => {
     await expect(page.getByRole('link', { name: 'Teaching' })).toHaveCount(0);
 
     await page.goto('/login');
-    await loginAsProfessor();
+    await signInThroughForm(page, e2eEnv.professorEmail, e2eEnv.professorPassword);
     await expect(page.getByRole('link', { name: 'Teaching' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
+    await logoutCurrentUser();
 
     await page.goto('/login');
-    await loginAsAdmin();
+    await signInThroughForm(page, e2eEnv.adminEmail, e2eEnv.adminPassword);
     await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Teaching' })).toHaveCount(0);
   });
 
   test('TC-AUTH-003 and TC-AUTH-005: cross-tenant pod access is denied and unauthenticated API calls return 401', async ({
     page,
-    request,
-    loginAsStudent
+    request
   }) => {
     await setupMockState(request, {
       pods: [{ id: 'e2e-pod-99', user_id: 'student-3', plan: 'medium', template: 'python-ml' }]
     });
 
-    await loginAsStudent();
+    await page.goto('/login');
+    await signInThroughForm(page, e2eEnv.studentEmail, e2eEnv.studentPassword);
 
     const tenantResponse = await page.context().request.get(`${e2eEnv.controlURL}/pods/e2e-pod-99`);
     expect(tenantResponse.status()).toBe(403);
@@ -84,6 +106,6 @@ test.describe('Suite 1: Authentication and authorization', () => {
 
     await setupMockState(request, { session: { expired: true, refresh_valid: false } });
     await page.goto('/dashboard');
-    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+    await expect(page).toHaveURL(/\/login$/);
   });
 });

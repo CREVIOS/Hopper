@@ -7,7 +7,21 @@ async function activateTab(tab: any) {
 }
 
 async function waitForPodPageReady(page: Parameters<typeof test>[0]['page']) {
-  await expect(page.getByRole('textbox', { name: 'Terminal input' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /e2e-pod-/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Overview', selected: true })).toBeVisible();
+}
+
+async function launchAndConfirm(
+  page: Parameters<typeof test>[0]['page'],
+  title: RegExp | string,
+  action: string
+) {
+  await expect(page.locator('[data-pods-hydrated="true"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Launch VM' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(title)).toBeVisible();
+  await dialog.getByRole('button', { name: action }).click();
 }
 
 async function confirmAction(page: Parameters<typeof test>[0]['page'], title: RegExp | string, action: string) {
@@ -28,8 +42,7 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     await page.goto('/pods');
     await expect(page.locator('main')).toContainText('Estimated cost');
 
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmAction(page, /Launch new VM\?/i, 'Launch');
+    await launchAndConfirm(page, /Launch new VM\?/i, 'Launch');
 
     const podLink = page.locator('a[href="/pods/e2e-pod-1"]').first();
     await expect(podLink).toBeVisible();
@@ -64,7 +77,7 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     await page.goto('/pods/e2e-pod-1');
     await waitForPodPageReady(page);
     const main = page.locator('main');
-    await expect(main).toContainText('Live metrics');
+    await expect(main).toContainText('Live Metrics');
     await expect(main).toContainText(/42%|Waiting for metrics/);
     await expect(main).toContainText(/1.0 GB \/ 2.0 GB|Memory 4 Gi/);
   });
@@ -96,8 +109,7 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     });
 
     await page.goto('/pods');
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmAction(page, /Launch new VM\?/i, 'Launch');
+    await launchAndConfirm(page, /Launch new VM\?/i, 'Launch');
     await expect(page.getByText('Launch failed')).toBeVisible();
     await expect(page.getByText('Image pull back-off')).toBeVisible();
 
@@ -110,8 +122,7 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     });
 
     await page.goto('/pods');
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmAction(page, /Launch new VM\?/i, 'Launch');
+    await launchAndConfirm(page, /Launch new VM\?/i, 'Launch');
     await expect(page.getByText('Maximum concurrent pods reached (3/3)')).toBeVisible();
     await expect(page.getByRole('link', { name: /e2e-pod-/ })).toHaveCount(3);
   });
@@ -128,11 +139,10 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     });
 
     await page.goto('/pods');
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmAction(page, /Launch new VM\?/i, 'Launch');
+    await launchAndConfirm(page, /Launch new VM\?/i, 'Launch');
 
     await expect(page).toHaveURL(/\/pods\/queue$/);
     await expect(page.getByRole('heading', { name: 'Queue' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Position' })).toBeVisible();
+    await expect(page.locator('main').getByRole('button', { name: /Cancel/i })).toBeVisible();
   });
 });

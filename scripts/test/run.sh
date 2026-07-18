@@ -9,6 +9,7 @@ MOCK_COMPOSE_FILE="$ROOT/docker-compose.test.yml"
 REAL_COMPOSE_FILE="$ROOT/docker-compose.yml"
 GO_TEST_CACHE_DEFAULT="$ROOT/.cache/go-test"
 REPORT_ROOT="$ROOT/test-results"
+TESTS_COVERAGE_ROOT="$ROOT/tests/coverage"
 SERVICE_LOG_DIR="$REPORT_ROOT/services"
 REAL_STACK_DIR="$REPORT_ROOT/real-stack"
 REAL_STACK_PID_DIR="$REAL_STACK_DIR/pids"
@@ -20,7 +21,7 @@ mkdir -p \
   "$ROOT/coverage/python" \
   "$ROOT/coverage/frontend" \
   "$ROOT/coverage/orchestrator" \
-  "$ROOT/tests/coverage" \
+  "$TESTS_COVERAGE_ROOT" \
   "$REPORT_ROOT/unit" \
   "$REPORT_ROOT/integration" \
   "$REPORT_ROOT/frontend" \
@@ -38,6 +39,30 @@ mkdir -p \
 die() {
   echo "ERROR: $*" >&2
   exit 1
+}
+
+sync_html_coverage_dir() {
+  local src=$1
+  local dest=$2
+
+  [[ -d "$src" ]] || die "Coverage HTML directory missing: $src"
+  rm -rf "$dest"
+  mkdir -p "$(dirname "$dest")"
+  cp -R "$src" "$dest"
+}
+
+render_go_html() {
+  local profile=$1
+  local dest_dir=$2
+  local module_dir=${3:-$ROOT/services/orchestrator}
+
+  [[ -f "$profile" ]] || die "Go coverage profile missing: $profile"
+  mkdir -p "$dest_dir"
+  (
+    cd "$module_dir"
+    GOCACHE="${GOCACHE:-$GO_TEST_CACHE_DEFAULT}" \
+      go tool cover -html="$profile" -o "$dest_dir/index.html"
+  )
 }
 
 have_cmd() {
@@ -254,6 +279,7 @@ frontend_tests() {
     --reporter=default \
     --reporter=junit \
     --outputFile.junit="$REPORT_ROOT/frontend/vitest-junit.xml"
+  sync_html_coverage_dir "$ROOT/coverage/frontend" "$TESTS_COVERAGE_ROOT/frontend"
 }
 
 python_unit() {
@@ -265,7 +291,9 @@ python_unit() {
     --cov=app \
     --cov-config="$ROOT/services/api-gateway/.coveragerc" \
     --cov-report=term-missing \
-    --cov-report="xml:$ROOT/coverage/python/unit.xml"
+    --cov-report="xml:$ROOT/coverage/python/unit.xml" \
+    --cov-report="html:$ROOT/coverage/python/unit-html"
+  sync_html_coverage_dir "$ROOT/coverage/python/unit-html" "$TESTS_COVERAGE_ROOT/python/unit"
 }
 
 python_integration() {
@@ -278,7 +306,9 @@ python_integration() {
     --cov=app \
     --cov-config="$ROOT/services/api-gateway/.coveragerc" \
     --cov-report=term-missing \
-    --cov-report="xml:$ROOT/coverage/python/integration.xml"
+    --cov-report="xml:$ROOT/coverage/python/integration.xml" \
+    --cov-report="html:$ROOT/coverage/python/integration-html"
+  sync_html_coverage_dir "$ROOT/coverage/python/integration-html" "$TESTS_COVERAGE_ROOT/python/integration"
 }
 
 python_integration_keycloak() {
@@ -319,6 +349,8 @@ go_internal_tests() {
       -coverprofile="$internal_profile" \
       -json | tee "$REPORT_ROOT/orchestrator/go-test.json"
   )
+  render_go_html "$internal_profile" "$ROOT/coverage/orchestrator/internal-html" "$ROOT/services/orchestrator"
+  sync_html_coverage_dir "$ROOT/coverage/orchestrator/internal-html" "$TESTS_COVERAGE_ROOT/orchestrator/internal"
 }
 
 go_contract_tests() {
@@ -332,6 +364,8 @@ go_contract_tests() {
       -coverprofile="$contract_profile" \
       -json | tee "$REPORT_ROOT/contracts/go-contracts.json"
   )
+  render_go_html "$contract_profile" "$ROOT/coverage/orchestrator/contract-html" "$ROOT/services/orchestrator"
+  sync_html_coverage_dir "$ROOT/coverage/orchestrator/contract-html" "$TESTS_COVERAGE_ROOT/orchestrator/contract"
 }
 
 merge_go_coverage() {
@@ -601,6 +635,9 @@ chaos_checks() {
 render_coverage_report() {
   require_cmd python3
   merge_go_coverage
+  require_cmd go
+  render_go_html "$ROOT/coverage/orchestrator/orchestrator.out" "$ROOT/coverage/orchestrator/merged-html" "$ROOT/services/orchestrator"
+  sync_html_coverage_dir "$ROOT/coverage/orchestrator/merged-html" "$TESTS_COVERAGE_ROOT/orchestrator/merged"
   python3 "$ROOT/scripts/test/generate_coverage_report.py"
 }
 

@@ -47,7 +47,7 @@ async function request<T>(
     } catch {}
     isRefreshing = false;
     if (typeof window !== 'undefined') {
-      window.location.href = '/login';
+      window.location.href = '/login?session_expired=1';
     }
     throw new ApiError(401, 'Session expired');
   }
