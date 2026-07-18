@@ -7,7 +7,8 @@ async function activateTab(tab: any) {
 }
 
 async function waitForPodPageReady(page: Parameters<typeof test>[0]['page']) {
-  await expect(page.getByRole('textbox', { name: 'Terminal input' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /e2e-pod-/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Overview', selected: true })).toBeVisible();
 }
 
 async function confirmAction(page: Parameters<typeof test>[0]['page'], title: RegExp | string, action: string) {
@@ -64,7 +65,7 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
     await page.goto('/pods/e2e-pod-1');
     await waitForPodPageReady(page);
     const main = page.locator('main');
-    await expect(main).toContainText('Live metrics');
+    await expect(main).toContainText('Live Metrics');
     await expect(main).toContainText(/42%|Waiting for metrics/);
     await expect(main).toContainText(/1.0 GB \/ 2.0 GB|Memory 4 Gi/);
   });
@@ -133,6 +134,6 @@ test.describe('Suite 2 and queue-oriented edge cases', () => {
 
     await expect(page).toHaveURL(/\/pods\/queue$/);
     await expect(page.getByRole('heading', { name: 'Queue' })).toBeVisible();
-    await expect(page.getByRole('columnheader', { name: 'Position' })).toBeVisible();
+    await expect(page.locator('main').getByRole('button', { name: /Cancel/i })).toBeVisible();
   });
 });

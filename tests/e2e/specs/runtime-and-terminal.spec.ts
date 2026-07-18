@@ -3,11 +3,15 @@ import { test } from '../fixtures/app.fixture';
 import { setupMockState } from '../helpers/mock';
 
 async function activateTab(tab: any) {
-  await tab.evaluate((node: HTMLElement) => node.click());
+  await tab.click({ force: true });
 }
 
 async function waitForPodPageReady(page: Parameters<typeof test>[0]['page']) {
-  await expect(page.getByRole('textbox', { name: 'Terminal input' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /e2e-pod-/i })).toBeVisible();
+  await expect(page.locator('[data-pod-hydrated="true"]')).toBeVisible();
+  const terminal = page.locator('.xterm');
+  await expect(terminal).toBeVisible();
+  await expect(page.locator('[data-terminal-status]')).toBeVisible();
 }
 
 test.describe('Suite 4 and runtime interactions', () => {
@@ -22,14 +26,15 @@ test.describe('Suite 4 and runtime interactions', () => {
     loginAsStudent
   }) => {
     await loginAsStudent();
-    await page.goto('/pods/e2e-pod-1');
+    await page.goto('/pods/e2e-pod-1?tab=terminal');
     await waitForPodPageReady(page);
 
     const rows = page.locator('.xterm-rows');
     await expect(rows).toContainText('Connected!');
 
-    await page.locator('.xterm-helper-textarea').pressSequentially('pwd');
-    await page.locator('.xterm-helper-textarea').press('Enter');
+    await page.locator('.xterm').click();
+    await page.keyboard.type('pwd');
+    await page.keyboard.press('Enter');
     await expect(rows).toContainText('/workspace');
   });
 
@@ -38,12 +43,13 @@ test.describe('Suite 4 and runtime interactions', () => {
     loginAsStudent
   }) => {
     await loginAsStudent();
-    await page.goto('/pods/e2e-pod-1');
+    await page.goto('/pods/e2e-pod-1?tab=terminal');
     await waitForPodPageReady(page);
 
     await expect(page.getByRole('button', { name: 'New terminal' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Overview' }).click();
     const main = page.locator('main');
-    await expect(main).toContainText('Live metrics');
+    await expect(main).toContainText('Live Metrics');
     await expect(main).toContainText(/Waiting for metrics|Streaming/);
   });
 
@@ -52,7 +58,7 @@ test.describe('Suite 4 and runtime interactions', () => {
     loginAsStudent
   }) => {
     await loginAsStudent();
-    await page.goto('/pods/e2e-pod-1');
+    await page.goto('/pods/e2e-pod-1?tab=terminal');
     await waitForPodPageReady(page);
 
     const terminal = page.locator('.xterm');
@@ -78,11 +84,12 @@ test.describe('Suite 4 and runtime interactions', () => {
     });
 
     await loginAsStudent();
-    await page.goto('/pods/e2e-pod-1');
+    await page.goto('/pods/e2e-pod-1?tab=terminal');
     await waitForPodPageReady(page);
 
     const rows = page.locator('.xterm-rows');
-    await expect(rows).toContainText(/Reconnecting|Attempt 1\/5/i, { timeout: 10000 });
+    await expect(page.locator('[data-terminal-status="reconnecting"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-terminal-status="connected"]')).toBeVisible({ timeout: 10000 });
     await expect(rows).toContainText(/Connected!/i, { timeout: 10000 });
   });
 
@@ -93,12 +100,13 @@ test.describe('Suite 4 and runtime interactions', () => {
   }) => {
     await loginAsStudent();
     await page.goto('/dashboard');
-    await expect(page.getByRole('heading', { name: 'Active VMs' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page.locator('main')).toContainText('Your Virtual Machines');
     await page.close();
 
     const reopened = await context.newPage();
     await reopened.goto('/dashboard');
     await expect(reopened.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-    await expect(reopened.locator('a[href="/pods/e2e-pod-1"]').first()).toBeVisible();
+    await expect(reopened.locator('main')).toContainText('e2e-pod-1');
   });
 });
