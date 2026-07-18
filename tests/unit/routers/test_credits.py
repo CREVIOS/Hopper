@@ -61,7 +61,7 @@ async def test_get_credit_balance_returns_account_id_and_balance(monkeypatch):
     async def fake_get_balance(db, user_id):
         return 42.5
 
-    async def fake_get_or_create_account(db, user_id):
+    async def fake_get_or_create_account(db, user_id, **kwargs):
         return account
 
     monkeypatch.setattr("app.routers.credits.get_balance", fake_get_balance)
@@ -191,11 +191,17 @@ async def test_allocate_credits_rejects_self_allocation():
 
 async def test_allocate_credits_admin_grants_to_target(monkeypatch):
     db = FakeDB(target=User(id="user-2", email="student@example.com", name="Student", role="student"))
+    notified = {}
 
     async def fake_add_credits(db_obj, user_id, amount, description):
         return type("Transfer", (), {"id": "tx-1"})()
 
+    async def fake_notify(db_obj, user_id, **kwargs):
+        notified["user_id"] = user_id
+        notified.update(kwargs)
+
     monkeypatch.setattr("app.routers.credits.add_credits", fake_add_credits)
+    monkeypatch.setattr("app.routers.credits.notify", fake_notify)
 
     result = await allocate_credits(
         AllocateRequest(user_id="user-2", amount=10, description="grant"),
@@ -204,6 +210,9 @@ async def test_allocate_credits_admin_grants_to_target(monkeypatch):
     )
 
     assert result == {"message": "granted", "transfer_id": "tx-1"}
+    # The recipient gets a "credits received" notification.
+    assert notified["user_id"] == "user-2"
+    assert notified["title"] == "Credits received"
 
 
 async def test_allocate_credits_rejects_missing_recipient():
@@ -260,7 +269,13 @@ async def test_allocate_credits_professor_allocates_to_student(monkeypatch):
         assert amount == 10
         return type("Transfer", (), {"id": "tx-2"})()
 
+    async def fake_notify(db_obj, user_id, **kwargs):
+        notified["user_id"] = user_id
+        notified.update(kwargs)
+
+    notified = {}
     monkeypatch.setattr("app.routers.credits.allocate_between_users", fake_allocate_between_users)
+    monkeypatch.setattr("app.routers.credits.notify", fake_notify)
 
     result = await allocate_credits(
         AllocateRequest(user_id="user-2", amount=10, description="teacher_allocation"),
@@ -269,6 +284,8 @@ async def test_allocate_credits_professor_allocates_to_student(monkeypatch):
     )
 
     assert result == {"message": "allocated", "transfer_id": "tx-2"}
+    assert notified["user_id"] == "user-2"
+    assert notified["title"] == "Credits received"
 
 
 async def test_allocate_credits_rejects_non_admin_non_professor():

@@ -30,15 +30,13 @@ def test_require_admin_allows_admin():
     assert _require_admin(_payload("admin")) is None
 
 
-def test_require_admin_rejects_professor_and_student():
-    # Admin endpoints are admin-only; professors use the Teaching console
-    # (RBAC tightening, commit a6a9c48), so professors are rejected here too.
-    for role in ("professor", "student"):
-        with pytest.raises(HTTPException) as exc_info:
-            _require_admin(_payload(role))
+@pytest.mark.parametrize("role", ["student", "professor"])
+def test_require_admin_rejects_non_admin_roles(role):
+    with pytest.raises(HTTPException) as exc_info:
+        _require_admin(_payload(role))
 
-        assert exc_info.value.status_code == 403
-        assert exc_info.value.detail == "Admin access required"
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Admin access required"
 
 
 class FakeScalarResult:

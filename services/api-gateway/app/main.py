@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from fastapi import FastAPI
@@ -37,23 +38,19 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting audit retention job...", flush=True)
     from app.services.audit_retention import start_audit_retention
     await start_audit_retention()
-    print(">>> Startup: starting session reaper...", flush=True)
-    from app.services.session_reaper import start_session_reaper
-    await start_session_reaper()
-    print(">>> Startup: starting credit grace monitor...", flush=True)
-    from app.services.credit_alerts import start_credit_grace_monitor
-    await start_credit_grace_monitor()
     print(">>> Startup: starting idle monitor...", flush=True)
     from app.services.idle_monitor import start_idle_monitor
     await start_idle_monitor()
+    print(">>> Startup: starting session reaper...", flush=True)
+    from app.services.session_reaper import run_session_reaper
+    reaper_stop = asyncio.Event()
+    reaper_task = asyncio.create_task(run_session_reaper(reaper_stop), name="session-reaper")
     print(">>> Startup: complete.", flush=True)
     yield
+    reaper_stop.set()
+    await reaper_task
     from app.services.idle_monitor import stop_idle_monitor
     await stop_idle_monitor()
-    from app.services.credit_alerts import stop_credit_grace_monitor
-    await stop_credit_grace_monitor()
-    from app.services.session_reaper import stop_session_reaper
-    await stop_session_reaper()
     from app.services.audit_retention import stop_audit_retention
     await stop_audit_retention()
     await nats_client.disconnect()
@@ -114,13 +111,45 @@ def create_app() -> FastAPI:
     # HEAD is registered explicitly. FastAPI's @app.get doesn't dispatch HEAD
     # to the GET handler — load balancers and uptime probes that issue HEAD
     # would see 405 without this. Same body, same status, no payload.
+    #
+    # /healthz is deliberately shallow: it is the LIVENESS signal, and
+    # restarting this pod cannot fix a down database or NATS — deep checks
+    # here would just restart-loop the gateway during an infra outage.
     @app.api_route("/healthz", methods=["GET", "HEAD"])
     async def healthz():
         return {"status": "ok"}
 
+    # /readyz is the READINESS signal: deep checks on every dependency the
+    # gateway needs to serve real traffic. K8s pulls the pod out of the
+    # Service while any of these fail, without killing it.
     @app.api_route("/readyz", methods=["GET", "HEAD"])
     async def readyz():
-        return {"status": "ready"}
+        from sqlalchemy import text
+        from fastapi.responses import JSONResponse
+        from app.services.orchestrator_client import orchestrator_client as orch
+
+        checks: dict[str, bool] = {}
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            checks["database"] = True
+        except Exception:
+            logger.warning("readyz: database check failed", exc_info=True)
+            checks["database"] = False
+
+        checks["nats"] = nats_client.nc is not None and nats_client.nc.is_connected
+
+        # Reported but NOT gating: the orchestrator is only needed for VM
+        # create/terminate. Pulling the whole gateway out of the Service
+        # (auth, dashboard, credits, ...) whenever the orchestrator restarts
+        # would turn every orchestrator deploy into a full site outage.
+        checks["orchestrator"] = await orch.healthy()
+
+        ready = checks["database"] and checks["nats"]
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={"status": "ready" if ready else "degraded", "checks": checks},
+        )
 
     return app
 

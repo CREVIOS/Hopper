@@ -280,16 +280,21 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
                 class="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100"
               >
                 <Tooltip content="Copy fingerprint">
+                  {#snippet children(props)}
                   <Button
+                    {...props}
                     variant="ghost"
                     size="icon"
                     onclick={() => copyFingerprint(k.fingerprint)}
                   >
                     <Copy class="size-3.5" />
                   </Button>
+                  {/snippet}
                 </Tooltip>
                 <Tooltip content="Remove key">
+                  {#snippet children(props)}
                   <Button
+                    {...props}
                     variant="ghost"
                     size="icon"
                     class="hover:bg-destructive/10"
@@ -297,6 +302,7 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
                   >
                     <Trash2 class="size-3.5 text-destructive" />
                   </Button>
+                  {/snippet}
                 </Tooltip>
               </div>
             </li>
@@ -312,7 +318,9 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
       <Terminal class="size-4 text-muted-foreground" strokeWidth={1.75} />
       <span class="text-sm font-medium">How to find your public key</span>
       <Tooltip content="Copy commands">
+        {#snippet children(props)}
         <Button
+          {...props}
           variant="ghost"
           size="icon"
           class="ml-auto size-7 opacity-70 transition-opacity hover:opacity-100"
@@ -320,6 +328,7 @@ cat ~/.ssh/id_ed25519.pub | xclip    # Linux`;
         >
           <Copy class="size-3.5" />
         </Button>
+        {/snippet}
       </Tooltip>
     </div>
     <CardContent class="space-y-3.5 p-5 text-sm text-muted-foreground">

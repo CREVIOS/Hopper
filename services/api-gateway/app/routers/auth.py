@@ -16,11 +16,17 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from slowapi.util import get_remote_address
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.limiter import limiter
+from app.core.limiter import (
+    clear_login_failures,
+    limiter,
+    login_blocked,
+    record_login_failure,
+)
 from app.dependencies import get_current_user, get_db
 from app.middleware.auth import verify_token
 from app.models.audit import AuditLog
@@ -30,6 +36,11 @@ from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.models.user_setting import UserSetting
 from app.models.user_workspace import UserWorkspace
+from app.schemas.api_key import (
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
+    CreateApiKeyRequest,
+)
 from app.schemas.user import (
     AccountDeleteRequest,
     ForgotPasswordRequest,
@@ -42,11 +53,16 @@ from app.schemas.user import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import port_forward, verification
+from app.services import api_key_service, password_policy, port_forward, verification
 from app.services.credit_service import get_or_create_account, grant_signup_bonus
 from app.services.orchestrator_client import orchestrator_client
 from app.services.email import send_code_email
-from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
+from app.services.keycloak_admin import (
+    KeycloakAdminError,
+    KeycloakPasswordPolicyError,
+    KeycloakUserExistsError,
+    keycloak_admin,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,6 +102,20 @@ def _domain_allowed(email: str) -> bool:
     # `cs.du.ac.bd`. We compare only the part after the last `@`.
     domain = email.rsplit("@", 1)[1]
     return domain in {d.lower() for d in settings.allowed_email_domains}
+
+
+def _check_password(password: str, email: str) -> None:
+    """Reject a password that the Keycloak realm policy would reject anyway.
+
+    Checking here (rather than letting Keycloak fail the call) is what lets the
+    user see *which* rule they missed. Keycloak stays the enforcer — this only
+    front-runs it so the answer is a precise 400 instead of a round trip that
+    ends in a generic error.
+    """
+    try:
+        password_policy.validate(password, username=email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _set_session_cookies(
@@ -237,6 +267,7 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
         raise HTTPException(status_code=400, detail="role must be 'student' or 'teacher'")
     if "@" not in email or not _domain_allowed(email):
         raise HTTPException(status_code=403, detail="This email domain is not permitted to sign up.")
+    _check_password(body.password, email)
 
     try:
         # Created unverified — the user must confirm the emailed code before a
@@ -245,9 +276,15 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
             email=email, name=body.name, password=body.password,
             role="student", email_verified=False,
         )
+    except KeycloakUserExistsError:
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    except KeycloakPasswordPolicyError as e:
+        # The realm rejected a password our mirror accepted — the two have
+        # drifted. Surface Keycloak's own reason: it's specific and actionable,
+        # and a 502 would blame the server for the user's fixable input.
+        logger.warning("signup: realm password policy rejected a password we allowed: %s", e)
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except KeycloakAdminError as e:
-        if "exists" in str(e):
-            raise HTTPException(status_code=409, detail="An account with this email already exists.")
         logger.error("signup: keycloak create_user failed: %s", e)
         raise HTTPException(status_code=502, detail="Could not create the account. Try again later.")
 
@@ -266,10 +303,14 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     await grant_signup_bonus(db, user_id)
     await send_code_email(email, verification.VERIFY_EMAIL, code)
 
-    tokens = await _password_grant(email, body.password)
-    return _issue_session(
+    # Do NOT issue a session here. The account is created email-unverified, so
+    # signing the browser in now would let the user reach /dashboard just by
+    # opening the app in another tab before entering the emailed code. The
+    # client collects the code, calls /auth/verify-email, then /auth/login —
+    # and /auth/login enforces `require_email_verified`, so a session only ever
+    # exists after the email is confirmed.
+    return JSONResponse(
         {"id": user_id, "email": email, "name": body.name, "role": "student", "pending_teacher": pending},
-        tokens,
         status_code=status.HTTP_202_ACCEPTED if pending else status.HTTP_200_OK,
     )
 
@@ -339,6 +380,9 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
     """Complete a password reset with the emailed code, then set the new
     password in Keycloak. The client logs in afterwards."""
     email = (body.email or "").lower().strip()
+    # Check the policy before burning the one-time code: a rejected password
+    # would otherwise consume the code and force a resend to try again.
+    _check_password(body.password, email)
     ok = await verification.verify_code(db, email, verification.PASSWORD_RESET, body.code)
     if not ok:
         await db.commit()
@@ -350,12 +394,33 @@ async def reset_password(request: Request, body: ResetPasswordRequest, db: Async
             await db.commit()
             raise HTTPException(status_code=404, detail="Account not found.")
         await keycloak_admin.reset_password(ku["id"], body.password)
-        # A reset also confirms control of the mailbox — mark verified.
-        if not ku.get("emailVerified", False):
-            await keycloak_admin.set_email_verified(ku["id"], True)
+    except KeycloakPasswordPolicyError as e:
+        # Reachable on a rule our mirror can't check — passwordHistory(3) —
+        # so this is the normal path for "you already used that password",
+        # not just a drift backstop. Deliberately NOT committing: verify_code
+        # only marks the code consumed in the session, so rolling back leaves
+        # it valid and the user can retry with a different password instead of
+        # having to request a fresh code.
+        logger.info("reset-password rejected by realm policy for %s: %s", email, e)
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except KeycloakAdminError as e:
         logger.error("reset-password failed for %s: %s", email, e)
         raise HTTPException(status_code=502, detail="Could not reset the password. Try again later.")
+
+    # A reset also confirms control of the mailbox — mark verified. Kept OUT of
+    # the try above on purpose: the password is already changed by this point,
+    # so failing the whole request here would tell the user the reset failed
+    # when it actually succeeded, and send them back to re-enter a password
+    # that is now their real one. Log it and report the truth instead.
+    if not ku.get("emailVerified", False):
+        try:
+            await keycloak_admin.set_email_verified(ku["id"], True)
+        except KeycloakAdminError as e:
+            logger.error(
+                "reset-password: password reset for %s but marking the email "
+                "verified failed; sign-in will require verification: %s",
+                email, e,
+            )
     await db.commit()
     return JSONResponse({"status": "reset", "email": email})
 
@@ -366,7 +431,23 @@ async def login_direct(request: Request, body: LoginRequest, db: AsyncSession = 
     """Themed email + password login (direct grant). The GET /login above keeps
     the OIDC redirect flow for SSO."""
     email = (body.email or "").lower().strip()
-    tokens = await _password_grant(email, body.password)
+    # Failed-attempt throttle (HOP-19 18.2): 3 wrong passwords per (IP, email)
+    # per window → 429. Counting only FAILURES keeps a shared campus NAT from
+    # locking out everyone at once; keying on the pair still stops both
+    # single-source credential stuffing and per-account brute force.
+    ip = get_remote_address(request)
+    if login_blocked(ip, email):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed sign-in attempts. Try again in a few minutes.",
+        )
+    try:
+        tokens = await _password_grant(email, body.password)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            record_login_failure(ip, email)
+        raise
+    clear_login_failures(ip, email)
     payload = await verify_token(tokens["access_token"])
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -695,3 +776,96 @@ async def logout(request: Request):
     _clear_session_cookies(resp)
     resp.delete_cookie("id_token", path="/", secure=settings.cookie_secure, samesite="lax", httponly=True)
     return resp
+
+
+# ---------------------------------------------------------------------------
+# API keys for programmatic access (HOP-19 18.1)
+# ---------------------------------------------------------------------------
+
+def _require_session_auth(request: Request) -> None:
+    """Key management always requires a real (cookie) session. A leaked API
+    key must not be able to mint new keys or destroy existing ones."""
+    if getattr(request.state, "api_key_auth", False):
+        raise HTTPException(
+            status_code=403,
+            detail="API keys cannot manage API keys — sign in required",
+        )
+
+
+@router.post("/api-keys", response_model=ApiKeyCreatedResponse, status_code=201)
+@limiter.limit("10/minute")
+async def create_api_key(
+    request: Request,
+    response: Response,  # slowapi needs it to attach X-RateLimit-* headers
+    body: CreateApiKeyRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a scoped API key. The plaintext key is returned ONCE here and
+    only its SHA-256 hash is stored — copy it now or revoke and re-create."""
+    _require_session_auth(request)
+    try:
+        row, token = await api_key_service.create_key(
+            db, current_user.sub, body.name, body.scope
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.add(
+        AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.sub,
+            action="api_key.created",
+            resource_type="api_key",
+            resource_id=row.id,
+            ip_address=get_remote_address(request) or "-",
+            status_code=201,
+            metadata_={"name": row.name, "scope": row.scope},
+        )
+    )
+    await db.commit()
+    return ApiKeyCreatedResponse(
+        id=row.id,
+        name=row.name,
+        prefix=row.prefix,
+        scope=row.scope,
+        created_at=row.created_at,
+        last_used_at=row.last_used_at,
+        revoked_at=row.revoked_at,
+        key=token,
+    )
+
+
+@router.get("/api-keys", response_model=list[ApiKeyResponse])
+async def list_api_keys(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the caller's API keys (prefix only — secrets are never stored)."""
+    return await api_key_service.list_keys(db, current_user.sub)
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+async def revoke_api_key(
+    key_id: str,
+    request: Request,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke one of the caller's API keys (soft delete, idempotent)."""
+    _require_session_auth(request)
+    found = await api_key_service.revoke_key(db, current_user.sub, key_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="API key not found")
+    db.add(
+        AuditLog(
+            id=str(uuid.uuid4()),
+            user_id=current_user.sub,
+            action="api_key.revoked",
+            resource_type="api_key",
+            resource_id=key_id,
+            ip_address=get_remote_address(request) or "-",
+            status_code=204,
+        )
+    )
+    await db.commit()
+    return Response(status_code=204)

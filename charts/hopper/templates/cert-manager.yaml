@@ -1,0 +1,43 @@
+{{- if .Values.certManager.enabled }}
+##############################################################################
+# Let's Encrypt ClusterIssuers (port of k8s/deploy/05-cert-manager.yaml)
+#
+# Prereq: cert-manager must already be installed in the cluster. On Azure
+# VMs without NAT loopback the cert-manager deployment also needs a
+# hostAlias so its self-check resolves the public host to the node IP —
+# see the header of k8s/deploy/05-cert-manager.yaml.
+##############################################################################
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManager.email }}
+    privateKeySecretRef:
+      name: letsencrypt-staging-account
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.ingress.className }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManager.email }}
+    privateKeySecretRef:
+      name: letsencrypt-prod-account
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.ingress.className }}
+{{- end }}

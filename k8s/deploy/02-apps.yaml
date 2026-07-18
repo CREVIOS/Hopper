@@ -12,7 +12,12 @@ metadata:
   name: api-gateway
   namespace: hopper
 spec:
-  replicas: 1
+  # 2 replicas for availability: one can die (OOM, node eviction, rollout)
+  # without dropping the API. Safe to scale horizontally — NATS consumers are
+  # queue-grouped across replicas, terminal/SSE connections are self-contained
+  # in whichever replica accepted them, and the session reaper locks rows with
+  # SKIP LOCKED.
+  replicas: 2
   selector:
     matchLabels:
       app: api-gateway
@@ -35,8 +40,11 @@ spec:
           hostnames: ["smtp.gmail.com"]
       containers:
         - name: api-gateway
-          image: hopper/api-gateway:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-api-gateway:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           # Override Dockerfile CMD so uvicorn trusts the nginx ingress's
           # X-Forwarded-Proto header (otherwise FastAPI's auto-redirects build
           # http:// URLs and the browser never reaches the secure callback).
@@ -77,7 +85,17 @@ spec:
             - name: HOPPER_KEYCLOAK_ADMIN_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: { name: hopper-keycloak-admin, key: client-secret }
-            # SMTP for signup verification + password-reset emails. Sourced from
+            # Brevo transactional-email HTTPS API key (preferred transport):
+            # pods can egress :443 (unlike SMTP ports), and a Brevo sender with
+            # domain authentication keeps verification codes out of spam, which
+            # the personal-Gmail SMTP path could not. Sourced from the
+            # hopper-brevo Secret — see 00-secrets.yaml. Optional: absent Secret
+            # falls back to the SMTP transport below.
+            - name: HOPPER_BREVO_API_KEY
+              valueFrom:
+                secretKeyRef: { name: hopper-brevo, key: api-key, optional: true }
+            # SMTP for signup verification + password-reset emails — fallback
+            # transport when Brevo is unset or a Brevo send fails. Sourced from
             # the hopper-smtp Secret; refs are optional so a missing/empty Secret
             # degrades to DEV mode (codes logged, not sent) instead of breaking
             # the pod. See 00-secrets.yaml.
@@ -114,9 +132,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+          # Readiness = deep dependency checks (/readyz probes DB + NATS and
+          # reports orchestrator health); a degraded pod is pulled from the
+          # Service without being killed. Liveness stays on the shallow
+          # /healthz — restarting the pod can't fix a down database, so deep
+          # checks there would restart-loop the gateway during infra outages.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8000
             initialDelaySeconds: 25
             periodSeconds: 5
@@ -186,6 +209,11 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update"]
+  # Same-group VM NetworkPolicies (HOP-19 18.3): the orchestrator creates
+  # one `vm-net-group-<g>` policy per network group at VM create time.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "create"]
 ---
 # ClusterRole for reading node info (needed for admin /nodes endpoint)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -231,6 +259,13 @@ metadata:
   namespace: hopper
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: the orchestrator owns the billing tickers.
+  # A rolling update runs old + new pods side by side — two tickers billing
+  # every VM. Leader election (below) also guards this, but not overlapping
+  # at all is the cheapest correctness. The brief gRPC gap during a deploy
+  # only delays VM create/terminate; the gateway tolerates it.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: orchestrator
@@ -242,8 +277,11 @@ spec:
       serviceAccountName: orchestrator
       containers:
         - name: orchestrator
-          image: hopper/orchestrator:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-orchestrator:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051
           env:
@@ -253,6 +291,35 @@ spec:
               value: "50051"
             - name: KUBERNETES_NAMESPACE
               value: "hopper"
+            # Gate billing tickers / pod watcher behind a K8s Lease so a
+            # second instance (misconfig, future scale-out) can never
+            # double-bill. Uses the leases RBAC granted to this SA.
+            - name: HOPPER_LEADER_ELECTION
+              value: "true"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          # Native gRPC probes against grpc.health.v1.Health. Readiness uses
+          # the default ("") service, which the orchestrator flips to
+          # NOT_SERVING when it loses NATS or the K8s API — real dependency
+          # health. Liveness probes the dedicated "liveness" service that
+          # stays SERVING while the process is up: restarting the pod can't
+          # fix a NATS outage, and tying liveness to dependencies would
+          # restart-loop through the whole outage.
+          readinessProbe:
+            grpc:
+              port: 50051
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            grpc:
+              port: 50051
+              service: liveness
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 6
           resources:
             requests:
               cpu: "100m"
@@ -298,8 +365,11 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: hopper/frontend:latest
-          imagePullPolicy: Never
+          # CI (publish.yml) rolls this forward with `kubectl set image` on every
+          # merge to main — the tag below is a pinned fallback for bootstrap /
+          # disaster recovery, not the live source of truth.
+          image: ghcr.io/crevios/hopper-frontend:b19bbd699a03
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:

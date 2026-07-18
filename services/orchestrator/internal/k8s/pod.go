@@ -58,19 +58,19 @@ func containerStartupArgs() string {
 }
 
 type PodManager struct {
-	client    *kubernetes.Clientset
-	metrics   *metricsv.Clientset
+	client    kubernetes.Interface
+	metrics   metricsv.Interface
 	namespace string
 }
 
-func NewPodManager(client *kubernetes.Clientset, namespace string) *PodManager {
+func NewPodManager(client kubernetes.Interface, namespace string) *PodManager {
 	return &PodManager{client: client, namespace: namespace}
 }
 
 // SetMetricsClient wires in the metrics-server client used by GetPodMetrics.
 // Optional — without it, GetPodMetrics still returns the configured limit
 // (so memory_limit_bytes is correct) but used CPU/memory stay at zero.
-func (pm *PodManager) SetMetricsClient(m *metricsv.Clientset) {
+func (pm *PodManager) SetMetricsClient(m metricsv.Interface) {
 	pm.metrics = m
 }
 
@@ -104,6 +104,10 @@ type CreatePodOpts struct {
 	// DB-backed plan catalogue. Stored as a pod annotation so reconcile can
 	// recover it. Zero means "unknown" → the caller falls back to the Plans map.
 	CreditsPerHr float64
+	// NetworkGroup places the VM in a network isolation group (HOP-19 18.3):
+	// the pod gets the group label and a NetworkPolicy allowing same-group
+	// traffic is ensured. Empty = fully isolated (the default).
+	NetworkGroup string
 }
 
 type PodPorts struct {
@@ -135,6 +139,15 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		"hopper.dev/pod-id":  opts.PodID,
 		"hopper.dev/user-id": opts.UserID,
 		"hopper.dev/plan":    opts.Plan,
+	}
+	if opts.NetworkGroup != "" {
+		// Ensure the same-group allow policy BEFORE the pod exists — if this
+		// fails we fail the whole create rather than silently launching a VM
+		// that can't reach its teammates (default-deny keeps it isolated).
+		if err := pm.EnsureGroupNetworkPolicy(ctx, opts.NetworkGroup); err != nil {
+			return PodPorts{}, fmt.Errorf("ensuring network-group policy: %w", err)
+		}
+		labels[NetworkGroupLabel] = opts.NetworkGroup
 	}
 
 	sshPassword, err := generateRandomPassword()
@@ -451,6 +464,12 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 
 	var result []NodeInfo
 	for _, n := range nodes.Items {
+		// Skip nodes VMs can't actually land on, so capacity accounting reflects
+		// real schedulable space. VM pods carry no tolerations, so any NoSchedule/
+		// NoExecute taint (e.g. the control-plane) or a cordoned node is excluded.
+		if !schedulableForVMs(&n) {
+			continue
+		}
 		ready := false
 		for _, c := range n.Status.Conditions {
 			if c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue {
@@ -469,6 +488,20 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 		})
 	}
 	return result, nil
+}
+
+// schedulableForVMs reports whether a VM pod (which carries no tolerations) could
+// be scheduled onto the node: not cordoned and free of NoSchedule/NoExecute taints.
+func schedulableForVMs(n *corev1.Node) bool {
+	if n.Spec.Unschedulable {
+		return false
+	}
+	for _, t := range n.Spec.Taints {
+		if t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute {
+			return false
+		}
+	}
+	return true
 }
 
 type NodeInfo struct {

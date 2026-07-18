@@ -1,140 +1,121 @@
 <script lang="ts">
+  import { Bell, CheckCheck } from 'lucide-svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { Bell, Circle, ExternalLink } from 'lucide-svelte';
-  import { toast } from 'svelte-sonner';
-  import { DropdownMenu } from '$lib/ui';
-  import type { AppNotification } from '$lib/types';
   import {
-    markNotificationRead,
-    notificationItems,
-    notificationUnreadCount,
-    pushNotification,
-    refreshNotifications
+    notifications,
+    unreadCount,
+    connectNotifications,
+    disconnectNotifications,
+    markRead,
+    markAllRead
   } from '$lib/stores/notifications';
+  import type { AppNotification } from '$lib/types';
 
-  let source: EventSource | null = null;
-
-  const severityToast = {
-    success: toast.success,
-    warning: toast.warning,
-    error: toast.error,
-    info: toast.info
-  };
-
-  function showToast(notification: AppNotification) {
-    const notify = severityToast[notification.severity] ?? toast;
-    notify(notification.title, {
-      description: notification.body,
-      action: notification.action_url
-        ? {
-            label: 'Open',
-            onClick: () => goto(notification.action_url || '/')
-          }
-        : undefined
-    });
-  }
-
-  async function openNotification(notification: AppNotification) {
-    if (!notification.read_at) {
-      await markNotificationRead(notification.id);
-    }
-    if (notification.action_url) {
-      await goto(notification.action_url);
-    }
-  }
-
-  function formatTime(value: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    }).format(date);
-  }
+  let menu = $state<HTMLDetailsElement>();
+  let hydrated = $state(false);
 
   onMount(() => {
-    refreshNotifications().catch(() => {});
-    source = new EventSource('/api/notifications/stream');
-    source.addEventListener('notification', (event) => {
-      const notification = JSON.parse((event as MessageEvent).data) as AppNotification;
-      pushNotification(notification);
-      showToast(notification);
-    });
-    return () => source?.close();
+    hydrated = true;
+    connectNotifications();
+    return () => disconnectNotifications();
   });
+
+  function handleMenuKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !menu) return;
+    event.preventDefault();
+    menu.open = false;
+    menu.querySelector<HTMLElement>('summary')?.focus();
+  }
+
+  function onItemClick(n: AppNotification) {
+    void markRead(n.id);
+    if (typeof n.data?.pod_id === 'string' && n.data.pod_id) {
+      if (menu) menu.open = false;
+      goto(`/pods/${n.data.pod_id}`);
+    }
+  }
+
+  const typeDot: Record<string, string> = {
+    success: 'bg-success',
+    warning: 'bg-warning',
+    error: 'bg-destructive',
+    info: 'bg-primary'
+  };
+
+  function timeAgo(iso: string): string {
+    const then = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z').getTime();
+    const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  }
 </script>
 
-<DropdownMenu.Root>
-  <DropdownMenu.Trigger>
-    {#snippet child({ props })}
-      <button
-        {...props}
-        class="relative inline-flex size-9 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label="Notifications"
+<details bind:this={menu} class="relative">
+  <!-- svelte-ignore a11y_no_redundant_roles (keeps Chromium's accessibility role stable) -->
+  <summary
+    role="button"
+    aria-label={`Notifications${$unreadCount ? ` (${$unreadCount} unread)` : ''}`}
+    aria-haspopup="menu"
+    data-hydrated={hydrated}
+    class="relative inline-flex size-9 cursor-pointer list-none items-center justify-center rounded-md text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
+    onkeydown={handleMenuKeydown}
+  >
+    <Bell class="size-4" />
+    {#if $unreadCount > 0}
+      <span
+        class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
       >
-        <Bell class="size-4" />
-        {#if $notificationUnreadCount > 0}
-          <span
-            class="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-destructive-foreground"
-          >
-            {$notificationUnreadCount > 9 ? '9+' : $notificationUnreadCount}
-          </span>
-        {/if}
-      </button>
-    {/snippet}
-  </DropdownMenu.Trigger>
+        {$unreadCount > 99 ? '99+' : $unreadCount}
+      </span>
+    {/if}
+  </summary>
 
-  <DropdownMenu.Content class="w-96 max-w-[calc(100vw-1rem)] p-0">
-    <div class="flex items-center justify-between border-b border-border px-3 py-2.5">
-      <div>
-        <div class="text-sm font-semibold text-foreground">Notifications</div>
-        <div class="text-xs text-muted-foreground">Recent activity and alerts</div>
-      </div>
-      {#if $notificationUnreadCount > 0}
-        <span class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-          {$notificationUnreadCount} unread
-        </span>
+  <div
+    role="menu"
+    tabindex="-1"
+    onkeydown={handleMenuKeydown}
+    class="absolute right-0 z-50 mt-2 w-80 rounded-md border border-border bg-popover text-popover-foreground shadow-lg sm:w-96"
+  >
+    <div class="flex items-center justify-between px-3 py-2">
+      <span class="text-sm font-semibold">Notifications</span>
+      {#if $unreadCount > 0}
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          onclick={() => markAllRead()}
+        >
+          <CheckCheck class="size-3.5" /> Mark all read
+        </button>
       {/if}
     </div>
-
+    <div class="h-px bg-border"></div>
     <div class="max-h-96 overflow-y-auto p-1">
-      {#if $notificationItems.length === 0}
-        <div class="px-4 py-8 text-center text-sm text-muted-foreground">
-          No notifications yet
-        </div>
+      {#if $notifications.length === 0}
+        <p class="px-3 py-6 text-center text-sm text-muted-foreground">No notifications yet</p>
       {:else}
-        {#each $notificationItems.slice(0, 10) as notification (notification.id)}
+        {#each $notifications.slice(0, 15) as n (n.id)}
           <button
-            class="flex w-full gap-2 rounded-sm px-2 py-2.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onclick={() => openNotification(notification)}
+            type="button"
+            role="menuitem"
+            class="flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left hover:bg-accent focus:bg-accent"
+            onclick={() => onItemClick(n)}
           >
-            <span class="mt-1.5 flex size-3 shrink-0 items-center justify-center">
-              {#if !notification.read_at}
-                <Circle class="size-2 fill-primary text-primary" />
-              {/if}
-            </span>
+            <span class={`mt-1.5 size-2 shrink-0 rounded-full ${typeDot[n.type] ?? typeDot.info} ${n.read ? 'opacity-25' : ''}`}></span>
             <span class="min-w-0 flex-1">
-              <span class="flex items-start justify-between gap-2">
-                <span class="truncate text-sm font-medium text-foreground">
-                  {notification.title}
-                </span>
-                {#if notification.action_url}
-                  <ExternalLink class="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                {/if}
-              </span>
-              <span class="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                {notification.body}
-              </span>
-              <span class="mt-1 block text-[11px] text-muted-foreground">
-                {formatTime(notification.created_at)}
-              </span>
+              <span class={`block truncate text-sm ${n.read ? 'text-muted-foreground' : 'font-medium'}`}>{n.title}</span>
+              {#if n.body}
+                <span class="block text-xs text-muted-foreground line-clamp-2">{n.body}</span>
+              {/if}
+              <span class="block text-[11px] text-muted-foreground/70">{timeAgo(n.created_at)}</span>
             </span>
           </button>
         {/each}
       {/if}
     </div>
-  </DropdownMenu.Content>
-</DropdownMenu.Root>
+  </div>
+</details>

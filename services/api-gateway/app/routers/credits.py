@@ -8,13 +8,13 @@ from app.models.credit_ledger import LedgerEntry, Transfer
 from app.models.user import User
 from app.schemas.credit import CreditBalanceResponse, CreditHistoryResponse
 from app.schemas.user import TokenPayload
-from app.services.notification_service import create_notification_safely
 from app.services.credit_service import (
     add_credits,
     allocate_between_users,
     get_balance,
     get_or_create_account,
 )
+from app.services.notification_service import notify
 
 router = APIRouter()
 
@@ -109,29 +109,6 @@ async def list_students(
     return await _users_with_balance(db, "student")
 
 
-async def _notify_credits_received(
-    db: AsyncSession, sender: TokenPayload, request: "AllocateRequest", transfer
-) -> None:
-    """Tell the recipient they've been funded. Best-effort — a failed
-    notification must never roll back a completed ledger transfer."""
-    source_name = sender.name or sender.email
-    await create_notification_safely(
-        db,
-        user_id=request.user_id,
-        type="credits_received",
-        severity="success",
-        title="Credits received",
-        body=f"{request.amount:g} credits from {source_name}.",
-        action_url="/credits",
-        dedupe_key=f"credits-received:{transfer.id}",
-        metadata={
-            "transfer_id": transfer.id,
-            "amount": request.amount,
-            "source_user_id": sender.sub,
-        },
-    )
-
-
 @router.post("/allocate")
 async def allocate_credits(
     request: AllocateRequest,
@@ -156,7 +133,14 @@ async def allocate_credits(
         transfer = await add_credits(
             db, request.user_id, request.amount, request.description or "admin_grant"
         )
-        await _notify_credits_received(db, current_user, request, transfer)
+        await notify(
+            db,
+            request.user_id,
+            type_="success",
+            title="Credits received",
+            body=f"You received {request.amount:g} credits from {current_user.name}.",
+            data={"amount": request.amount, "from": current_user.name},
+        )
         return {"message": "granted", "transfer_id": transfer.id}
 
     if current_user.role == "professor":
@@ -171,7 +155,14 @@ async def allocate_credits(
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)
             )
-        await _notify_credits_received(db, current_user, request, transfer)
+        await notify(
+            db,
+            request.user_id,
+            type_="success",
+            title="Credits received",
+            body=f"You received {request.amount:g} credits from {current_user.name}.",
+            data={"amount": request.amount, "from": current_user.name},
+        )
         return {"message": "allocated", "transfer_id": transfer.id}
 
     raise HTTPException(

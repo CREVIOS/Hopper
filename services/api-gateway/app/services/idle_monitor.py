@@ -18,7 +18,7 @@ So the flow is warn, then wait, then kill:
 counting down on this VM, so a warning fires once per idle episode rather than
 once per tick.
 
-Deliberately its own column, like credit_grace_until — ``expires_at`` is the
+Deliberately its own column, like grace_expires_at — ``expires_at`` is the
 session TTL that the session reaper enforces, and overloading it would make the
 reaper kill VMs for the wrong reason.
 """

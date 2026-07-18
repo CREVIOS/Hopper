@@ -1,0 +1,27 @@
+# Staging overlay — mirrors prod topology on a staging hostname, but issues
+# Let's Encrypt STAGING certs (untrusted, but no rate-limit risk) and keeps
+# single replicas.
+#   helm install hopper ./charts/hopper -n hopper --create-namespace \
+#     -f charts/hopper/values-staging.yaml
+
+global:
+  host: staging.hopper.farefin.com
+  scheme: https
+
+# Secrets provisioned out-of-band (same discipline as prod — no real values
+# in this public repo).
+secrets:
+  create: false
+
+apiGateway:
+  replicas: 1
+  debug: true
+
+ingress:
+  tlsSecretName: hopper-staging-tls
+
+certManager:
+  clusterIssuer: letsencrypt-staging
+
+backup:
+  enabled: false

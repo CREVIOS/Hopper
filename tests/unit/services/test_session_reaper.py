@@ -1,83 +1,86 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
-from app.models.session import PodSession
-from app.services import session_reaper
+import pytest
 
-
-class FakeDB:
-    def __init__(self):
-        self.commits = 0
-
-    async def commit(self):
-        self.commits += 1
+from app.services.session_reaper import reap_expired_sessions
 
 
-def _session(pod_name="vm-1", state="running") -> PodSession:
-    return PodSession(
-        id="pod-1", user_id="u1", plan="small", image="img", cpu="1", memory="2Gi",
-        namespace="hopper", pod_name=pod_name, state=state,
+NOW = datetime(2026, 7, 12, 12, 0, 0)
+
+
+class Result:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+
+def session(*, state="running", expires_at=None):
+    return SimpleNamespace(
+        id="pod-1", user_id="student-1", pod_name="vm-pod-1",
+        state=state, expires_at=expires_at or NOW - timedelta(seconds=1),
+        updated_at=None,
     )
 
 
-async def test_reap_terminates_each_expired_and_marks_terminated(monkeypatch):
-    s1, s2 = _session("vm-1"), _session("vm-2")
-    terminated = []
-
-    async def fake_find(db, now):
-        return [s1, s2]
-
-    async def fake_terminate_pod(pod_name):
-        terminated.append(pod_name)
-        return True
-
-    async def fake_stop(pod_name):
-        pass
-
-    monkeypatch.setattr(session_reaper, "find_expired_sessions", fake_find)
-    monkeypatch.setattr(session_reaper.orchestrator_client, "terminate_pod", fake_terminate_pod)
-    monkeypatch.setattr(session_reaper.port_forward, "stop", fake_stop)
-
-    db = FakeDB()
-    count = await session_reaper.reap_expired_sessions(db, now=datetime(2026, 1, 1))
-
-    assert count == 2
-    assert terminated == ["vm-1", "vm-2"]
-    assert s1.state == "terminated" and s2.state == "terminated"
-    assert db.commits == 1
+def database(rows):
+    db = SimpleNamespace(
+        execute=AsyncMock(return_value=Result(rows)),
+        commit=AsyncMock(),
+        add=Mock(),
+    )
+    return db
 
 
-async def test_reap_noop_when_nothing_expired(monkeypatch):
-    async def fake_find(db, now):
-        return []
-
-    monkeypatch.setattr(session_reaper, "find_expired_sessions", fake_find)
-
-    db = FakeDB()
-    count = await session_reaper.reap_expired_sessions(db, now=datetime(2026, 1, 1))
-
-    assert count == 0
-    assert db.commits == 0  # no work → no commit
+@pytest.mark.asyncio
+async def test_expired_session_cleaned_up():
+    row, db, terminate = session(), database([]), AsyncMock(return_value=True)
+    db.execute.return_value = Result([row])
+    assert await reap_expired_sessions(db, now=NOW, terminate=terminate, publish=AsyncMock()) == ["pod-1"]
+    terminate.assert_awaited_once_with("vm-pod-1")
+    assert row.state == "terminated"
+    db.commit.assert_awaited_once()
 
 
-async def test_reap_survives_orchestrator_failure(monkeypatch):
-    s1 = _session("vm-1")
+@pytest.mark.asyncio
+async def test_active_session_not_reaped():
+    db, terminate = database([]), AsyncMock()
+    assert await reap_expired_sessions(db, now=NOW, terminate=terminate, publish=AsyncMock()) == []
+    terminate.assert_not_awaited()
+    db.commit.assert_not_awaited()
 
-    async def fake_find(db, now):
-        return [s1]
 
-    async def boom(pod_name):
-        raise RuntimeError("orchestrator down")
+@pytest.mark.asyncio
+async def test_reaper_idempotent():
+    row, db, terminate = session(), database([]), AsyncMock(return_value=True)
+    db.execute.side_effect = [Result([row]), Result([])]
+    assert await reap_expired_sessions(db, now=NOW, terminate=terminate, publish=AsyncMock()) == ["pod-1"]
+    assert await reap_expired_sessions(db, now=NOW, terminate=terminate, publish=AsyncMock()) == []
+    terminate.assert_awaited_once()
 
-    async def fake_stop(pod_name):
-        pass
 
-    monkeypatch.setattr(session_reaper, "find_expired_sessions", fake_find)
-    monkeypatch.setattr(session_reaper.orchestrator_client, "terminate_pod", boom)
-    monkeypatch.setattr(session_reaper.port_forward, "stop", fake_stop)
+@pytest.mark.asyncio
+async def test_reaper_handles_already_deleted_namespace():
+    row, db = session(), database([])
+    db.execute.return_value = Result([row])
+    terminate = AsyncMock(side_effect=RuntimeError("pod already deleted: not found"))
+    assert await reap_expired_sessions(db, now=NOW, terminate=terminate, publish=AsyncMock()) == ["pod-1"]
+    assert row.state == "terminated"
 
-    db = FakeDB()
-    count = await session_reaper.reap_expired_sessions(db, now=datetime(2026, 1, 1))
 
-    # Best-effort: DB is still marked terminated even if the orchestrator call failed.
-    assert count == 1
-    assert s1.state == "terminated"
+@pytest.mark.asyncio
+async def test_audit_event_emitted_on_reap():
+    row, db, publish = session(), database([]), AsyncMock()
+    db.execute.return_value = Result([row])
+    await reap_expired_sessions(db, now=NOW, terminate=AsyncMock(return_value=True), publish=publish)
+    audit = db.add.call_args.args[0]
+    assert audit.action == "session.reaped"
+    assert audit.resource_id == "pod-1"
+    publish.assert_awaited_once()
+    assert publish.call_args.args[0] == "session.reaped"

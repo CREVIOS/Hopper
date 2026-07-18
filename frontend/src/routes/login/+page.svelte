@@ -41,7 +41,12 @@
       if (err instanceof ApiError && /verify your email/i.test(err.message)) {
         needsVerify = true;
       }
-      formError = err instanceof ApiError ? err.message : 'Sign-in failed. Please try again.';
+      formError =
+        err instanceof ApiError && err.status === 401
+          ? 'Invalid email or password.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Sign-in failed. Please try again.';
       submitting = false;
     }
   }

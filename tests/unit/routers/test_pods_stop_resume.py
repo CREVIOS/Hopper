@@ -23,6 +23,7 @@ def _session(**overrides) -> SimpleNamespace:
         cpu="1",
         memory="2Gi",
         namespace="hopper",
+        network_group=None,
         updated_at=datetime(2026, 7, 13, 9, 0),
         pod_name="vm-123",
         state="running",
@@ -32,7 +33,7 @@ def _session(**overrides) -> SimpleNamespace:
         started_at=datetime(2026, 7, 13, 8, 0),
         expires_at=datetime(2026, 7, 13, 12, 0),
         extension_count=2,
-        credit_grace_until=datetime(2026, 7, 13, 11, 0),
+        grace_expires_at=datetime(2026, 7, 13, 11, 0),
         idle_shutdown_at=datetime(2026, 7, 13, 11, 30),
     )
     return SimpleNamespace(**{**defaults, **overrides})
@@ -100,7 +101,7 @@ async def test_stop_clears_both_countdowns(orchestrator):
 
     await stop_pod("pod-1", current_user=_payload(), db=FakeDB(session))
 
-    assert session.credit_grace_until is None
+    assert session.grace_expires_at is None
     assert session.idle_shutdown_at is None
 
 

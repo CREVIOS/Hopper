@@ -17,6 +17,62 @@ from app.schemas.pod import CreatePodRequest, VmPlan
 from app.schemas.user import TokenPayload
 
 
+@pytest.fixture(autouse=True)
+def _no_cluster_capacity(monkeypatch):
+    """Keep these router unit tests hermetic: create_pod's admission
+    fast-path starts with a real gRPC ListNodes attempt (vm_scheduler.
+    fetch_nodes). Force the fail-open path (None → synchronous create, the
+    behavior these tests were written against). This also stops the real
+    proto modules from being imported mid-suite, which would bypass the
+    sys.modules fakes test_orchestrator_client.py installs.
+    """
+
+    async def fake_fetch_nodes(orch):
+        return None
+
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+
+
+@pytest.fixture(autouse=True)
+def _stub_plan_catalogue(monkeypatch):
+    """Stub the DB-backed catalogue/quota/workspace services that create_pod now
+    depends on: the merged create_pod resolves resources from plan_service,
+    enforces quota_service, resolves the image via image_service, and provisions
+    the workspace via workspace_service. These are external dependencies for a
+    router unit test, so they get hermetic defaults here (a 1 credit/hr "small"
+    plan, generous quota, image fall-through, a fake PVC). Individual tests still
+    stub get_balance and orchestrator_client.create_pod; the extend tests
+    re-stub plan_service.get_plan for a specific rate.
+    """
+    from types import SimpleNamespace
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return SimpleNamespace(
+            name=name, cpu="1", memory="2Gi", disk="5Gi",
+            credits_per_hour=1.0, workspace_gb=10,
+        )
+
+    async def fake_quota(db, user_id):
+        return {"max_workspace_gb": 100, "max_concurrent_vms": 3}
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return None
+
+    async def fake_default_image(db):
+        return None
+
+    async def fake_workspace(db, user_id, plan, capacity_gb=None):
+        return SimpleNamespace(
+            pvc_name=f"ws-user-{user_id}", capacity_gb=capacity_gb or 10, storage_class=""
+        )
+
+    monkeypatch.setattr("app.routers.pods.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.pods.quota_service.get_effective_quota", fake_quota)
+    monkeypatch.setattr("app.routers.pods.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.pods.image_service.get_default_image", fake_default_image)
+    monkeypatch.setattr("app.routers.pods.get_or_create_workspace", fake_workspace)
+
+
 def _payload() -> TokenPayload:
     return TokenPayload(
         sub="user-1",
@@ -72,6 +128,10 @@ class FakeDB:
         self.commits += 1
 
     async def refresh(self, obj):
+        if getattr(obj, "started_at", None) is None:
+            obj.started_at = datetime(2026, 1, 1, 12, 0, 0)
+        if getattr(obj, "updated_at", None) is None:
+            obj.updated_at = datetime(2026, 1, 1, 12, 0, 0)
         self.refreshed.append(obj)
 
 
@@ -177,7 +237,7 @@ async def test_create_pod_rejects_insufficient_credits(monkeypatch):
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
 
     with pytest.raises(HTTPException) as exc_info:
-        await create_pod(
+        await create_pod.__wrapped__(
             request=None,
             response=None,
             body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -197,7 +257,7 @@ async def test_create_pod_rejects_more_than_three_active_pods(monkeypatch):
     db = FakeDB(execute_results=[[object(), object(), object()]])
 
     with pytest.raises(HTTPException) as exc_info:
-        await create_pod(
+        await create_pod.__wrapped__(
             request=None,
             response=None,
             body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -226,9 +286,9 @@ async def test_create_pod_updates_session_from_orchestrator_response(monkeypatch
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
     monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
 
-    db = FakeDB(execute_results=[[]])
+    db = FakeDB(execute_results=[[], [], []])
 
-    result = await create_pod(
+    result = await create_pod.__wrapped__(
         request=None,
         response=None,
         body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -252,9 +312,9 @@ async def test_create_pod_marks_session_failed_when_orchestrator_raises(monkeypa
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
     monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
 
-    db = FakeDB(execute_results=[[]])
+    db = FakeDB(execute_results=[[], [], []])
 
-    result = await create_pod(
+    result = await create_pod.__wrapped__(
         request=None,
         response=None,
         body=CreatePodRequest(plan=VmPlan.SMALL),
@@ -480,3 +540,74 @@ def _async(value):
         return value
 
     return _coro()
+
+
+# ---------------------------------------------------------------------------
+# Network isolation groups (HOP-19 18.3)
+# ---------------------------------------------------------------------------
+
+def _teacher_payload() -> TokenPayload:
+    return TokenPayload(
+        sub="prof-1",
+        email="prof@example.com",
+        name="Professor One",
+        role="professor",
+        exp=1234567890,
+    )
+
+
+async def test_create_pod_network_group_requires_teacher_role():
+    # No course-membership model exists, so students must not be able to
+    # self-select a group (they could join anyone's and defeat isolation).
+    with pytest.raises(HTTPException) as exc_info:
+        await create_pod.__wrapped__(
+            request=None,
+            response=None,
+            body=CreatePodRequest(plan=VmPlan.SMALL, network_group="cse101"),
+            current_user=_payload(),  # role=student
+            db=FakeDB(),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "network group" in exc_info.value.detail
+
+
+async def test_create_pod_network_group_flows_to_orchestrator_and_session(monkeypatch):
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    class FakeOrchestratorResponse:
+        id = "vm-real-name"
+        state = "running"
+        ssh_port = 30022
+        vscode_port = 30080
+        ssh_password = "secret"
+
+    orchestrator_calls = []
+
+    async def fake_create_pod(**kwargs):
+        orchestrator_calls.append(kwargs)
+        return FakeOrchestratorResponse()
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    db = FakeDB(execute_results=[[], [], []])
+
+    result = await create_pod.__wrapped__(
+        request=None,
+        response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL, network_group="cse101-team1"),
+        current_user=_teacher_payload(),
+        db=db,
+    )
+
+    assert orchestrator_calls[0]["network_group"] == "cse101-team1"
+    assert db.added[0].network_group == "cse101-team1"
+    assert result.network_group == "cse101-team1"
+
+
+def test_create_pod_request_rejects_bad_group_names():
+    for bad in ("UPPER", "has_underscore", "-lead", "trail-", "a" * 33):
+        with pytest.raises(ValueError):
+            CreatePodRequest(plan=VmPlan.SMALL, network_group=bad)

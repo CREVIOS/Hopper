@@ -1,225 +1,188 @@
-from types import SimpleNamespace
+import json
 
-import pytest
+from app.services import notification_service as notif_module
 
-from app.models.notification import Notification
-from app.services import notification_service
+
+class FakeMessage:
+    def __init__(self, data=b""):
+        self.data = data
+
+
+class FakePodSession:
+    def __init__(self, state="running"):
+        self.id = "sess-1"
+        self.user_id = "user-1"
+        self.plan = "small"
+        self.state = state
 
 
 class FakeDB:
-    """Records what was added/committed; select() results are scripted."""
-
-    def __init__(self, existing=None):
-        self.added = []
-        self.commits = 0
-        self.rollbacks = 0
-        self.existing = existing
-        self.executed = []
-
-    def add(self, obj):
-        self.added.append(obj)
-
-    async def flush(self):
-        pass
+    def __init__(self):
+        self.committed = False
 
     async def commit(self):
-        self.commits += 1
-
-    async def rollback(self):
-        self.rollbacks += 1
-
-    async def refresh(self, obj):
-        pass
-
-    async def scalar(self, stmt):
-        return self.existing
-
-    async def scalars(self, stmt):
-        return SimpleNamespace(all=lambda: [])
-
-    async def execute(self, stmt):
-        self.executed.append(stmt)
+        self.committed = True
 
 
-def _notification(**overrides) -> Notification:
-    defaults = dict(
-        id="n-1",
-        user_id="stu-1",
-        type="credit_warning",
-        severity="warning",
-        title="Low credits",
-        body="About 10 minutes left.",
-        action_url="/credits",
-        dedupe_key="credit-warning:pod-1:10",
-        metadata_={"pod_id": "pod-1"},
-        read_at=None,
-    )
-    return Notification(**{**defaults, **overrides})
-
-
-# --- validation --------------------------------------------------------------
-
-
-async def test_unknown_type_is_rejected(monkeypatch):
-    monkeypatch.setattr(notification_service, "publish_notification", _noop)
-
-    with pytest.raises(ValueError, match="unknown notification type"):
-        await notification_service.create_notification(
-            FakeDB(), user_id="u", type="not_a_type", severity="info",
-            title="t", body="b",
-        )
-
-
-async def test_unknown_severity_is_rejected(monkeypatch):
-    monkeypatch.setattr(notification_service, "publish_notification", _noop)
-
-    with pytest.raises(ValueError, match="unknown notification severity"):
-        await notification_service.create_notification(
-            FakeDB(), user_id="u", type="credit_warning", severity="catastrophic",
-            title="t", body="b",
-        )
-
-
-async def _noop(*args, **kwargs):
-    pass
-
-
-# --- dedupe ------------------------------------------------------------------
-
-
-async def test_dedupe_key_returns_the_existing_row_instead_of_a_duplicate(monkeypatch):
-    """The billing tick runs every minute; without this the bell would flood."""
-    monkeypatch.setattr(notification_service, "publish_notification", _noop)
-
-    existing = _notification()
-    db = FakeDB(existing=existing)
-
-    result = await notification_service.create_notification(
-        db,
-        user_id="stu-1",
-        type="credit_warning",
-        severity="warning",
-        title="Low credits",
-        body="About 10 minutes left.",
-        dedupe_key="credit-warning:pod-1:10",
-    )
-
-    assert result is existing
-    assert db.added == []      # nothing new written
-    assert db.commits == 0
-
-
-async def test_a_new_notification_is_written_and_published(monkeypatch):
-    published = []
-
-    async def fake_publish(n):
-        published.append(n)
-
-    monkeypatch.setattr(notification_service, "publish_notification", fake_publish)
-
-    db = FakeDB(existing=None)
-    result = await notification_service.create_notification(
-        db,
-        user_id="stu-1",
-        type="credits_received",
-        severity="success",
-        title="Credits received",
-        body="10 credits.",
-        dedupe_key="credits-received:t-1",
-    )
-
-    assert db.added == [result]
-    assert db.commits == 1
-    assert published == [result]  # pushed live over NATS for the bell
-
-
-# --- failure isolation -------------------------------------------------------
-
-
-async def test_create_safely_swallows_errors_and_rolls_back(monkeypatch):
-    """A notification must never take down the billing tick or a credit transfer."""
-
-    async def boom(db, **kwargs):
-        raise RuntimeError("db exploded")
-
-    monkeypatch.setattr(notification_service, "create_notification", boom)
-
+def _env(monkeypatch, session):
+    """Fake db/session/notify wiring shared by the consumer tests."""
     db = FakeDB()
-    result = await notification_service.create_notification_safely(
-        db, user_id="stu-1", type="credit_warning", severity="warning",
-        title="t", body="b",
+    notified = {}
+
+    class FakeDBContext:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_resolve_session(_db, pod_ref):
+        return session
+
+    async def fake_notify(_db, user_id, **kwargs):
+        notified["user_id"] = user_id
+        notified.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.notification_service.async_session", lambda: FakeDBContext()
+    )
+    monkeypatch.setattr(
+        "app.services.notification_service.resolve_session", fake_resolve_session
+    )
+    monkeypatch.setattr("app.services.notification_service.notify", fake_notify)
+    return db, notified
+
+
+# --- pod.started -----------------------------------------------------------
+
+
+async def test_pod_started_notifies_even_when_db_already_running(monkeypatch):
+    """create_pod optimistically stores state=running before the container
+    starts, so 'already running' must NOT suppress the readiness push."""
+    session = FakePodSession(state="running")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(json.dumps({"pod_id": "sess-1", "user_id": "user-1"}).encode())
+    await notif_module._handle_pod_started(msg)
+
+    assert notified["user_id"] == "user-1"
+    assert notified["type_"] == "success"
+    assert notified["data"]["action"] == "open_vscode"
+    assert db.committed is True
+
+
+async def test_pod_started_repairs_stale_creating_state(monkeypatch):
+    session = FakePodSession(state="creating")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(json.dumps({"pod_id": "sess-1"}).encode())
+    await notif_module._handle_pod_started(msg)
+
+    assert session.state == "running"
+    assert notified["user_id"] == "user-1"
+
+
+async def test_pod_started_skips_terminal_sessions(monkeypatch):
+    session = FakePodSession(state="terminated")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(json.dumps({"pod_id": "sess-1"}).encode())
+    await notif_module._handle_pod_started(msg)
+
+    assert session.state == "terminated"
+    assert notified == {}
+
+
+async def test_pod_started_ignores_malformed_payload(monkeypatch):
+    db, notified = _env(monkeypatch, FakePodSession())
+    await notif_module._handle_pod_started(FakeMessage(b"{nope"))
+    assert notified == {}
+
+
+# --- pod.stopped -----------------------------------------------------------
+
+
+async def test_pod_stopped_marks_terminated_and_notifies(monkeypatch):
+    session = FakePodSession(state="running")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(
+        json.dumps({"pod_id": "sess-1", "reason": "credits_exhausted"}).encode()
+    )
+    await notif_module._handle_pod_stopped(msg)
+
+    assert session.state == "terminated"
+    assert notified["type_"] == "warning"
+    assert notified["data"]["reason"] == "credits_exhausted"
+    assert db.committed is True
+
+
+async def test_pod_stopped_skips_already_terminated(monkeypatch):
+    """User-initiated deletes commit terminated before the event arrives —
+    no notification for a termination the user is watching."""
+    session = FakePodSession(state="terminated")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(json.dumps({"pod_id": "sess-1"}).encode())
+    await notif_module._handle_pod_stopped(msg)
+
+    assert notified == {}
+    assert db.committed is False
+
+
+async def test_pod_stopped_unknown_session_is_noop(monkeypatch):
+    db, notified = _env(monkeypatch, None)
+
+    msg = FakeMessage(json.dumps({"pod_id": "ghost"}).encode())
+    await notif_module._handle_pod_stopped(msg)
+
+    assert notified == {}
+
+
+# --- pod.failed ------------------------------------------------------------
+
+
+async def test_pod_failed_repairs_state_without_notifying(monkeypatch):
+    """The synchronous create_pod path owns the failure notification; the
+    consumer only repairs DB state."""
+    session = FakePodSession(state="running")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(
+        json.dumps({"pod_id": "vm-123", "api_pod_id": "sess-1", "user_id": "user-1"}).encode()
+    )
+    await notif_module._handle_pod_failed(msg)
+
+    assert session.state == "failed"
+    assert notified == {}
+    assert db.committed is True
+
+
+async def test_pod_failed_skips_terminal_sessions(monkeypatch):
+    session = FakePodSession(state="failed")
+    db, notified = _env(monkeypatch, session)
+
+    msg = FakeMessage(json.dumps({"pod_id": "sess-1"}).encode())
+    await notif_module._handle_pod_failed(msg)
+
+    assert db.committed is False
+
+
+# --- consumer registration --------------------------------------------------
+
+
+async def test_start_notification_consumer_subscribes_queue_grouped(monkeypatch):
+    subscriptions = []
+
+    class FakeNC:
+        async def subscribe(self, subject, queue, cb):
+            subscriptions.append((subject, queue))
+
+    monkeypatch.setattr(
+        "app.services.notification_service.nats_client.get_nc", lambda: FakeNC()
     )
 
-    assert result is None
-    assert db.rollbacks == 1
+    await notif_module.start_notification_consumer()
 
-
-async def test_create_safely_never_raises_even_if_the_rollback_fails(monkeypatch):
-    """A session broken enough to fail create_notification can fail rollback too.
-    If that escaped, it would blow up a credit transfer that already committed."""
-
-    async def boom(db, **kwargs):
-        raise RuntimeError("db exploded")
-
-    class BrokenDB(FakeDB):
-        async def rollback(self):
-            raise RuntimeError("rollback exploded too")
-
-    monkeypatch.setattr(notification_service, "create_notification", boom)
-
-    result = await notification_service.create_notification_safely(
-        BrokenDB(), user_id="stu-1", type="credit_warning", severity="warning",
-        title="t", body="b",
-    )
-
-    assert result is None  # swallowed, not raised
-
-
-# --- read tracking -----------------------------------------------------------
-
-
-async def test_marking_read_stamps_read_at_once(monkeypatch):
-    notification = _notification()
-    db = FakeDB(existing=notification)
-
-    first = await notification_service.mark_notification_read(
-        db, user_id="stu-1", notification_id="n-1"
-    )
-    stamped = first.read_at
-
-    second = await notification_service.mark_notification_read(
-        db, user_id="stu-1", notification_id="n-1"
-    )
-
-    assert stamped is not None
-    assert second.read_at == stamped  # idempotent — not re-stamped
-    assert db.commits == 1
-
-
-async def test_marking_someone_elses_notification_read_returns_none():
-    db = FakeDB(existing=None)  # the user-scoped query finds nothing
-
-    result = await notification_service.mark_notification_read(
-        db, user_id="attacker", notification_id="n-1"
-    )
-
-    assert result is None
-
-
-# --- SSE subject -------------------------------------------------------------
-
-
-def test_notification_subject_is_a_safe_per_user_nats_token():
-    """User ids can contain characters NATS treats as subject separators."""
-    subject = notification_service.notification_subject("user@cs.du.ac.bd")
-
-    assert subject.startswith("notifications.")
-    token = subject.removeprefix("notifications.")
-    assert "." not in token and "*" not in token and ">" not in token
-
-
-def test_notification_subjects_differ_per_user():
-    a = notification_service.notification_subject("stu-1")
-    b = notification_service.notification_subject("stu-2")
-
-    assert a != b
+    assert [s for s, _ in subscriptions] == ["pod.started", "pod.stopped", "pod.failed"]
+    assert all(q == "notify-workers" for _, q in subscriptions)

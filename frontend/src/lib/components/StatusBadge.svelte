@@ -24,7 +24,10 @@
     // the VM can be resumed, so it reads as "info", distinct from Terminated.
     stopped: { variant: 'info', pulse: false, label: 'Stopped' },
     terminated: { variant: 'muted', pulse: false, label: 'Terminated' },
-    failed: { variant: 'destructive', pulse: false, label: 'Failed' }
+    failed: { variant: 'destructive', pulse: false, label: 'Failed' },
+    // Admission-queue states (VmQueueEntry, not PodSession).
+    queued: { variant: 'info', pulse: true, label: 'Queued' },
+    admitting: { variant: 'info', pulse: true, label: 'Starting' }
   };
 </script>
 

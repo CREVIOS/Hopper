@@ -10,10 +10,10 @@
   import Sidebar from '$lib/components/Sidebar.svelte';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
   import UserMenu from '$lib/components/UserMenu.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import ConfirmHost from '$lib/components/ConfirmHost.svelte';
-  import NotificationBell from '$lib/components/NotificationBell.svelte';
 
   let {
     data,

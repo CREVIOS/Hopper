@@ -80,7 +80,7 @@ async def test_ensure_system_account_creates_default_account():
 
 
 async def test_get_balance_returns_zero_when_no_ledger_entry(monkeypatch):
-    async def fake_get_or_create_account(db, user_id, persist=False):
+    async def fake_get_or_create_account(db, user_id, **kwargs):
         return Account(
             id="acct-1",
             name="user:user-1",

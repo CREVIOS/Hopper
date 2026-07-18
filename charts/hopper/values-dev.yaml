@@ -1,0 +1,39 @@
+# Local development overlay (k3d/k3s on a laptop).
+#   helm install hopper ./charts/hopper -n hopper --create-namespace \
+#     -f charts/hopper/values-dev.yaml
+#
+# Note: the usual local workflow runs the 3 app services on the HOST
+# (scripts/deploy-local.sh + docker compose for infra); this overlay is for
+# an all-in-cluster dev deployment.
+
+global:
+  host: localhost
+  scheme: http
+
+# Disposable environment → render dev-default secrets in-cluster.
+secrets:
+  create: true
+
+keycloak:
+  startDev: true
+
+apiGateway:
+  replicas: 1
+  debug: true
+
+frontend:
+  nodeIP: localhost
+
+ingress:
+  enabled: false
+
+certManager:
+  enabled: false
+
+networkPolicies:
+  # k3d's default CNI (flannel) does not enforce NetworkPolicy; rendering
+  # them is harmless but misleading — off by default for dev.
+  enabled: false
+
+backup:
+  enabled: false

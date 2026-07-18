@@ -30,7 +30,10 @@ async function request<T>(
   });
 
   // On 401, attempt a silent token refresh and retry once.
-  if (res.status === 401 && retry && !isRefreshing) {
+  // A 401 from the login endpoint means the submitted credentials were
+  // rejected, not that an existing browser session expired. Let the caller
+  // display that response instead of refreshing and reloading the login page.
+  if (res.status === 401 && path !== '/auth/login' && retry && !isRefreshing) {
     isRefreshing = true;
     try {
       const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {

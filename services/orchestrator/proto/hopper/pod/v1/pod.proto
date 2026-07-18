@@ -31,6 +31,25 @@ message CreatePodRequest {
   // code-server's --base-path so that external URLs (path-based code access)
   // match the same identifier the API and frontend use.
   string pod_id = 8;
+  // OpenSSH-format public keys the launching user has registered. Injected
+  // into the VM's /root/.ssh/authorized_keys so key-based SSH works (the
+  // key CRUD previously stored keys that never reached the VM). Public keys
+  // are not secret, so passing them in the request (vs a Secret) is fine.
+  repeated string authorized_keys = 9;
+  // Persistent per-user workspace (FR-HC-28). When workspace_pvc_name is set,
+  // the orchestrator ensures a ReadWriteOnce PVC of that name exists (creating
+  // it lazily, without a pod owner-reference so it outlives the pod) and mounts
+  // it read-write at /workspace. It is never deleted by the session lifecycle
+  // — its distinct name (ws-user-<id>) is outside DeletePod's ws-<pod> scope.
+  string workspace_pvc_name = 10;
+  int32 workspace_capacity_gb = 11;
+  // K8s StorageClassName for the workspace PVC; empty uses the cluster default.
+  string storage_class = 12;
+  // Credits-per-hour billing rate for the chosen plan, resolved by the gateway
+  // from its (now DB-backed) plan catalogue. The orchestrator bills at this
+  // rate instead of a hardcoded map; when 0 it falls back to the built-in
+  // Plans map for backward compatibility with older gateways.
+  double credits_per_hour = 13;
 }
 
 message PodStatus {
