@@ -15,6 +15,7 @@ from app.routers.pods import (
     list_queue,
     list_plans,
     list_pods,
+    list_templates,
     terminate_pod,
     stream_metrics,
     vscode_proxy,
@@ -63,6 +64,34 @@ def _stub_plan_catalogue(monkeypatch):
 
     monkeypatch.setattr("app.routers.pods.plan_service.get_plan", fake_get_plan)
     monkeypatch.setattr("app.routers.pods.plan_service.list_plans", fake_list_plans)
+
+
+@pytest.fixture(autouse=True)
+def _stub_image_catalogue(monkeypatch):
+    """create_pod/list_templates resolve the container image from the DB-backed
+    image catalogue (image_service). Stub it with the built-in templates so
+    these router unit tests stay hermetic."""
+    from types import SimpleNamespace
+
+    images = {
+        "ubuntu": SimpleNamespace(template="ubuntu", display_name="Ubuntu 22.04", image="hopper/vm-ubuntu:22.04", description="Base Ubuntu with SSH", is_active=True, is_default=True),
+        "python-ml": SimpleNamespace(template="python-ml", display_name="Python / ML", image="hopper/vm-python-ml:22.04", description="Python 3", is_active=True, is_default=False),
+        "cpp": SimpleNamespace(template="cpp", display_name="C / C++", image="hopper/vm-cpp:22.04", description="GCC", is_active=True, is_default=False),
+        "java": SimpleNamespace(template="java", display_name="Java", image="hopper/vm-java:22.04", description="OpenJDK", is_active=True, is_default=False),
+    }
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return images.get(template)
+
+    async def fake_get_default_image(db):
+        return images["ubuntu"]
+
+    async def fake_list_images(db, *, include_inactive=False):
+        return list(images.values())
+
+    monkeypatch.setattr("app.routers.pods.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.pods.image_service.get_default_image", fake_get_default_image)
+    monkeypatch.setattr("app.routers.pods.image_service.list_images", fake_list_images)
 
 
 def _payload() -> TokenPayload:
@@ -211,6 +240,14 @@ async def test_list_plans_returns_all_vm_plans():
 
     assert set(result) == {"small", "medium", "large"}
     assert result["small"]["credits_per_hour"] == 1.0
+
+
+async def test_list_templates_returns_all_templates():
+    result = await list_templates(db=object())
+
+    assert set(result) == {"ubuntu", "python-ml", "cpp", "java"}
+    assert result["ubuntu"]["image"] == "hopper/vm-ubuntu:22.04"
+    assert result["ubuntu"]["is_default"] is True
 
 
 async def test_list_pods_returns_sessions_for_current_user():
