@@ -3,7 +3,9 @@ import { test } from '../fixtures/app.fixture';
 import { setupMockState } from '../helpers/mock';
 import { e2eEnv } from '../helpers/env';
 
-async function confirmLaunch(page: Parameters<typeof test>[0]['page']) {
+async function launchWithConfirmation(page: Parameters<typeof test>[0]['page']) {
+  await expect(page.locator('[data-pods-hydrated="true"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Launch VM' }).click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Launch' }).click();
@@ -69,8 +71,7 @@ test.describe('Accessibility, performance, and edge coverage', () => {
     });
 
     await page.goto('/pods');
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmLaunch(page);
+    await launchWithConfirmation(page);
     await expect(page.getByText('Launch failed')).toBeVisible();
 
     await page.unroute('**/api/pods/');
@@ -88,8 +89,7 @@ test.describe('Accessibility, performance, and edge coverage', () => {
     await secondTab.goto('/pods');
 
     await page.goto('/pods');
-    await page.getByRole('button', { name: 'Launch VM' }).click();
-    await confirmLaunch(page);
+    await launchWithConfirmation(page);
 
     await expect(secondTab.locator('a[href="/pods/e2e-pod-1"]').first()).toBeVisible({ timeout: 7000 });
     await expect(secondTab.getByRole('link', { name: /99\.0 credits/i })).toBeVisible({ timeout: 7000 });

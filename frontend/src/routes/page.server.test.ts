@@ -14,16 +14,13 @@ describe('root page server load', () => {
     });
   });
 
-  it('redirects anonymous users to login', async () => {
+  it('allows anonymous users to see the landing page', async () => {
     const { load } = await import('./+page.server');
 
     await expect(
       load({
         parent: async () => ({ isAuthenticated: false })
       } as any)
-    ).rejects.toMatchObject({
-      status: 302,
-      location: '/login'
-    });
+    ).resolves.toEqual({});
   });
 });
