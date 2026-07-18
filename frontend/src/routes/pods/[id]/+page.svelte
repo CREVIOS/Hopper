@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import {
     Square,
     ArrowLeft,
@@ -67,6 +68,15 @@
 
   let activeTab = $state('overview');
   let showPassword = $state(false);
+  let hydrated = $state(false);
+
+  onMount(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    if (requestedTab === 'overview' || requestedTab === 'terminal' || requestedTab === 'files') {
+      activeTab = requestedTab;
+    }
+    hydrated = true;
+  });
 
   // Terminal sessions management
   let terminalSessions = $state([{ id: 'term-1' }]);
@@ -192,6 +202,7 @@
   {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
   <div
+    data-pod-hydrated={hydrated}
     class={cn(
       'flex flex-col',
       activeTab === 'terminal' && 'h-[calc(100vh-7rem)]'
@@ -248,21 +259,68 @@
     </div>
 
     <!-- Tabs -->
-    <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
-      <Tabs.List class="mb-4 mt-1 self-start">
-        <Tabs.Trigger value="overview">
+    <div class="flex min-h-0 flex-1 flex-col">
+      <div
+        class="mb-4 mt-1 inline-flex h-9 self-start items-center justify-center gap-1 rounded-full border border-border/60 bg-muted/60 p-1 text-muted-foreground backdrop-blur-sm"
+        role="tablist"
+        aria-label="Pod detail sections"
+      >
+        <button
+          id="pod-tab-overview"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'overview'}
+          aria-controls="pod-panel-overview"
+          class={cn(
+            'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1 text-sm font-medium transition-all duration-200',
+            'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            activeTab === 'overview'
+              ? 'bg-card text-foreground shadow-sm ring-1 ring-border/50'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onclick={() => (activeTab = 'overview')}
+        >
           <Info class="size-3.5" /> Overview
-        </Tabs.Trigger>
-        <Tabs.Trigger value="terminal">
+        </button>
+        <button
+          id="pod-tab-terminal"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'terminal'}
+          aria-controls="pod-panel-terminal"
+          class={cn(
+            'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1 text-sm font-medium transition-all duration-200',
+            'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            activeTab === 'terminal'
+              ? 'bg-card text-foreground shadow-sm ring-1 ring-border/50'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onclick={() => (activeTab = 'terminal')}
+        >
           <TerminalIcon class="size-3.5" /> Terminal
-        </Tabs.Trigger>
-        <Tabs.Trigger value="files">
+        </button>
+        <button
+          id="pod-tab-files"
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'files'}
+          aria-controls="pod-panel-files"
+          class={cn(
+            'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1 text-sm font-medium transition-all duration-200',
+            'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            activeTab === 'files'
+              ? 'bg-card text-foreground shadow-sm ring-1 ring-border/50'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+          onclick={() => (activeTab = 'files')}
+        >
           <FileUp class="size-3.5" /> Files
-        </Tabs.Trigger>
-      </Tabs.List>
+        </button>
+      </div>
 
       <!-- Terminal -->
-      <Tabs.Content value="terminal" class="min-h-0 flex-1">
+      {#if activeTab === 'terminal'}
+        <div id="pod-panel-terminal" role="tabpanel" aria-labelledby="pod-tab-terminal" class="min-h-0 flex-1">
         <div
           class="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card terminal-frame"
         >
@@ -339,15 +397,19 @@
             {/if}
           </div>
         </div>
-      </Tabs.Content>
+        </div>
+      {/if}
 
       <!-- Files -->
-      <Tabs.Content value="files" class="min-h-0 flex-1 overflow-y-auto">
+      {#if activeTab === 'files'}
+        <div id="pod-panel-files" role="tabpanel" aria-labelledby="pod-tab-files" class="min-h-0 flex-1 overflow-y-auto">
         <PodFiles podId={data.pod.id} podRunning={isRunning} />
-      </Tabs.Content>
+        </div>
+      {/if}
 
       <!-- Overview -->
-      <Tabs.Content value="overview" class="min-h-0 flex-1 overflow-y-auto">
+      {#if activeTab === 'overview'}
+        <div id="pod-panel-overview" role="tabpanel" aria-labelledby="pod-tab-overview" class="min-h-0 flex-1 overflow-y-auto">
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
           <!-- LEFT: specifications + live metrics -->
           <div class="space-y-4">
@@ -532,8 +594,9 @@
         <div class="mt-4">
           <PodUsage podId={data.pod.id} />
         </div>
-      </Tabs.Content>
-    </Tabs.Root>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <Dialog
