@@ -5,7 +5,7 @@ import { apiUrl } from '$lib/api/server';
 export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const { isAuthenticated, user } = await parent();
   if (!isAuthenticated) {
-    redirect(302, '/login?session_expired=1');
+    redirect(302, '/login');
   }
   // Teacher console is for professors; admins fund teachers from /admin.
   if (user?.role !== 'professor') {

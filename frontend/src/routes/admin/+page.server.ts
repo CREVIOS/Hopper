@@ -5,7 +5,7 @@ import { apiUrl } from '$lib/api/server';
 export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
   const { isAuthenticated, user } = await parent();
   if (!isAuthenticated) {
-    redirect(302, '/login?session_expired=1');
+    redirect(302, '/login');
   }
   // Admin panel is admin-only. Teachers (professors) get the Teaching console
   // instead and are bounced back to their dashboard here.

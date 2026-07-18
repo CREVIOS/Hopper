@@ -57,7 +57,7 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('redirects to login when refresh fails', async () => {
+  it('redirects to login with a session-expired flag when refresh fails', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('expired', { status: 401 }))
@@ -74,6 +74,6 @@ describe('api client', () => {
       status: 401,
       message: 'Session expired'
     });
-    expect(location.href).toBe('/login');
+    expect(location.href).toBe('/login?session_expired=1');
   });
 });
