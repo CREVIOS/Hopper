@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -23,6 +24,24 @@ type PodOrchestratorService struct {
 
 func NewPodOrchestratorService(srv *Server) *PodOrchestratorService {
 	return &PodOrchestratorService{server: srv}
+}
+
+// hopperEnvFromLabels extracts the HOPPER_-prefixed entries from the CreatePod
+// labels map. These are container environment variables for the in-VM agents
+// (idle + provisioner), transported through the proto labels map to avoid a
+// proto change. They are injected as env — never as k8s labels, whose value
+// charset can't hold things like an API URL or a token.
+func hopperEnvFromLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		if strings.HasPrefix(k, "HOPPER_") {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func podToProtoState(s pod.State) podv1.PodState {
@@ -118,6 +137,7 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		CPU:          req.Cpu,
 		Memory:       req.Memory,
 		NetworkGroup: networkGroup,
+		ExtraEnv:     hopperEnvFromLabels(req.Labels),
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
