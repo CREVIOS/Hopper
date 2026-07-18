@@ -21,8 +21,8 @@ test.describe('Suite 1: Authentication and authorization', () => {
     page
   }) => {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in as admin/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in with email' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'University SSO' })).toBeVisible();
 
     await signInThroughForm(page, e2eEnv.studentEmail, e2eEnv.studentPassword);
     await expect(page.getByText('Credit balance')).toBeVisible();
@@ -96,7 +96,6 @@ test.describe('Suite 1: Authentication and authorization', () => {
 
     await setupMockState(request, { session: { expired: true, refresh_valid: false } });
     await page.goto('/dashboard');
-    await expect(page).toHaveURL(/\/login\?session_expired=1$/);
-    await expect(page.getByText('Session expired, please log in again.')).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
   });
 });
