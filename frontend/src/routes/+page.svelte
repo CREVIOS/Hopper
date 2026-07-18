@@ -288,7 +288,7 @@
     <p class="relative mx-auto mt-3 max-w-lg text-muted-foreground">Sign up with your university email. Free credits to get you started — no card required.</p>
     <div class="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
       <Button href="/signup" data-sveltekit-reload size="lg" class="h-12 rounded-full px-6 text-[15px]">Get started</Button>
-      <Button href="/login" variant="outline" size="lg" class="h-12 rounded-full px-6 text-[15px]">Sign in</Button>
+      <Button href="/login" variant="outline" size="lg" class="h-12 rounded-full px-6 text-[15px]">Open login</Button>
     </div>
   </section>
 
