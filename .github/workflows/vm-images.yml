@@ -1,0 +1,64 @@
+name: Publish VM images
+
+# Build the VM base images (images/hopper-vm-*) and push them to GHCR so every
+# cluster node pulls them from the registry instead of needing a manual
+# `k3s ctr images import`. They change rarely, so this only runs when a VM
+# Dockerfile (or this workflow) changes, or on manual dispatch.
+#
+# After the first push, make the four packages public (Package settings →
+# Change visibility) so nodes pull them without an imagePullSecret — same as the
+# hopper-api-gateway / -orchestrator / -frontend service images.
+#
+# To make the deployed cluster use them, set on the api-gateway Deployment:
+#   HOPPER_VM_IMAGE_PREFIX=ghcr.io/<owner>/hopper-
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "images/hopper-vm/**"
+      - "images/hopper-vm-cpp/**"
+      - "images/hopper-vm-java/**"
+      - "images/hopper-vm-python/**"
+      - ".github/workflows/vm-images.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker login (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push VM images
+        run: |
+          set -euo pipefail
+          REG="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+
+          # Base image first: tagged locally so the derived images' `FROM
+          # hopper/vm-ubuntu:22.04` resolves, and pushed to GHCR.
+          docker build -t hopper/vm-ubuntu:22.04 -t "$REG/hopper-vm-ubuntu:22.04" images/hopper-vm
+          docker push "$REG/hopper-vm-ubuntu:22.04"
+
+          # Derived images build FROM the local base, then push to GHCR.
+          # dir under images/  ->  GHCR repository name
+          for pair in "hopper-vm-cpp:hopper-vm-cpp" \
+                      "hopper-vm-java:hopper-vm-java" \
+                      "hopper-vm-python:hopper-vm-python-ml"; do
+            dir="${pair%%:*}"
+            repo="${pair##*:}"
+            docker build -t "$REG/$repo:22.04" "images/$dir"
+            docker push "$REG/$repo:22.04"
+          done
+
+          echo "Pushed: $REG/hopper-vm-{ubuntu,cpp,java,python-ml}:22.04"

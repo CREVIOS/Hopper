@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
+    # Registry/prefix for the VM base images (images/hopper-vm-*). The plan→image
+    # map is built as "{prefix}vm-<template>:22.04". Default "hopper/" keeps the
+    # locally-imported images working on a single node; the deployed cluster sets
+    # HOPPER_VM_IMAGE_PREFIX="ghcr.io/<owner>/hopper-" so every node pulls the
+    # images from GHCR instead of needing a manual `ctr images import`.
+    vm_image_prefix: str = "hopper/"
+
     # extra="ignore": a shared local .env may carry keys this service doesn't
     # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars
     # for a feature branch. Ignore them instead of refusing to boot.
