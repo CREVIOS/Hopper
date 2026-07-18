@@ -265,10 +265,8 @@
     }
   }
 
-  // Launcher page handles cold-start warm-up with a splash before handing
-  // the tab to code-server.
   function vscodeUrl(pod: Pod): string {
-    return `/pods/${pod.id}/vscode`;
+    return `/${pod.user_id}/code/${pod.id}/`;
   }
 </script>
 

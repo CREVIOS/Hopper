@@ -90,7 +90,20 @@ export default defineConfig(({ mode }) => {
         // These aren't under /api, so without this rule they'd hit SvelteKit and
         // 404. Regex key (leading ^) matches the user-id segment. ws:true for
         // code-server's RPC socket; followRedirects so its internal 302s resolve.
-        '^/[^/]+/code/': { ...common, followRedirects: true, ws: true },
+        // The api-gateway only serves the editor at /pods/{podId}/vscode/{rest},
+        // so this dev-only proxy must reproduce what the prod nginx ingress does
+        // (see k8s/deploy/03-ingress.yaml): rewrite
+        //   /{userId}/code/{podId}/{rest}  ->  /pods/{podId}/vscode/{rest}
+        // Without it the un-rewritten /code/ path reaches FastAPI, which 404s
+        // ("Open VS Code" shows Not Found). Production routing is unaffected —
+        // this file only configures `vite dev`.
+        '^/[^/]+/code/': {
+          ...common,
+          followRedirects: true,
+          ws: true,
+          rewrite: (path: string) =>
+            path.replace(/^\/[^/]+\/code\/([^/]+)(?:\/(.*))?$/, '/pods/$1/vscode/$2'),
+        },
         // Everything else
         '/api': { ...common, followRedirects: false },
       }

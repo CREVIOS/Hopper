@@ -168,10 +168,8 @@
     }
   }
 
-  // Launcher page: polls code-server readiness behind a branded splash, then
-  // swaps the tab for the editor — no raw 503s during cold start.
   function vscodeUrl(p: Pod): string {
-    return `/pods/${p.id}/vscode`;
+    return `/${data.user?.id ?? ''}/code/${p.id}/`;
   }
 
   async function copyText(text: string, label = 'Copied') {

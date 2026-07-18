@@ -5,7 +5,7 @@
   import type { User } from '$lib/types';
   import { ModeWatcher } from 'mode-watcher';
   import { Menu, X } from 'lucide-svelte';
-  import { page, navigating } from '$app/state';
+  import { page } from '$app/state';
   import { Toaster, Button } from '$lib/ui';
   import Sidebar from '$lib/components/Sidebar.svelte';
   import HopperLogo from '$lib/brand/HopperLogo.svelte';
@@ -14,7 +14,6 @@
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import CreditBadge from '$lib/components/CreditBadge.svelte';
   import ConfirmHost from '$lib/components/ConfirmHost.svelte';
-  import DashboardSkeleton from '$lib/components/DashboardSkeleton.svelte';
 
   let {
     data,
@@ -72,42 +71,7 @@
   });
 
   const isLogin = $derived(page.url.pathname === '/login');
-  const loadingSkeleton = $derived.by(() => {
-    if (!data.isAuthenticated) return null;
-
-    const pathname = navigating.to?.url.pathname;
-    if (!pathname) return null;
-    if (pathname === '/dashboard') return 'dashboard';
-    if (pathname === '/admin') return 'admin';
-    if (pathname === '/teacher') return 'teacher';
-    if (pathname === '/credits') return 'credits';
-    return null;
-  });
-
-  // One source of truth for document titles — pages don't set their own.
-  const TITLES: [RegExp, string][] = [
-    [/^\/dashboard/, 'Dashboard'],
-    [/^\/pods\/queue/, 'Queue'],
-    [/^\/pods\/[^/]+/, 'VM Detail'],
-    [/^\/pods/, 'Virtual Machines'],
-    [/^\/credits/, 'Credits'],
-    [/^\/admin/, 'Admin'],
-    [/^\/teacher/, 'Teaching'],
-    [/^\/settings\/ssh-keys/, 'SSH Keys'],
-    [/^\/login/, 'Sign in'],
-    [/^\/signup/, 'Sign up'],
-    [/^\/forgot-password/, 'Reset password'],
-    [/^\/verify-email/, 'Verify email']
-  ];
-  const pageTitle = $derived.by(() => {
-    const hit = TITLES.find(([re]) => re.test(page.url.pathname));
-    return hit ? `${hit[1]} · Hopper` : 'Hopper — Cloud VMs for students & teams';
-  });
 </script>
-
-<svelte:head>
-  <title>{pageTitle}</title>
-</svelte:head>
 
 <ModeWatcher defaultMode="light" />
 <Toaster />
@@ -186,11 +150,7 @@
 
       <main class="flex-1 overflow-x-hidden">
         <div class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {#if loadingSkeleton}
-            <DashboardSkeleton variant={loadingSkeleton} />
-          {:else}
-            {@render children()}
-          {/if}
+          {@render children()}
         </div>
       </main>
     </div>

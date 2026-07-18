@@ -17,6 +17,8 @@ describe('root page server load', () => {
   it('allows anonymous users to see the landing page', async () => {
     const { load } = await import('./+page.server');
 
+    // Anonymous visitors see the public landing page (a plain load result),
+    // not a redirect — only authenticated users are bounced to /dashboard.
     await expect(
       load({
         parent: async () => ({ isAuthenticated: false })
