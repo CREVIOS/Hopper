@@ -21,7 +21,9 @@ test.describe('Suite 1: Authentication and authorization', () => {
     await page.goto('/');
 
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole('heading', { name: /Cloud VMs for/i })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: /Cloud VMs for\s*students\s*&\s*teams\./i })
+    ).toBeVisible();
     await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
   });
 
