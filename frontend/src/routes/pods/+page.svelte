@@ -24,7 +24,6 @@
   import {
     VM_PLAN_INFO,
     VM_TEMPLATE_INFO,
-    type VmTemplate,
     type Pod,
     type Availability,
     type CreatePodResult
@@ -61,6 +60,12 @@
     credits_per_hour: number;
     workspace_gb: number;
   };
+  type TemplateOption = {
+    template: string;
+    display_name: string;
+    description: string;
+    is_default: boolean;
+  };
 
   let {
     data
@@ -70,6 +75,7 @@
       nodeIp: string;
       balance: number;
       plans: PlanOption[];
+      templates: TemplateOption[];
       availability: Availability | null;
     };
   } = $props();
@@ -92,6 +98,25 @@
   );
   const planMap = $derived(
     Object.fromEntries(planOptions.map((p) => [p.name, p])) as Record<string, PlanOption>
+  );
+
+  // Visual metadata (icon accent, tagline) lives in the frontend keyed by
+  // template; admin-added templates fall back to neutral styling.
+  const templateVisuals = VM_TEMPLATE_INFO as unknown as Record<
+    string,
+    { accent?: string; tagline?: string }
+  >;
+  // Templates come from the admin-managed catalogue (/pods/templates); fall back
+  // to the static list if it's unreachable so launches still work.
+  const templateOptions = $derived<TemplateOption[]>(
+    data.templates && data.templates.length
+      ? data.templates
+      : Object.entries(VM_TEMPLATE_INFO).map(([template, i]) => ({
+          template,
+          display_name: i.name,
+          description: i.description,
+          is_default: template === 'ubuntu'
+        }))
   );
   let hydrated = $state(false);
 
@@ -148,14 +173,19 @@
   };
 
   let selectedPlan = $state<string>('small');
-  let selectedTemplate = $state<VmTemplate>('ubuntu');
+  let selectedTemplate = $state<string>('ubuntu');
   let creating = $state(false);
 
-  // Keep the selection valid as the catalogue loads/changes (e.g. 'small' was
+  // Keep the selections valid as the catalogues load/change (e.g. 'small' was
   // retired, or the catalogue is admin-defined and doesn't include it).
   $effect(() => {
     if (planOptions.length && !planMap[selectedPlan]) {
       selectedPlan = planOptions[0].name;
+    }
+  });
+  $effect(() => {
+    if (templateOptions.length && !templateOptions.some((t) => t.template === selectedTemplate)) {
+      selectedTemplate = (templateOptions.find((t) => t.is_default) ?? templateOptions[0]).template;
     }
   });
 
@@ -466,19 +496,19 @@
       <div>
         <h3 class="mb-3 text-sm font-semibold">2. Base image</h3>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {#each Object.entries(VM_TEMPLATE_INFO) as [key, info] (key)}
+          {#each templateOptions as info (info.template)}
             <button
               type="button"
-              aria-label={info.name}
+              aria-label={info.display_name}
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
-                selectedTemplate === key
+                selectedTemplate === info.template
                   ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
-              onclick={() => (selectedTemplate = key as VmTemplate)}
+              onclick={() => (selectedTemplate = info.template)}
             >
-              {#if selectedTemplate === key}
+              {#if selectedTemplate === info.template}
                 <div
                   class="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
                 >
@@ -489,15 +519,15 @@
                 <div
                   class={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-lg text-base font-bold uppercase transition-transform group-hover:scale-105',
-                    templateAccent[info.accent] ?? 'bg-muted text-foreground'
+                    templateAccent[templateVisuals[info.template]?.accent ?? ''] ?? 'bg-muted text-foreground'
                   )}
                 >
-                  {info.name.slice(0, 1)}
+                  {info.display_name.slice(0, 1)}
                 </div>
                 <div class="min-w-0 pr-5">
-                  <div class="truncate text-sm font-semibold">{info.name}</div>
+                  <div class="truncate text-sm font-semibold">{info.display_name}</div>
                   <p class="truncate text-[11px] text-muted-foreground">
-                    {info.tagline}
+                    {templateVisuals[info.template]?.tagline ?? info.description}
                   </p>
                 </div>
               </div>

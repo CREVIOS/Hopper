@@ -14,10 +14,11 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [podsRes, balanceRes, plansRes, availabilityRes] = await Promise.all([
+  const [podsRes, balanceRes, plansRes, templatesRes, availabilityRes] = await Promise.all([
     fetch(apiUrl('/pods/'), { headers }).catch(() => null),
     fetch(apiUrl('/credits/balance'), { headers }).catch(() => null),
     fetch(apiUrl('/pods/plans'), { headers }).catch(() => null),
+    fetch(apiUrl('/pods/templates'), { headers }).catch(() => null),
     fetch(apiUrl('/pods/availability'), { headers }).catch(() => null)
   ]);
 
@@ -37,10 +38,20 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     .sort(([, a], [, b]) => Number(a.credits_per_hour) - Number(b.credits_per_hour))
     .map(([name, v]) => ({ name, ...v }));
 
+  // Template catalogue is a { template: {...} } map; flatten to an array with
+  // the default first. Empty on failure — the page falls back to its static list.
+  const templatesObj: Record<string, Record<string, unknown>> = templatesRes?.ok
+    ? await templatesRes.json()
+    : {};
+  const templates = Object.entries(templatesObj)
+    .sort(([, a], [, b]) => Number(b.is_default) - Number(a.is_default))
+    .map(([template, v]) => ({ template, ...v }));
+
   return {
     pods,
     balance,
     plans,
+    templates,
     availability,
     nodeIp: env.NODE_IP ?? '127.0.0.1'
   };

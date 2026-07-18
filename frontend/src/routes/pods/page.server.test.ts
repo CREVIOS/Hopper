@@ -57,6 +57,15 @@ describe('pods page server load', () => {
           })
         };
       }
+      if (url.endsWith('/pods/templates')) {
+        return {
+          ok: true,
+          json: async () => ({
+            'python-ml': { display_name: 'Python / ML', image: 'hopper/vm-python-ml:22.04', description: 'Python 3', is_default: false },
+            ubuntu: { display_name: 'Ubuntu 22.04', image: 'hopper/vm-ubuntu:22.04', description: 'Base Ubuntu', is_default: true }
+          })
+        };
+      }
       return { ok: true, json: async () => ({ available: true }) };
     });
 
@@ -73,6 +82,11 @@ describe('pods page server load', () => {
       plans: [
         { name: 'small', display_name: 'Small', cpu: '1', memory: '2Gi', disk: '5Gi', credits_per_hour: 1, workspace_gb: 20 },
         { name: 'medium', display_name: 'Medium', cpu: '2', memory: '4Gi', disk: '10Gi', credits_per_hour: 2, workspace_gb: 50 }
+      ],
+      // Template map is flattened to an array with the default first.
+      templates: [
+        { template: 'ubuntu', display_name: 'Ubuntu 22.04', image: 'hopper/vm-ubuntu:22.04', description: 'Base Ubuntu', is_default: true },
+        { template: 'python-ml', display_name: 'Python / ML', image: 'hopper/vm-python-ml:22.04', description: 'Python 3', is_default: false }
       ],
       availability: { available: true },
       nodeIp: '10.0.0.5'
