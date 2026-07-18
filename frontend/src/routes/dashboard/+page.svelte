@@ -21,7 +21,6 @@
   } from '$lib/ui';
   import StatCard from '$lib/components/StatCard.svelte';
   import UsageTrend from '$lib/components/UsageTrend.svelte';
-  import HeroArt from '$lib/components/HeroArt.svelte';
   import PageTitle from '$lib/components/PageTitle.svelte';
   import SectionHeader from '$lib/components/SectionHeader.svelte';
   import Donut from '$lib/components/Donut.svelte';
@@ -47,9 +46,14 @@
     };
   } = $props();
 
-  const isActive = (s: string) => ['running', 'pending', 'creating'].includes(s);
-  const activePods = $derived(data.pods.filter((p) => isActive(p.state)));
-  // Burn-rate advisory — how long the balance lasts at the current spend.
+  const activePods = $derived(
+    data.pods.filter((p) => ['running', 'pending', 'creating'].includes(p.state))
+  );
+  const recentInactive = $derived(
+    data.pods
+      .filter((p) => !['running', 'pending', 'creating'].includes(p.state))
+      .slice(0, 3)
+  );
   const activeBurnRate = $derived.by(() =>
     activePods.reduce((total, pod) => total + (VM_PLAN_INFO[pod.plan as keyof typeof VM_PLAN_INFO]?.rate ?? 0), 0)
   );
@@ -64,31 +68,17 @@
     if (hours > 0) return `About ${hours}h ${minutes}m left at the current burn rate`;
     return `About ${minutes}m left at the current burn rate`;
   });
-  // Dashboard shows a preview, not the full fleet — active VMs first, then the
-  // most recent, capped. The complete list lives on the My VMs page.
-  const previewPods = $derived.by(() => {
-    const active = data.pods.filter((p) => isActive(p.state));
-    const rest = data.pods
-      .filter((p) => !isActive(p.state))
-      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
-    return [...active, ...rest].slice(0, 6);
-  });
-  // Plan distribution — counts your VMs by plan for the donut beside usage.
-  const planColors: Record<string, string> = {
-    small: '#4f46e5',
-    medium: '#06b6d4',
-    large: '#f59e0b'
-  };
+  const previewPods = $derived(data.pods.slice(0, 5));
   const planSegments = $derived.by(() => {
-    const counts: Record<string, number> = { small: 0, medium: 0, large: 0 };
-    for (const p of data.pods) {
-      const k = (p.plan ?? '').toLowerCase();
-      if (k in counts) counts[k]++;
+    const counts = new Map<string, number>();
+    for (const pod of data.pods) {
+      counts.set(pod.plan, (counts.get(pod.plan) ?? 0) + 1);
     }
-    return (['small', 'medium', 'large'] as const).map((k) => ({
-      label: k,
-      value: counts[k],
-      color: planColors[k]
+
+    return [...counts.entries()].map(([label, value], index) => ({
+      label,
+      value,
+      color: ['hsl(var(--primary))', 'hsl(var(--info))', 'hsl(var(--warning))'][index] ?? 'hsl(var(--muted-foreground))'
     }));
   });
 
@@ -129,22 +119,19 @@
 </script>
 
 <div class="space-y-6">
-  <!-- Hero with warm decorative art -->
-  <div class="relative">
-    <HeroArt class="absolute -top-6 right-24 hidden h-28 w-auto opacity-70 lg:block" />
-    <PageTitle
-      eyebrow="Welcome back"
-      eyebrowIcon={Sparkles}
-      title="Dashboard"
-      description="Manage your virtual machines, monitor usage, and track credit spend."
-    >
-      {#snippet action()}
-        <Button href="/pods" size="lg">
-          <Plus class="size-4" /> Launch a VM
-        </Button>
-      {/snippet}
-    </PageTitle>
-  </div>
+  <!-- Hero -->
+  <PageTitle
+    eyebrow="Welcome back"
+    eyebrowIcon={Sparkles}
+    title="Dashboard"
+    description="Manage your virtual machines, monitor usage, and track credit spend."
+  >
+    {#snippet action()}
+      <Button href="/pods" size="lg">
+        <Plus class="size-4" /> Launch a VM
+      </Button>
+    {/snippet}
+  </PageTitle>
 
   {#if data.user?.pending_teacher}
     <div

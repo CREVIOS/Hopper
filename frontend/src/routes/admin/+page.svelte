@@ -17,9 +17,7 @@
     User,
     ChevronDown,
     Check,
-    X,
-    MessageSquareWarning,
-    CheckCircle2
+    X
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { onMount, type SvelteComponent } from 'svelte';
@@ -85,15 +83,6 @@
     role: string;
     created_at: string | null;
   };
-  type Issue = {
-    id: string;
-    user_id: string;
-    pod_id: string | null;
-    description: string;
-    status: string;
-    created_at: string;
-    resolved_at: string | null;
-  };
 
   let {
     data
@@ -111,29 +100,8 @@
       activeVms: ActiveVm[];
       auditLogs: AuditLog[];
       teacherRequests: { id: string; email: string; name: string; created_at: string | null }[];
-      issues: Issue[];
     };
   } = $props();
-
-  // Map reporter ids to names/emails for the Issues table.
-  const userById = $derived(new Map(data.users.map((u) => [u.id, u])));
-  const openIssues = $derived(data.issues.filter((i) => i.status !== 'resolved'));
-
-  let resolvingIssue = $state<string | null>(null);
-  async function resolveIssue(issue: Issue) {
-    resolvingIssue = issue.id;
-    const tid = toast.loading('Resolving issue…');
-    try {
-      await api.post(`/issues/admin/${issue.id}/resolve`);
-      toast.success('Issue resolved', { id: tid });
-      await invalidateAll();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Failed to resolve issue';
-      toast.error('Could not resolve issue', { id: tid, description: msg });
-    } finally {
-      resolvingIssue = null;
-    }
-  }
 
   // Teacher-approval actions (admin only).
   let processingReq = $state<string | null>(null);
@@ -480,14 +448,6 @@
         </Tabs.Trigger>
       {/if}
       <Tabs.Trigger value="vms"><Server /> Active VMs</Tabs.Trigger>
-      <Tabs.Trigger value="issues">
-        <MessageSquareWarning /> Issues
-        {#if openIssues.length}
-          <span class="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-destructive/15 px-1.5 text-[11px] font-semibold text-destructive">
-            {openIssues.length}
-          </span>
-        {/if}
-      </Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
     </Tabs.List>
@@ -971,102 +931,6 @@
               itemLabel="VM"
             />
           </div>
-        </Card>
-      </div>
-    </Tabs.Content>
-
-    <!-- Issues -->
-    <Tabs.Content value="issues" class="mt-5">
-      <div class="animate-fade-up space-y-3">
-        <SectionHeader
-          title="Reported issues"
-          icon={MessageSquareWarning}
-          description="Problems users flagged from their VMs — newest first."
-        >
-          {#snippet action()}
-            <Badge variant={openIssues.length ? 'warning' : 'muted'}>
-              {openIssues.length} open · {data.issues.length} total
-            </Badge>
-          {/snippet}
-        </SectionHeader>
-        <Card class="overflow-hidden">
-          <Table.Root>
-            <Table.Header class="bg-muted/40">
-              <Table.Row class="hover:bg-transparent">
-                <Table.Head>Reporter</Table.Head>
-                <Table.Head>Issue</Table.Head>
-                <Table.Head class="hidden w-36 lg:table-cell">VM</Table.Head>
-                <Table.Head class="w-28">Status</Table.Head>
-                <Table.Head class="hidden w-28 text-right md:table-cell">Reported</Table.Head>
-                <Table.Head class="w-32 text-right">Actions</Table.Head>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {#each data.issues as issue (issue.id)}
-                {@const reporter = userById.get(issue.user_id)}
-                <Table.Row class="group">
-                  <Table.Cell>
-                    <div class="flex items-center gap-2.5">
-                      <Avatar name={reporter?.name || reporter?.email || issue.user_id} class="size-8 shrink-0 ring-1 ring-border/60" />
-                      <div class="min-w-0">
-                        <div class="truncate text-sm font-medium">{reporter?.name || '—'}</div>
-                        <div class="truncate text-xs text-muted-foreground">{reporter?.email || shortId(issue.user_id, 8)}</div>
-                      </div>
-                    </div>
-                  </Table.Cell>
-                  <Table.Cell class="max-w-md">
-                    <p class="line-clamp-2 whitespace-normal text-sm leading-snug" title={issue.description}>
-                      {issue.description}
-                    </p>
-                  </Table.Cell>
-                  <Table.Cell class="hidden lg:table-cell">
-                    {#if issue.pod_id}
-                      <a href="/pods/{issue.pod_id}" class="font-mono text-xs text-primary hover:underline">
-                        {shortId(issue.pod_id, 8)}
-                      </a>
-                    {:else}
-                      <span class="text-muted-foreground/40">·</span>
-                    {/if}
-                  </Table.Cell>
-                  <Table.Cell>
-                    {#if issue.status === 'resolved'}
-                      <Badge variant="success"><CheckCircle2 class="size-3" /> Resolved</Badge>
-                    {:else}
-                      <Badge variant="warning">Open</Badge>
-                    {/if}
-                  </Table.Cell>
-                  <Table.Cell class="hidden whitespace-nowrap text-right text-xs text-muted-foreground md:table-cell">
-                    {relTime(issue.created_at)}
-                  </Table.Cell>
-                  <Table.Cell class="text-right">
-                    {#if issue.status !== 'resolved'}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={resolvingIssue === issue.id}
-                        onclick={() => resolveIssue(issue)}
-                      >
-                        {#if resolvingIssue === issue.id}
-                          <Spinner class="size-3.5" />
-                        {:else}
-                          <Check class="size-3.5" />
-                        {/if}
-                        Resolve
-                      </Button>
-                    {:else}
-                      <span class="text-xs text-muted-foreground">{issue.resolved_at ? relTime(issue.resolved_at) : '—'}</span>
-                    {/if}
-                  </Table.Cell>
-                </Table.Row>
-              {:else}
-                <Table.Row class="hover:bg-transparent">
-                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
-                    No issues reported. All quiet.
-                  </Table.Cell>
-                </Table.Row>
-              {/each}
-            </Table.Body>
-          </Table.Root>
         </Card>
       </div>
     </Tabs.Content>

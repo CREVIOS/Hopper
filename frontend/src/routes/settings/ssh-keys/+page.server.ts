@@ -13,12 +13,8 @@ export const load: PageServerLoad = async ({ parent, fetch, cookies }) => {
     ? { Cookie: `session_token=${token}` }
     : {};
 
-  const [sshRes, apiRes] = await Promise.all([
-    fetch(apiUrl('/ssh-keys/'), { headers }).catch(() => null),
-    fetch(apiUrl('/auth/api-keys'), { headers }).catch(() => null)
-  ]);
-  const keys = sshRes?.ok ? await sshRes.json() : [];
-  const apiKeys = apiRes?.ok ? await apiRes.json() : [];
+  const res = await fetch(apiUrl('/ssh-keys/'), { headers }).catch(() => null);
+  const keys = res?.ok ? await res.json() : [];
 
-  return { keys, apiKeys };
+  return { keys };
 };
