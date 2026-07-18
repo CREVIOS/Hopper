@@ -1332,7 +1332,7 @@
                 <Table.Head class="w-28">Credits/hr</Table.Head>
                 <Table.Head class="hidden w-28 sm:table-cell">Workspace</Table.Head>
                 <Table.Head class="w-24">Status</Table.Head>
-                <Table.Head class="w-32 text-right">Actions</Table.Head>
+                <Table.Head class="w-32 text-center">Actions</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -1354,8 +1354,8 @@
                       <Badge variant="outline" class="text-muted-foreground">Inactive</Badge>
                     {/if}
                   </Table.Cell>
-                  <Table.Cell class="text-right">
-                    <div class="flex items-center justify-end gap-1">
+                  <Table.Cell class="text-center">
+                    <div class="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="sm" onclick={() => openEditPlan(p)} aria-label={`Edit ${p.name}`}>
                         <Pencil class="size-3.5" />
                       </Button>
@@ -1425,7 +1425,7 @@
                 <Table.Head class="hidden md:table-cell">Image</Table.Head>
                 <Table.Head class="w-24">Default</Table.Head>
                 <Table.Head class="w-24">Status</Table.Head>
-                <Table.Head class="w-32 text-right">Actions</Table.Head>
+                <Table.Head class="w-32 text-center">Actions</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -1450,8 +1450,8 @@
                       <Badge variant="outline" class="text-muted-foreground">Inactive</Badge>
                     {/if}
                   </Table.Cell>
-                  <Table.Cell class="text-right">
-                    <div class="flex items-center justify-end gap-1">
+                  <Table.Cell class="text-center">
+                    <div class="flex items-center justify-center gap-1">
                       <Button variant="ghost" size="sm" onclick={() => openEditImage(im)} aria-label={`Edit ${im.template}`}>
                         <Pencil class="size-3.5" />
                       </Button>
