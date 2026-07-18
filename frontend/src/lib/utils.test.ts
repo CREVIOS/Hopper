@@ -21,7 +21,7 @@ describe('utils', () => {
   });
 
   it('merges class names', () => {
-    expect(cn('px-2', false && 'hidden', 'px-4', 'py-1')).toBe('px-4 py-1');
+    expect(cn('px-2', undefined, 'px-4', 'py-1')).toBe('px-4 py-1');
   });
 
   it('formats byte counts across units', () => {

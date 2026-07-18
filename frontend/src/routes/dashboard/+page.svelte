@@ -68,6 +68,19 @@
     if (hours > 0) return `About ${hours}h ${minutes}m left at the current burn rate`;
     return `About ${minutes}m left at the current burn rate`;
   });
+  const previewPods = $derived(data.pods.slice(0, 5));
+  const planSegments = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const pod of data.pods) {
+      counts.set(pod.plan, (counts.get(pod.plan) ?? 0) + 1);
+    }
+
+    return [...counts.entries()].map(([label, value], index) => ({
+      label,
+      value,
+      color: ['hsl(var(--primary))', 'hsl(var(--info))', 'hsl(var(--warning))'][index] ?? 'hsl(var(--muted-foreground))'
+    }));
+  });
 
   function prettyTxType(t: string): string {
     if (t.startsWith('vm_usage')) return 'VM usage';

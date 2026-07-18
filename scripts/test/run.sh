@@ -54,10 +54,15 @@ sync_html_coverage_dir() {
 render_go_html() {
   local profile=$1
   local dest_dir=$2
+  local module_dir=${3:-$ROOT/services/orchestrator}
 
   [[ -f "$profile" ]] || die "Go coverage profile missing: $profile"
   mkdir -p "$dest_dir"
-  go tool cover -html="$profile" -o "$dest_dir/index.html"
+  (
+    cd "$module_dir"
+    GOCACHE="${GOCACHE:-$GO_TEST_CACHE_DEFAULT}" \
+      go tool cover -html="$profile" -o "$dest_dir/index.html"
+  )
 }
 
 have_cmd() {
@@ -344,7 +349,7 @@ go_internal_tests() {
       -coverprofile="$internal_profile" \
       -json | tee "$REPORT_ROOT/orchestrator/go-test.json"
   )
-  render_go_html "$internal_profile" "$ROOT/coverage/orchestrator/internal-html"
+  render_go_html "$internal_profile" "$ROOT/coverage/orchestrator/internal-html" "$ROOT/services/orchestrator"
   sync_html_coverage_dir "$ROOT/coverage/orchestrator/internal-html" "$TESTS_COVERAGE_ROOT/orchestrator/internal"
 }
 
@@ -359,7 +364,7 @@ go_contract_tests() {
       -coverprofile="$contract_profile" \
       -json | tee "$REPORT_ROOT/contracts/go-contracts.json"
   )
-  render_go_html "$contract_profile" "$ROOT/coverage/orchestrator/contract-html"
+  render_go_html "$contract_profile" "$ROOT/coverage/orchestrator/contract-html" "$ROOT/services/orchestrator"
   sync_html_coverage_dir "$ROOT/coverage/orchestrator/contract-html" "$TESTS_COVERAGE_ROOT/orchestrator/contract"
 }
 
@@ -631,7 +636,7 @@ render_coverage_report() {
   require_cmd python3
   merge_go_coverage
   require_cmd go
-  render_go_html "$ROOT/coverage/orchestrator/orchestrator.out" "$ROOT/coverage/orchestrator/merged-html"
+  render_go_html "$ROOT/coverage/orchestrator/orchestrator.out" "$ROOT/coverage/orchestrator/merged-html" "$ROOT/services/orchestrator"
   sync_html_coverage_dir "$ROOT/coverage/orchestrator/merged-html" "$TESTS_COVERAGE_ROOT/orchestrator/merged"
   python3 "$ROOT/scripts/test/generate_coverage_report.py"
 }

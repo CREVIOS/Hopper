@@ -124,29 +124,59 @@
         <Check class="mt-0.5 size-4 shrink-0" />
         <span>{successMessage}</span>
       </div>
+    {/if}
 
-      {#if sessionExpiredMessage || errorMessage || formError}
-        <div
-          class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-        >
-          <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>{formError ?? sessionExpiredMessage ?? errorMessage}</span>
-        </div>
-      {:else if successMessage}
-        <div
-          class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-600 dark:text-emerald-400"
-        >
-          {#if showPw}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
-        </button>
+    {#if sessionExpiredMessage && !errorMessage && !formError}
+      <div
+        class="mt-6 flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+      >
+        <AlertCircle class="mt-0.5 size-4 shrink-0" />
+        <span>{sessionExpiredMessage}</span>
+      </div>
+    {/if}
+
+    <form onsubmit={handlePasswordLogin} class="mt-6 space-y-4">
+      <div class="relative">
+        <Mail class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="email"
+          bind:value={email}
+          required
+          autocomplete="email"
+          placeholder="University email"
+          class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-3 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+        />
       </div>
 
-      <div class="flex justify-end">
-        <a
-          href="/forgot-password"
-          class="text-[13px] font-medium text-primary hover:underline"
-        >
-          Forgot password?
-        </a>
+      <div class="space-y-3">
+        <div class="relative">
+          <Lock class="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type={showPw ? 'text' : 'password'}
+            bind:value={password}
+            required
+            autocomplete="current-password"
+            placeholder="Password"
+            class="h-11 w-full rounded-xl border border-input bg-secondary/60 pl-10 pr-10 text-sm outline-none ring-ring/50 transition focus:border-ring focus:bg-background focus:ring-2 dark:bg-secondary/40"
+          />
+          <button
+            type="button"
+            onclick={() => (showPw = !showPw)}
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+            aria-label={showPw ? 'Hide password' : 'Show password'}
+          >
+            {#if showPw}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+          </button>
+        </div>
+
+        <div class="flex justify-end">
+          <a
+            href="/forgot-password"
+            class="text-[13px] font-medium text-primary hover:underline"
+          >
+            Forgot password?
+          </a>
+        </div>
       </div>
 
       {#if needsVerify}
