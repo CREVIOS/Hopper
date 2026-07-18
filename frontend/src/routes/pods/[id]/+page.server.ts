@@ -6,7 +6,7 @@ import { env } from '$env/dynamic/private';
 export const load: PageServerLoad = async ({ parent, params, fetch, cookies }) => {
   const { isAuthenticated } = await parent();
   if (!isAuthenticated) {
-    redirect(302, '/login');
+    redirect(302, '/login?session_expired=1');
   }
 
   const token = cookies.get('session_token');

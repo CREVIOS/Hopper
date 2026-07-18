@@ -63,11 +63,20 @@
       availability: Availability | null;
     };
   } = $props();
+  let livePods = $state<Pod[]>(data.pods);
 
   // Live cluster availability readout. Seeded once from SSR (untrack keeps this
   // to the initial value), then polled so the free-capacity and queue-length
   // figures stay fresh while the page is open.
   let availability = $state<Availability | null>(untrack(() => data.availability));
+
+  async function refreshPods() {
+    try {
+      livePods = await api.get<Pod[]>('/pods/');
+    } catch {
+      // Keep the last known state on transient failures.
+    }
+  }
 
   async function refreshAvailability() {
     try {
@@ -79,8 +88,12 @@
   }
 
   onMount(() => {
-    const timer = setInterval(refreshAvailability, 5000);
-    return () => clearInterval(timer);
+    const availabilityTimer = setInterval(refreshAvailability, 5000);
+    const podsTimer = setInterval(refreshPods, 5000);
+    return () => {
+      clearInterval(availabilityTimer);
+      clearInterval(podsTimer);
+    };
   });
 
   const cpuTone = $derived(
@@ -128,7 +141,7 @@
   const canAfford = $derived(data.balance >= planRate);
 
   const filteredPods = $derived.by(() => {
-    let list = data.pods.slice();
+    let list = livePods.slice();
     if (stateFilter === 'active') {
       list = list.filter((p) =>
         ['running', 'pending', 'creating', 'stopping'].includes(p.state)
@@ -155,12 +168,12 @@
   );
 
   const counts = $derived({
-    active: data.pods.filter((p) =>
+    active: livePods.filter((p) =>
       ['running', 'pending', 'creating', 'stopping'].includes(p.state)
     ).length,
-    past: data.pods.filter((p) => ['terminated', 'failed'].includes(p.state))
+    past: livePods.filter((p) => ['terminated', 'failed'].includes(p.state))
       .length,
-    all: data.pods.length
+    all: livePods.length
   });
 
   async function createPod() {
@@ -205,7 +218,7 @@
         id,
         description: 'It will be running in a few seconds.'
       });
-      await Promise.all([invalidateAll(), refreshAvailability()]);
+      await Promise.all([invalidateAll(), refreshAvailability(), refreshPods()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to launch VM';
       toast.error('Launch failed', { id, description: msg });
@@ -228,7 +241,7 @@
     try {
       await api.delete(`/pods/${pod.id}`);
       toast.success('VM terminated', { id });
-      await Promise.all([invalidateAll(), refreshAvailability()]);
+      await Promise.all([invalidateAll(), refreshAvailability(), refreshPods()]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Failed to terminate VM';
       toast.error('Termination failed', { id, description: msg });

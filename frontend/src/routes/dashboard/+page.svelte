@@ -11,6 +11,7 @@
     Sparkles,
     Clock
   } from 'lucide-svelte';
+  import { VM_PLAN_INFO } from '$lib/types';
   import type { Pod, CreditTransaction, User } from '$lib/types';
   import {
     Button,
@@ -54,6 +55,20 @@
       .filter((p) => !['running', 'pending', 'creating'].includes(p.state))
       .slice(0, 3)
   );
+  const activeBurnRate = $derived.by(() =>
+    activePods.reduce((total, pod) => total + (VM_PLAN_INFO[pod.plan as keyof typeof VM_PLAN_INFO]?.rate ?? 0), 0)
+  );
+  const lowBalanceThreshold = 10;
+  const showLowBalanceWarning = $derived(data.balance < lowBalanceThreshold);
+  const estimatedRuntime = $derived.by(() => {
+    if (activeBurnRate <= 0 || data.balance <= 0) return null;
+    const hoursRemaining = data.balance / activeBurnRate;
+    const totalMinutes = Math.max(1, Math.floor(hoursRemaining * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `About ${hours}h ${minutes}m left at the current burn rate`;
+    return `About ${minutes}m left at the current burn rate`;
+  });
 
   function prettyTxType(t: string): string {
     if (t.startsWith('vm_usage')) return 'VM usage';
@@ -89,6 +104,24 @@
           Thanks for signing up as a teacher — an admin will review your request
           shortly. For now you have a student account: you can launch VMs, and
           allocating credits to students unlocks as soon as you're approved.
+        </p>
+      </div>
+    </div>
+  {/if}
+
+  {#if showLowBalanceWarning}
+    <div
+      class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 p-4"
+      role="status"
+      aria-live="polite"
+    >
+      <Clock class="mt-0.5 size-5 shrink-0 text-warning" />
+      <div class="text-sm">
+        <p class="font-medium text-foreground">
+          Low balance: {data.balance.toFixed(2)} credits remaining
+        </p>
+        <p class="mt-0.5 text-muted-foreground">
+          {estimatedRuntime ?? 'Top up soon to avoid interruptions to your running VMs.'}
         </p>
       </div>
     </div>

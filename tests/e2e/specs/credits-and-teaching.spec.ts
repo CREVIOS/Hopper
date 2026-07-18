@@ -49,6 +49,23 @@ test.describe('Suite 3: credits and teaching workflows', () => {
     await expect(page.getByRole('cell', { name: '150.00' }).first()).toBeVisible();
   });
 
+  test('TC-CREDIT-002: the dashboard warns when the student balance is low', async ({
+    page,
+    request,
+    loginAsStudent
+  }) => {
+    await setupMockState(request, {
+      balances: { 'student-1': 9.5 },
+      pods: [{ id: 'e2e-pod-1', user_id: 'student-1', plan: 'medium', template: 'python-ml' }]
+    });
+
+    await loginAsStudent();
+    await page.goto('/dashboard');
+
+    await expect(page.getByText('Low balance: 9.50 credits remaining')).toBeVisible();
+    await expect(page.getByText(/About 4h 45m left at the current burn rate/i)).toBeVisible();
+  });
+
   test('teacher console disables allocations when the professor has no budget left', async ({
     page,
     request,

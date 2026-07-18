@@ -61,10 +61,17 @@
         return 'Verify your email address (check your inbox), then sign in again.';
       case 'oidc':
         return 'Sign-in was cancelled or rejected by the identity provider.';
+      case 'session_expired':
+        return 'Session expired, please log in again.';
       default:
         return null;
     }
   });
+  const sessionExpiredMessage = $derived(
+    page.url.searchParams.get('session_expired') === '1'
+      ? 'Session expired, please log in again.'
+      : null
+  );
   // Success redirects from the verify / reset flows.
   const successMessage = $derived.by(() => {
     if (page.url.searchParams.get('verified') === '1') return 'Email verified — you can now sign in.';
@@ -189,12 +196,12 @@
         </p>
       </div>
 
-      {#if errorMessage || formError}
+      {#if sessionExpiredMessage || errorMessage || formError}
         <div
           class="animate-scale-in mb-5 flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
         >
           <AlertCircle class="mt-0.5 size-4 shrink-0" />
-          <span>{formError ?? errorMessage}</span>
+          <span>{formError ?? sessionExpiredMessage ?? errorMessage}</span>
         </div>
       {:else if successMessage}
         <div

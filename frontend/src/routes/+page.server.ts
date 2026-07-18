@@ -6,6 +6,6 @@ export const load: PageServerLoad = async ({ parent }) => {
   if (isAuthenticated) {
     redirect(302, '/dashboard');
   } else {
-    redirect(302, '/login');
+    redirect(302, '/login?session_expired=1');
   }
 };
