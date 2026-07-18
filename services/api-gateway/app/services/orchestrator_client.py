@@ -76,9 +76,23 @@ class OrchestratorClient:
             await self._channel.close()
 
     async def create_pod(
-        self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "", pod_id: str = ""
+        self,
+        user_id: str,
+        plan: str,
+        image: str,
+        cpu: str,
+        memory: str,
+        disk: str = "",
+        pod_id: str = "",
+        labels: dict[str, str] | None = None,
     ) -> PodStatusResponse:
-        """Call orchestrator.CreatePod and return the response."""
+        """Call orchestrator.CreatePod and return the response.
+
+        ``labels`` carries per-pod key/value pairs to the orchestrator via the
+        proto ``labels`` map. Keys prefixed ``HOPPER_`` are promoted to container
+        env vars (not k8s labels) by the orchestrator — this is how the in-VM
+        provisioner receives HOPPER_POD_ID / HOPPER_API_URL / HOPPER_POD_TOKEN.
+        """
         # Import generated stubs (available after generate_proto.sh)
         from app.proto.hopper.pod.v1 import pod_pb2, pod_pb2_grpc
 
@@ -91,6 +105,7 @@ class OrchestratorClient:
             memory=memory,
             disk=disk,
             pod_id=pod_id,
+            labels=labels or {},
         )
         resp = await stub.CreatePod(req, timeout=30)
         return PodStatusResponse(

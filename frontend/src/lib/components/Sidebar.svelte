@@ -2,8 +2,11 @@
   import {
     LayoutDashboard,
     Server,
+    Sparkles,
+    Bot,
     CreditCard,
     KeyRound,
+    Bell,
     Shield,
     GraduationCap,
     PanelLeftClose,
@@ -38,8 +41,11 @@
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/pods', label: 'Virtual Machines', icon: Server },
+    { href: '/sandbox', label: 'Smart Sandbox', icon: Sparkles },
+    { href: '/agents', label: 'AI Agents', icon: Bot },
     { href: '/credits', label: 'Credits', icon: CreditCard },
-    { href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound }
+    { href: '/settings/ssh-keys', label: 'SSH Keys', icon: KeyRound },
+    { href: '/settings/notifications', label: 'Notifications', icon: Bell }
   ];
 
   const adminItems: NavItem[] = [

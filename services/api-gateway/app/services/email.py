@@ -66,15 +66,22 @@ def _build_message(to: str, purpose: str, code: str) -> EmailMessage:
     return msg
 
 
+def _tls_mode() -> str:
+    """Resolve the transport mode: starttls | ssl | none.
+
+    Explicit ``smtp_tls`` wins; otherwise derive from the legacy
+    ``smtp_starttls`` bool (True -> starttls, False -> implicit ssl).
+    """
+    mode = (settings.smtp_tls or "").strip().lower()
+    if mode in {"starttls", "ssl", "none"}:
+        return mode
+    return "starttls" if settings.smtp_starttls else "ssl"
+
+
 def _send_sync(msg: EmailMessage) -> None:
     """Blocking SMTP send — always called via run_in_threadpool."""
-    if settings.smtp_starttls:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-            server.starttls(context=ssl.create_default_context())
-            if settings.smtp_user:
-                server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(msg)
-    else:
+    mode = _tls_mode()
+    if mode == "ssl":
         with smtplib.SMTP_SSL(
             settings.smtp_host, settings.smtp_port,
             timeout=15, context=ssl.create_default_context(),
@@ -82,6 +89,15 @@ def _send_sync(msg: EmailMessage) -> None:
             if settings.smtp_user:
                 server.login(settings.smtp_user, settings.smtp_password)
             server.send_message(msg)
+        return
+
+    # starttls or none: start a plain SMTP connection, upgrade only if requested.
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+        if mode == "starttls":
+            server.starttls(context=ssl.create_default_context())
+        if settings.smtp_user:
+            server.login(settings.smtp_user, settings.smtp_password)
+        server.send_message(msg)
 
 
 async def send_code_email(to: str, purpose: str, code: str) -> None:

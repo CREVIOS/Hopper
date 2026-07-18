@@ -8,6 +8,7 @@ import websockets
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Request,
     WebSocket,
@@ -15,6 +16,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import RedirectResponse, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -58,6 +60,60 @@ def _session_to_response(s: PodSession) -> PodResponse:
     )
 
 
+async def _k8s_phase(pod_name: str, namespace: str) -> str | None:
+    """Authoritative pod state straight from k8s via kubectl (the gateway already
+    shells kubectl for port-forwarding). Returns a PodSession-style state string,
+    or None when the pod can't be read. Survives orchestrator restarts, which
+    wipe its in-memory registry and make its GetPodStatus report 'not found' for
+    pods that actually exist."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "kubectl", "get", "pod", pod_name, "-n", namespace,
+            "-o", "jsonpath={.status.phase}|{.status.containerStatuses[0].ready}",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _err = await asyncio.wait_for(proc.communicate(), timeout=8)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("reconcile: kubectl phase for %s failed: %s", pod_name, e)
+        return None
+    if proc.returncode != 0:
+        return "gone"  # kubectl couldn't find it (NotFound) — pod no longer exists
+    phase, _, ready = out.decode().strip().partition("|")
+    phase = phase.lower()
+    if phase == "running":
+        return "running" if ready == "true" else "creating"
+    if phase == "pending":
+        return "pending"
+    if phase in ("failed", "unknown"):
+        return "failed"
+    if phase == "succeeded":
+        return "terminated"
+    return None
+
+
+async def _reconcile_state(db: AsyncSession, session: PodSession) -> PodSession:
+    """Sync a non-terminal session's stored ``state`` with the pod's real k8s
+    phase. The create path stores whatever the orchestrator returned optimistically
+    and nothing syncs it afterwards, so a pod that never schedules (e.g. the node
+    carries a disk-pressure taint) stays mislabelled ``running`` — which makes the
+    VS Code / terminal proxy skip its "not running" guard and then fail with a
+    confusing port-forward error. Best-effort: unreadable phase leaves the row."""
+    if session.state in ("terminated", "failed") or not session.pod_name:
+        return session
+    real = await _k8s_phase(session.pod_name, session.namespace or "hopper")
+    if real is None or real == session.state:
+        return session
+    if real == "gone":
+        # Pod object is gone from the cluster; a session we thought was live is
+        # effectively terminated.
+        real = "terminated"
+    logger.info("reconcile pod %s: %s -> %s", session.id[:8], session.state, real)
+    session.state = real
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
 @router.get("/plans")
 async def list_plans():
     """List available VM plans with their resource allocations and pricing."""
@@ -84,6 +140,8 @@ async def list_pods(
         .order_by(PodSession.started_at.desc())
     )
     sessions = result.scalars().all()
+    for s in sessions:
+        await _reconcile_state(db, s)
     return [_session_to_response(s) for s in sessions]
 
 
@@ -185,6 +243,7 @@ async def get_pod(
     if session.user_id != current_user.sub:
         raise HTTPException(status_code=403, detail="Not your VM")
 
+    await _reconcile_state(db, session)
     return _session_to_response(session)
 
 
@@ -216,6 +275,72 @@ async def terminate_pod(
     session.state = "terminated"
     await db.commit()
     return {"message": "terminated", "pod_id": pod_id}
+
+
+class HeartbeatRequest(BaseModel):
+    # True = real activity (SSH/websocket/shell) that should cancel an idle
+    # warning. False = a passive poll that only reads the current idle verdict.
+    active: bool = True
+
+
+@router.post("/{pod_id}/heartbeat")
+@limiter.limit("120/minute")
+async def pod_heartbeat(
+    pod_id: str,
+    request: Request,
+    response: Response,  # required by slowapi to inject rate-limit headers
+    body: HeartbeatRequest | None = None,
+    x_pod_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activity heartbeat for the idle-detection agent.
+
+    Called by the in-VM agent (authenticated by the per-pod ``X-Pod-Token``) or
+    by the browser while a session tab is open (authenticated by the user
+    cookie + pod ownership). An ``active`` beat cancels a pending idle warning;
+    the response carries the current verdict so the VM can broadcast a warning.
+    """
+    from app.services import idle_agent
+
+    if not idle_agent.verify_pod_token(pod_id, x_pod_token):
+        # Fall back to user-session auth + ownership check.
+        cookie = request.cookies.get("session_token")
+        payload = await verify_token(cookie) if cookie else None
+        if payload is None:
+            raise HTTPException(status_code=401, detail="unauthorized")
+        result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+        session = result.scalar_one_or_none()
+        if not session or session.user_id != payload.sub:
+            raise HTTPException(status_code=403, detail="Not your VM")
+
+    active = body.active if body is not None else True
+    return await idle_agent.record_heartbeat(pod_id, active=active)
+
+
+@router.get("/{pod_id}/agent-config")
+async def pod_agent_config(
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Config for the in-VM idle agent, including its per-pod heartbeat token.
+
+    Owner-only. The orchestrator injects these values into the pod environment
+    (HOPPER_POD_ID / HOPPER_POD_TOKEN / HOPPER_API_URL); this endpoint also lets
+    the frontend fetch them for a browser-side heartbeat.
+    """
+    from app.services import idle_agent
+
+    result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    session = result.scalar_one_or_none()
+    if not session or session.user_id != current_user.sub:
+        raise HTTPException(status_code=404, detail="VM not found")
+    return {
+        "pod_id": pod_id,
+        "token": idle_agent.make_pod_token(pod_id),
+        "heartbeat_path": f"/pods/{pod_id}/heartbeat",
+        "interval_seconds": settings.idle_heartbeat_interval_seconds,
+    }
 
 
 @router.get("/{pod_id}/metrics")
@@ -308,23 +433,18 @@ async def vscode_proxy(
     if session.user_id != current_user.sub:
         raise HTTPException(status_code=403, detail="Not your VM")
 
+    # Correct a stale "running" label before we try to forward into a pod that
+    # may actually be Pending — otherwise port-forward fails with a misleading
+    # error instead of an honest "still scheduling" message.
+    await _reconcile_state(db, session)
     if session.state != "running":
-        # Pod still starting / stopped — the user-facing 503 was confusing
-        # because the gateway didn't disambiguate "no pod" from "pod still
-        # warming up". Tell the browser to retry shortly.
         raise HTTPException(
             status_code=503,
-            detail=f"VM is {session.state} — VS Code will be available once running.",
-            headers={"Retry-After": "5"},
-        )
-
-    if session.state != "running":
-        # Pod still starting / stopped — the user-facing 503 was confusing
-        # because the gateway didn't disambiguate "no pod" from "pod still
-        # warming up". Tell the browser to retry shortly.
-        raise HTTPException(
-            status_code=503,
-            detail=f"VM is {session.state} — VS Code will be available once running.",
+            detail=(
+                f"VM is {session.state} — it hasn't started running yet, so VS Code "
+                "isn't reachable. If it stays pending, the node likely can't schedule "
+                "it (e.g. disk-pressure). VS Code will be available once it's running."
+            ),
             headers={"Retry-After": "5"},
         )
 
@@ -535,8 +655,16 @@ async def websocket_terminal(
     result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
     session = result.scalar_one_or_none()
 
+    if session and session.user_id == payload.sub:
+        await _reconcile_state(db, session)
+
     if not session or session.user_id != payload.sub or not session.ssh_port or session.state != "running":
-        await _safe_send(websocket, "\r\nError: VM is not running, SSH is not available, or forbidden.\r\n")
+        real = session.state if session else "unknown"
+        await _safe_send(
+            websocket,
+            f"\r\nVM is {real} — the terminal needs a running VM. "
+            "If it stays pending, the node can't schedule it (e.g. disk-pressure).\r\n",
+        )
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 

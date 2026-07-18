@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -66,9 +67,12 @@ type CreatePodOpts struct {
 	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
 	// uses the cluster default.
 	StorageClass string
+	// ExtraEnv is injected verbatim into the VM container as environment
+	// variables (e.g. HOPPER_POD_ID / HOPPER_API_URL / HOPPER_POD_TOKEN for the
+	// in-VM idle + provisioner agents). Deliberately kept OUT of the k8s label
+	// map — values like the API URL are not valid label values.
+	ExtraEnv map[string]string
 }
-
-
 
 type PodPorts struct {
 	SSHPort            int32
@@ -95,11 +99,11 @@ func cpuRequestFor(cpuLimit string) resource.Quantity {
 // Returns the assigned SSH NodePort and the per-pod root password.
 func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPorts, error) {
 	labels := map[string]string{
-		"app":                   "hopper-vm",
-		"role":                  "user-vm",
-		"hopper.dev/pod-id":     opts.PodID,
-		"hopper.dev/user-id":    opts.UserID,
-		"hopper.dev/plan":       opts.Plan,
+		"app":                "hopper-vm",
+		"role":               "user-vm",
+		"hopper.dev/pod-id":  opts.PodID,
+		"hopper.dev/user-id": opts.UserID,
+		"hopper.dev/plan":    opts.Plan,
 	}
 
 	sshPassword, err := generateRandomPassword()
@@ -192,12 +196,41 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	// ssh sessions to see "Connection closed by remote host" (sshd SIGTERM
 	// emits SSH_DISCONNECT) instead of waiting for TCP to time out, so we cap
 	// total termination at 5s and run pkill on sshd as a preStop.
+	// Base container env + any HOPPER_* values the API asked us to inject
+	// (used by the in-VM idle + provisioner agents to call back to the gateway).
+	containerEnv := []corev1.EnvVar{
+		// code-server picks this up so asset URLs are relative to the proxy path.
+		// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
+		{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
+		{Name: "ROOT_PASSWORD", Value: sshPassword},
+		// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
+		// to set $PASSWORD for code-server; never set in shell history.
+		{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
+	}
+	for k, v := range opts.ExtraEnv {
+		containerEnv = append(containerEnv, corev1.EnvVar{Name: k, Value: v})
+	}
+
+	// Single-node dev clusters can get a *stuck* disk-pressure / memory-pressure
+	// taint (the kubelet leaves DiskPressure=True even after free space climbs
+	// back above the eviction threshold), which leaves every VM stuck Pending.
+	// When HOPPER_TOLERATE_NODE_PRESSURE=1 we let VMs schedule despite it. This
+	// is opt-in and OFF by default, so production still steers clear of nodes
+	// under genuine resource pressure.
+	var tolerations []corev1.Toleration
+	if os.Getenv("HOPPER_TOLERATE_NODE_PRESSURE") == "1" {
+		tolerations = []corev1.Toleration{
+			{Key: "node.kubernetes.io/disk-pressure", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+			{Key: "node.kubernetes.io/memory-pressure", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+		}
+	}
+
 	gracePeriod := int64(5)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        opts.PodName,
-			Namespace:   pm.namespace,
-			Labels:      labels,
+			Name:      opts.PodName,
+			Namespace: pm.namespace,
+			Labels:    labels,
 			// Stored on the Pod so reconciliation after orchestrator restart can
 			// recover the password without an extra Secret.
 			Annotations: map[string]string{
@@ -207,6 +240,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		},
 		Spec: corev1.PodSpec{
 			TerminationGracePeriodSeconds: &gracePeriod,
+			Tolerations:                   tolerations,
 			// Don't expose the orchestrator's K8s API token inside user VMs —
 			// otherwise a user with shell access can hit the cluster API.
 			AutomountServiceAccountToken: &automount,
@@ -242,15 +276,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
 						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 					},
-					Env: []corev1.EnvVar{
-						// code-server picks this up so asset URLs are relative to the proxy path.
-						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
-						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
-						{Name: "ROOT_PASSWORD", Value: sshPassword},
-						// supervisord references this as %(ENV_CODE_SERVER_PASSWORD)s
-						// to set $PASSWORD for code-server; never set in shell history.
-						{Name: "CODE_SERVER_PASSWORD", Value: codePassword},
-					},
+					Env: containerEnv,
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs
 						// bin-pack onto the node while still bursting to the full
@@ -344,8 +370,8 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	}
 
 	ports := PodPorts{SSHPassword: sshPassword, CodeServerPassword: codePassword}
-	for _, p := range createdSvc.Spec.Ports{
-		switch p.Name{
+	for _, p := range createdSvc.Spec.Ports {
+		switch p.Name {
 		case "ssh":
 			ports.SSHPort = p.NodePort
 		case "vscode":
