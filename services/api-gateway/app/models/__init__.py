@@ -9,6 +9,7 @@ from app.models.scheduler_leader import SchedulerLeader
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
 from app.models.user import User
+from app.models.user_setting import UserSetting
 from app.models.vm_queue_entry import VmQueueEntry
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "SSHKey",
     "Transfer",
     "User",
+    "UserSetting",
     "VmQueueEntry",
 ]
