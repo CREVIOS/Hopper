@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
+    # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
+    # user_quotas override row. Admins can override per user.
+    default_max_concurrent_vms: int = 3
+    default_max_workspace_gb: int = 100
+
     # extra="ignore": a shared local .env may carry keys this service doesn't
     # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars
     # for a feature branch. Ignore them instead of refusing to boot.

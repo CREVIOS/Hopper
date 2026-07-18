@@ -115,6 +115,21 @@ def _stub_workspace(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_quota(monkeypatch):
+    """create_pod enforces the per-user quota (quota_service). Stub it with the
+    global defaults (3 concurrent VMs, 100 GB workspace) so these router unit
+    tests exercise the default limits without a DB."""
+
+    async def fake_get_effective_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    monkeypatch.setattr(
+        "app.routers.pods.quota_service.get_effective_quota",
+        fake_get_effective_quota,
+    )
+
+
 def _payload() -> TokenPayload:
     return TokenPayload(
         sub="user-1",
@@ -330,6 +345,26 @@ async def test_create_pod_rejects_more_than_three_active_pods(monkeypatch):
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.detail == "Maximum 3 concurrent VMs allowed"
+
+
+async def test_create_pod_rejects_plan_exceeding_workspace_quota(monkeypatch):
+    # A tight per-user storage cap (5 GB) rejects the small plan (20 GB workspace).
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 5, "is_custom": True}
+
+    monkeypatch.setattr("app.routers.pods.quota_service.get_effective_quota", fake_quota)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_pod.__wrapped__(
+            request=None,
+            response=None,
+            body=CreatePodRequest(plan=VmPlan.SMALL),
+            current_user=_payload(),
+            db=FakeDB(),
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "exceeds your storage quota" in exc_info.value.detail
 
 
 async def test_create_pod_updates_session_from_orchestrator_response(monkeypatch):
