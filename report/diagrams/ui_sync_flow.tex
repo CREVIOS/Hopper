@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Latex,
+    node distance=8mm and 9mm,
+    box/.style={draw, rounded corners, align=center, minimum width=28mm, minimum height=8mm, fill=cyan!6},
+    store/.style={draw, rounded corners, align=center, minimum width=28mm, minimum height=8mm, fill=purple!6},
+    flow/.style={->, thick}
+]
+\node[box] (layout) {+\texttt{layout.server.ts}\\SSR auth + balance};
+\node[store, right=of layout] (client) {\texttt{api/client.ts}\\401 refresh retry};
+\node[box, right=of client] (gateway) {API Gateway};
+\node[store, below=of layout] (notifstore) {\texttt{notifications.ts}\\Svelte writable stores};
+\node[box, right=of notifstore] (notifstream) {GET /notifications/stream\\EventSource};
+\node[box, below=of notifstore] (podpage) {pod detail page\\EventSource + WebSocket};
+\node[box, right=of podpage] (podstream) {GET /pods/\{id\}/metrics\\WS /pods/\{id\}/terminal};
+\node[box, below right=of gateway] (nats) {NATS + metrics consumer};
+\node[box, above right=of gateway] (k8s) {port-forward / SSH\\code-server proxy};
+
+\draw[flow] (layout) -- node[above, font=\scriptsize] {server fetch + cookie forward} (gateway);
+\draw[flow] (client) -- node[above, font=\scriptsize] {browser fetch /auth/refresh} (gateway);
+\draw[flow] (notifstore) -- node[above, font=\scriptsize] {initial list + unread count} (gateway);
+\draw[flow] (notifstore) -- (notifstream);
+\draw[flow] (notifstream) -- (gateway);
+\draw[flow] (podpage) -- (podstream);
+\draw[flow] (podstream) -- (gateway);
+\draw[flow] (nats) -- node[right, font=\scriptsize] {metrics.* + notify.user.*} (gateway);
+\draw[flow] (gateway) -- node[right, font=\scriptsize] {proxy / bridge} (k8s);
+\draw[flow] (gateway) to[bend left=18] node[below, font=\scriptsize] {SSE updates} (notifstore);
+\draw[flow] (gateway) to[bend right=18] node[below, font=\scriptsize] {live metrics / terminal bytes} (podpage);
+\end{tikzpicture}

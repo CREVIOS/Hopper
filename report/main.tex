@@ -15,6 +15,7 @@
 \usepackage{subcaption}
 \usepackage{fancyhdr}
 \usepackage{hyperref}
+\usepackage{xurl}
 \usepackage{listings}
 \usepackage{tikz}
 \usepackage{enumitem}
@@ -23,6 +24,7 @@
 \usepackage{ragged2e}
 \usepackage{parskip}
 \usepackage{pdflscape}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
 
 \graphicspath{{figures/}}
 \hypersetup{
@@ -88,14 +90,6 @@
         \hline
         \todo{Add member 4 name} & \todo{Add student ID} \\
         \hline
-        \todo{Add member 5 name} & \todo{Add student ID} \\
-        \hline
-        \todo{Add member 6 name} & \todo{Add student ID} \\
-        \hline
-        \todo{Add member 7 name} & \todo{Add student ID} \\
-        \hline
-        \todo{Add member 8 name} & \todo{Add student ID} \\
-        \hline
     \end{tabularx}
 
     \vfill
@@ -106,7 +100,7 @@
     {\large University of Dhaka\par}
     \vspace{0.75cm}
     {\large \textbf{Submitted On}\par}
-    {\large \todo{Add submission date}\par}
+    {\large 23.07.2026\par}
 \end{titlepage}
 
 \clearpage
@@ -121,11 +115,11 @@
     \hline
     \textbf{Item} & \textbf{URL} \\
     \hline
-    Public Git Repository & \todo{Add public repository URL if available} \\
+    Public Git Repository & \url{https://github.com/CREVIOS/Hopper} \\
     \hline
-    Deployed Application URL & \todo{Add public live application URL} \\
+    Deployed Application URL & \url{https://hopper.farefin.com} \\
     \hline
-    API Docs (Swagger/Postman) -- public link & \todo{Add public API documentation URL} \\
+    API Docs (Swagger/Postman) -- public link & \url{https://hopper.farefin.com/api/docs} \\
     \hline
     Demo Video & \todo{Add public demo video URL} \\
     \hline
@@ -135,63 +129,384 @@
 
 \section{Introduction}
 \subsection{Problem Definition \& Context}
-\todo{Summarize the problem Hopper solves using verified project goals from the repository.}
+Hopper is a self-hosted compute provisioning platform intended for university environments. The repository describes it as a system that slices institution-owned bare-metal resources into isolated runtime environments that can be requested through a web interface, accessed over SSH, and governed through credit-based usage control and single sign-on integration. In the current implementation, the platform exposes these runtimes as Kubernetes-backed pod sessions while preserving the user-facing concept of provisioned virtual machine style workspaces.
+
+The codebase shows that the project addresses several operational problems at once. First, shared academic compute infrastructure requires stronger isolation than ad hoc account sharing or manually provisioned hosts. Second, institutions need a practical way to manage fair usage, including per-session billing and automatic shutdown when credits are exhausted. Third, a university deployment must integrate with centralized identity management rather than maintaining a separate manual authentication system. Hopper therefore combines a browser-based control plane, an API layer, an orchestration service, a relational ledger-backed data model, and Keycloak-based authentication in one deployable platform.
 
 \subsection{Target Users \& Use Cases}
-\todo{List verified user groups, roles, and their core use cases.}
+The verified user model in the repository includes at least three application roles: student, professor, and admin. These roles appear in the documented Keycloak realm configuration and are reflected in frontend routes and backend authorization logic. The system therefore serves both end users who consume compute sessions and privileged users who supervise access, credits, and platform status.
+
+Students are the primary runtime users. Confirmed use cases include signing in through the authentication flow, viewing available plans, creating and terminating compute sessions, monitoring CPU and memory usage, opening browser-based development access, using SSH-related settings, and reviewing their credit balance and usage history. Professors and administrators have additional operational and oversight use cases, including allocating credits, inspecting node or platform statistics, reviewing users, and accessing administrative workflows exposed through dedicated backend and frontend routes.
 
 \subsection{Core Features}
-\todo{Document the confirmed feature set from the current repository and deployment flow.}
+The repository confirms that Hopper provides a multi-service compute management workflow rather than a static informational website. Core platform features include authenticated session management through Keycloak, plan-based runtime creation, automated credit checks before provisioning, orchestration of pod lifecycle events through a Go service, and persistent tracking of sessions and ledger operations in PostgreSQL with TimescaleDB support. These features are reinforced by the documented API routes, backend services, database migrations, and deployment manifests.
+
+The frontend and backend code also confirm several user-facing capabilities beyond simple provisioning. The platform includes real-time metrics delivery through Server-Sent Events, browser-based terminal and file-management related functionality, administrative dashboards, SSH key management, notifications, and issue-reporting support. The infrastructure and documentation further show support for ingress-based web delivery, TLS termination, Keycloak-backed login and logout, NATS-based event propagation for billing and lifecycle messages, and Kubernetes deployment resources for a full cluster-based installation.
 
 \subsection{Tech Stack Overview}
-\todo{Summarize the verified frontend, backend, database, messaging, authentication, and infrastructure stack.}
+The frontend is implemented with SvelteKit 2, Svelte 5, TypeScript, and Vite. This choice is suitable because the project needs route-driven server rendering, interactive dashboards, and a structured component model for authenticated application pages. The dependency set and source tree also show use of lightweight Svelte stores and derived state rather than a heavyweight external state library. In practice, state management is handled through Svelte writable stores for concerns such as authentication, pod state, and notifications, together with route-level server load functions and local derived state in components.
+
+The backend is implemented as a FastAPI application in Python 3.12, backed by Pydantic settings, SQLAlchemy, Alembic migrations, and supporting libraries for SSE, authentication, rate limiting, and asynchronous I/O. This stack is suitable because it supports typed API development, automatic OpenAPI documentation, asynchronous integration with external services, and relatively clear separation of routers, services, models, and middleware. The repository also contains a Go 1.23 orchestration service that uses gRPC and Kubernetes client libraries, which is appropriate for cluster-facing lifecycle management because the native Kubernetes tooling in Go is mature and directly aligned with the platform's orchestration requirements.
+
+The primary database layer is PostgreSQL with TimescaleDB. This combination is suitable because Hopper needs conventional relational storage for users, sessions, roles, and accounting data, while also benefiting from time-series capabilities for metrics aggregation. Messaging and event distribution are handled through NATS JetStream, which fits the platform's need for lightweight asynchronous communication between the orchestrator and the API gateway, especially for billing and metrics events. Authentication is provided by Keycloak using OIDC flows, which is suitable for institutional single sign-on integration and role-based access control.
+
+The deployment and hosting configuration is centered on Kubernetes, Nginx Ingress, and declarative infrastructure artifacts under \texttt{k8s/}, \texttt{charts/}, and \texttt{infrastructure/}. This is suitable because the platform provisions compute sessions as cluster workloads and depends on ingress routing, service discovery, and namespace-level policy enforcement. The repository also confirms supporting infrastructure such as Docker and Docker Compose for local services, cert-manager for TLS certificate automation, and Cilium-enforced network policy definitions for zero-trust traffic control. Optional outbound email support is configured through Brevo or SMTP, but the exact production mail configuration remains environment-dependent.
 
 \section{System Architecture}
 \subsection{High-Level Architecture Diagram}
-\todo{Insert a system architecture diagram exported to report/figures/.}
+The deployed system is organized as a browser-facing frontend, a Python API gateway, a Go orchestration service, an identity provider, a relational database layer, and an event bus. The ingress configuration under \texttt{k8s/deploy/03-ingress.yaml} shows that external traffic is split across four path families: \texttt{/} for the frontend, \texttt{/api} for the gateway, Keycloak realm/resource paths for authentication, and a dedicated code-server proxy path for browser-based development access. The API gateway then coordinates synchronous database work, gRPC calls to the orchestrator, and asynchronous event handling over NATS.
+
+At runtime, the orchestrator is the component that directly manages Kubernetes resources. The FastAPI gateway does not create pods itself; instead it creates or updates the application-facing database state, invokes the orchestrator over gRPC, and consumes follow-up events such as billing, pod lifecycle changes, and metrics updates. PostgreSQL stores the authoritative relational state for users, sessions, the credit ledger, notifications, queue entries, and other application records, while TimescaleDB features are used where available for metrics retention and hypertable support.
 
 \begin{figure}[H]
     \centering
-    \fbox{\rule{0pt}{2in}\rule{0.85\textwidth}{0pt}}
-    \caption{Placeholder for a Hopper architecture diagram from \texttt{report/figures/}.}
+    \input{diagrams/high_level_architecture.tex}
+    \caption{Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files.}
+    \label{fig:hopper-high-level-architecture}
 \end{figure}
 
+Figure~\ref{fig:hopper-high-level-architecture} reflects the concrete implementation rather than an aspirational design. In particular, the current repository confirms the following communication paths: browser-to-frontend delivery over ingress, frontend-to-gateway HTTP calls, gateway-to-orchestrator gRPC calls, orchestrator-to-Kubernetes lifecycle control, orchestrator-to-NATS event publication, gateway-side NATS consumers for billing and metrics, and Keycloak-mediated authentication with cookie-backed application sessions.
+
+\begin{figure}[H]
+    \centering
+    \input{diagrams/request_flow.tex}
+    \caption{Main request and data flow for VM creation, monitoring, and interactive access.}
+    \label{fig:hopper-request-flow}
+\end{figure}
+
+The main operational flow shown in Figure~\ref{fig:hopper-request-flow} is also verified directly in code. The frontend issues requests through the \texttt{/api} path, the gateway checks identity and credits, the scheduler either reserves capacity or enqueues the request, the orchestrator creates or terminates the Kubernetes workload, and asynchronous follow-up state reaches the UI through SSE streams, notification events, and interactive proxies.
+
 \subsection{Frontend Architecture}
-\todo{Describe the verified frontend structure, routes, and state management choices.}
+The frontend is a SvelteKit application organized around file-based routes in \path|frontend/src/routes|. Route-specific server load functions such as \path|+layout.server.ts|, \path|dashboard/+page.server.ts|, \path|admin/+page.server.ts|, and \path|pods/[id]/+page.server.ts| fetch authenticated data on the server side before rendering pages. The helper \path|frontend/src/lib/api/server.ts| resolves whether those server-side requests should go through an ingress-relative \path|/api| path or directly to an internal API base URL, depending on environment configuration.
+
+Application-wide authentication state is coordinated in \path|+layout.server.ts| and \path|+layout.svelte|. The layout loader attempts \path|/auth/me| using the \path|session_token| cookie, falls back to \path|/auth/refresh| when necessary, and returns the authenticated user and balance to the shell layout. The authenticated shell then renders the sidebar, topbar, notification bell, and balance badge, and it also starts periodic refresh and balance polling timers in the browser. This indicates a mixed SSR-plus-client-refresh strategy rather than a purely client-side single-page architecture.
+
+State management remains lightweight and is implemented with built-in Svelte mechanisms instead of an external library such as Redux or Zustand. The repository defines writable stores in \path|frontend/src/lib/stores/| for authentication, pod-related state, and notifications. Route components also use local derived state extensively, as seen in multiple \path|+page.svelte| files. This means the application follows a layered state strategy: server-loaded page data for initial render, writable stores for cross-component reactive state, and local derived values for view-level calculations.
+
+The API layer is split between server-side and browser-side helpers. On the browser side, \path|frontend/src/lib/api/client.ts| wraps \path|fetch|, automatically includes credentials, retries once after a silent refresh on non-login \path|401| responses, and exposes a small SSE helper. On the server side, the route loaders call the backend directly through \path|apiUrl()|. This division is suitable for a SvelteKit application because it allows SSR data fetching, cookie forwarding, and browser reactivity without duplicating request logic in every route.
+
+The real-time and interactive frontend features are implemented explicitly rather than implicitly. The notification store opens an EventSource connection to \path|/api/notifications/stream|, the pod detail page opens an EventSource to \path|/api/pods/{id}/metrics|, and the terminal component opens a WebSocket to \path|/api/pods/{id}/terminal|. Browser-based editor access is routed through the backend proxy path rather than by direct pod exposure. The repository therefore confirms three distinct frontend interaction modes: SSR page loading, credentialed REST-style API calls, and long-lived SSE or WebSocket channels.
 
 \subsection{Backend Architecture}
-\todo{Describe the verified backend services, communication patterns, and design choices.}
+The backend is implemented as a FastAPI-based API gateway in \path|services/api-gateway/app/main.py|. Its router registration shows a domain-oriented separation by capability: authentication, pods, credits, admin, settings, SSH keys, files, issues, notifications, and usage each live in their own router modules. Shared concerns are applied through dependency injection and middleware, including database sessions from \path|get_db()|, authentication from \path|get_current_user()|, audit logging, CORS control, and rate limiting. This structure is closer to a thin-router plus service-module design than to a heavy layered controller-service-repository stack.
+
+The gateway is not a passive CRUD layer. It coordinates synchronous HTTP work with asynchronous background processes and remote orchestration. The \path|pods| router, for example, validates access, checks user credits, enforces per-user limits, invokes admission logic in \path|vm_scheduler| and \path|vm_queue|, persists \path|PodSession| state, and then calls the Go orchestrator through the async gRPC wrapper in \path|orchestrator_client.py|. If synchronous admission is not possible, the same router returns a queued response instead of failing immediately. This demonstrates an application-service style workflow centered in router handlers and helper service modules.
+
+Several backend services are event-driven. During application startup, the gateway connects to NATS, starts the billing consumer, and starts the metrics consumer. The billing consumer processes \texttt{billing.deducted} and \texttt{billing.exhausted} events, applies idempotent credit deductions, manages grace-period behavior, and triggers user notifications. The metrics consumer stores periodic metrics snapshots in the database. The notification service persists rolling user notifications and also subscribes to pod lifecycle events so that \texttt{pod.started}, \texttt{pod.stopped}, and \texttt{pod.failed} can be reflected in the user interface. The result is a hybrid backend architecture combining request-response APIs, background event processing, and stateful session updates.
+
+The admission queue is an especially important architectural feature. The service \path|vm_scheduler.py| elects a single leader through the \path|scheduler_leader| table and runs a first-come, first-served admission loop that considers cluster capacity computed from orchestrator node data plus current \path|PodSession| reservations. The queue service persists queued requests in \path|vm_queue_entries|. This means queueing is implemented inside the application database rather than delegated to an external job queue. The code explicitly documents that the loop is head-of-line and does not backfill smaller requests behind a blocked older request.
+
+The Go orchestration service is separated into focused internal packages under \path|services/orchestrator/internal/|. The inspected file tree confirms packages for billing, gRPC endpoints, event publication, leader election, Kubernetes access, watchers, and pod management. The main process connects to NATS, creates Kubernetes clients, starts the gRPC server, and then runs singleton work that subscribes to events, reconciles watcher state, and publishes metrics. In other words, the orchestrator is the cluster-facing runtime component, whereas the FastAPI application remains the externally facing control plane.
+
+The current backend does not implement a dedicated repository abstraction layer. Database queries are performed directly with SQLAlchemy \texttt{AsyncSession} from routers and service modules. This is an important verified characteristic of the codebase and should not be misrepresented as a repository-pattern implementation. If a stricter persistence abstraction is desired later, that would be future work rather than a description of the current system.
 
 \subsection{Database Design}
-\todo{Add the ERD, schema summary, indexing decisions, and verified real-time update flow.}
+The database design combines normalized relational entities for identity, sessions, credits, and operational metadata with a time-series metrics table that can be promoted to a TimescaleDB hypertable when the extension is available. The foundational migration creates separate tables for users, accounts, transfers, ledger entries, pod sessions, and metrics. Later migrations adapt the original GPU-oriented session model into plan-based VM sessions, add notification and queueing support, and introduce API key and network-group support.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{\input{diagrams/core_erd.tex}}
+    \caption{Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only.}
+    \label{fig:hopper-core-erd}
+\end{figure}
+
+Figure~\ref{fig:hopper-core-erd} highlights an important characteristic of the current schema: not every logical relationship is enforced with a foreign key. The strongest database-enforced relationships are in the credit ledger, where \texttt{ledger\_entries.transfer\_id} references \texttt{transfers.id}, \texttt{ledger\_entries.account\_id} references \texttt{accounts.id}, and \texttt{vm\_queue\_entries.pod\_session\_id} references \texttt{pod\_sessions.id}. By contrast, many user-owned records such as \texttt{pod\_sessions}, \texttt{notifications}, and \texttt{api\_keys} store a \texttt{user\_id} without a declared SQL foreign key. Ownership is therefore enforced primarily through application logic and authenticated route checks rather than through a dense relational constraint graph.
+
+The credit subsystem is intentionally normalized into three tables: \texttt{accounts}, \texttt{transfers}, and \texttt{ledger\_entries}. This supports double-entry accounting and avoids storing mutable balances as the only source of truth. The initial migration also creates indexes on \texttt{ledger\_entries.account\_id} and \texttt{ledger\_entries.transfer\_id} and uses PostgreSQL rules to prevent updates or deletes on ledger rows and transfers. That design decision is consistent with the service code, which treats the ledger as append-only and uses transaction-level locking to serialize deductions.
+
+The VM lifecycle subsystem centers on \texttt{pod\_sessions}. Each row stores the user-facing VM identity, selected plan, image, CPU and memory limits, namespace and pod name, exposed ports, current state, accumulated credits, and optional network-group data. Queueing is separated into \texttt{vm\_queue\_entries}, which freezes the requested plan and resolved image at enqueue time and adds a monotonically increasing \texttt{seq} field. The migration creating this table also defines a partial index on queued rows by sequence, which supports efficient first-come, first-served head-of-line admission scans.
+
+The notification and metrics subsystems are also specialized rather than overloaded into a generic event table. Notifications form a rolling per-user window backed by a composite index on \texttt{(user\_id, created\_at)} because the main queries are recent notifications and unread counts. Metrics are stored in \texttt{metrics\_samples} with a composite primary key \texttt{(time, pod\_id)} and a separate index on \texttt{user\_id}. The migration attempts to create a Timescale hypertable and retention policy when the database supports those functions, but it explicitly degrades gracefully to a regular PostgreSQL table when TimescaleDB is unavailable.
+
+Several auxiliary tables exist outside the core ERD and contribute to operational completeness: \texttt{audit\_logs}, \texttt{ssh\_keys}, \texttt{issue\_reports}, \texttt{email\_codes}, \texttt{scheduler\_leader}, and \texttt{api\_keys}. These support auditing, SSH management, issue reporting, email verification and reset flows, leader election for the scheduler loop, and scoped programmatic access. Because Section 2 focuses on the main architectural data paths, they are described here textually rather than all being included in one overloaded ERD figure.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{\input{diagrams/ui_sync_flow.tex}}
+    \caption{Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying.}
+    \label{fig:hopper-ui-sync}
+\end{figure}
+
+The repository confirms that automatic UI synchronization is implemented in multiple ways rather than through one generic push channel. As shown in Figure~\ref{fig:hopper-ui-sync}, the layout loader refreshes authentication state and forwards cookies server-side, the browser-side API client retries after silent refresh on eligible \texttt{401} responses, notifications are pushed over an \texttt{EventSource} stream, pod metrics are streamed through a separate \texttt{EventSource}, and terminal or browser-based editor access is proxied through WebSocket or HTTP upgrade paths in the gateway. This is a concrete, code-backed real-time strategy. It should therefore be documented as a combination of SSR data refresh, SSE fan-out, and backend-mediated interactive proxies rather than as a generic polling-only or WebSocket-only system.
 
 \section{API Documentation}
 \subsection{API Design Overview}
-\todo{State the verified API style, base paths, and any versioning decisions.}
+Hopper exposes a primarily REST-style HTTP API through the FastAPI gateway in \path|services/api-gateway/app/main.py|. The frontend API client hard-codes \path|/api| as its public base path, and the Kubernetes ingress rewrites that path before forwarding requests to the gateway service. Internally, the application routers are mounted directly at prefixes such as \path|/auth|, \path|/pods|, \path|/credits|, and \path|/admin|; externally, users reach them as \path|/api/auth|, \path|/api/pods|, \path|/api/credits|, and so on. The application metadata declares API version \texttt{0.1.0}, but the repository does not implement URI-based versioning such as \path|/v1|. The current versioning approach is therefore documentation-level rather than path-level.
+
+The dominant request and response format is JSON over HTTPS. FastAPI and Pydantic models are used for request validation and typed response shaping, for example \path|LoginRequest|, \path|SignupRequest|, \path|CreatePodRequest|, \path|PodResponse|, \path|CreditBalanceResponse|, and \path|UserResponse|. The frontend client sets \texttt{Content-Type: application/json} automatically for non-form submissions and includes browser credentials on every request. A smaller set of endpoints uses alternative transports where the feature requires them: file upload uses \texttt{multipart/form-data}, file download returns \texttt{application/octet-stream}, notification and metrics feeds use Server-Sent Events (SSE), and terminal or browser-editor sessions use proxied WebSocket or HTTP upgrade paths.
+
+Authentication is enforced through the shared dependency \path|get_current_user()|. The main browser flow uses secure HttpOnly cookies, especially \path|session_token| and \path|refresh_token|, which are issued after successful Keycloak-backed sign-in. Programmatic access is also supported through Hopper API keys supplied either in \texttt{X-API-Key} or as \texttt{Authorization: Bearer hop\_...}. The code explicitly restricts \texttt{read\_only} API keys to \texttt{GET}, \texttt{HEAD}, and \texttt{OPTIONS} requests, while API-key creation and revocation require a real cookie-backed session. Authorization is role-aware rather than endpoint-global: the repository verifies at least three roles, namely \texttt{student}, \texttt{professor}, and \texttt{admin}.
+
+Validation and error handling are a combination of schema validation and route-level checks. Pydantic enforces field structure, lengths, and constrained values, while the routers enforce application rules such as credit sufficiency, ownership, allowed domains, password policy, and role restrictions. The common error format is FastAPI's JSON \texttt{\{"detail": "..."\}} payload, although validation failures inherited from framework-level schema errors may return the standard structured \texttt{422} detail list. The codebase also shows consistent use of meaningful HTTP status codes such as \texttt{201 Created}, \texttt{202 Accepted}, \texttt{204 No Content}, \texttt{401 Unauthorized}, \texttt{402 Payment Required}, \texttt{403 Forbidden}, \texttt{404 Not Found}, \texttt{409 Conflict}, \texttt{422 Unprocessable Entity}, and \texttt{429 Too Many Requests}.
+
+The API does not follow one universal pagination contract, but several repeatable conventions are implemented. Credit history and audit-log style listings use \path|limit| and \path|offset| query parameters. Notification and issue listing endpoints impose bounded maximums, and issue administration accepts a simple \path|status| filter. Usage endpoints accept a \path|range| parameter with confirmed values \path|1h|, \path|6h|, \path|24h|, and \path|7d| to control aggregation windows. These conventions are pragmatic and code-backed, but they are not wrapped in a separate global pagination abstraction at the current stage of the project.
 
 \subsection{Endpoint Reference}
-\todo{Replace the placeholder rows below with verified endpoints only.}
+The report focuses on the important public application endpoints that are intended for user-facing or evaluator-facing interaction. Internal readiness and liveness handlers such as \path|/healthz| and \path|/readyz| are deliberately excluded from the main table because they are deployment-facing operational probes rather than end-user APIs.
 
-\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.11\textwidth}|>{\RaggedRight\arraybackslash}p{0.24\textwidth}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+\textbf{Authentication and identity endpoints}
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.10\textwidth}|>{\RaggedRight\arraybackslash}p{0.23\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}p{0.12\textwidth}|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
     \hline
-    \textbf{Method} & \textbf{Route} & \textbf{Description} & \textbf{Auth Required} \\
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
     \hline
-    \todo{GET} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \endfirsthead
     \hline
-    \todo{POST} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
     \hline
-    \todo{PUT} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \endhead
+    GET & \path|/api/auth/login| & Starts the OIDC login flow with PKCE, state, and nonce, then redirects the browser to Keycloak. & No & Public \\
     \hline
-\end{tabularx}
+    POST & \path|/api/auth/signup| & Creates a local-account sign-up request with role selection and password-policy checks. & No & Public \\
+    \hline
+    POST & \path|/api/auth/verify-email| & Confirms an emailed verification code. & No & Public \\
+    \hline
+    POST & \path|/api/auth/resend-code| & Re-sends a verification or password-reset code. & No & Public \\
+    \hline
+    POST & \path|/api/auth/forgot-password| & Starts the password-reset flow for an existing account email. & No & Public \\
+    \hline
+    POST & \path|/api/auth/reset-password| & Resets a password after code validation and, where applicable, marks the email verified. & No & Public \\
+    \hline
+    POST & \path|/api/auth/login| & Performs direct email-password login and issues session cookies on success. & No & Public \\
+    \hline
+    GET & \path|/api/auth/callback| & Completes the OIDC authorization-code exchange after Keycloak redirects back. & No & Public callback endpoint \\
+    \hline
+    POST & \path|/api/auth/refresh| & Uses the refresh-token cookie to mint a new access cookie. & Refresh cookie & Session holder \\
+    \hline
+    GET & \path|/api/auth/me| & Returns the authenticated user's current profile and pending-teacher status. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/auth/logout| & Revokes the refresh token where possible, clears cookies, and redirects to Keycloak logout. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/auth/api-keys| & Creates an API key and returns the plaintext key exactly once. & Yes & Any authenticated user with session cookie \\
+    \hline
+    GET & \path|/api/auth/api-keys| & Lists the caller's API keys without revealing stored secrets. & Yes & Any authenticated user \\
+    \hline
+    DELETE & \path|/api/auth/api-keys/\{key\_id\}| & Revokes one of the caller's API keys. & Yes & Any authenticated user with session cookie \\
+    \hline
+\end{longtable}
+\endgroup
+
+\textbf{Pod lifecycle and interactive session endpoints}
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.10\textwidth}|>{\RaggedRight\arraybackslash}p{0.23\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}p{0.12\textwidth}|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endfirsthead
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endhead
+    GET & \path|/api/pods/plans| & Returns the plan catalogue exposed to the provisioning UI. & No & Public \\
+    \hline
+    GET & \path|/api/pods/| & Lists the current user's pod sessions. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/pods/| & Creates a pod synchronously when capacity is available, or returns \texttt{202 Accepted} with queue information when the request is enqueued. & Yes & Any authenticated user; \path|network_group| limited to professor/admin \\
+    \hline
+    GET & \path|/api/pods/availability| & Reports whether synchronous capacity is currently available together with queue length. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/pods/queue| & Lists the caller's active queue entries and queue positions. & Yes & Any authenticated user \\
+    \hline
+    DELETE & \path|/api/pods/queue/\{entry\_id\}| & Cancels one of the caller's still-queued VM requests. & Yes & Queue-entry owner \\
+    \hline
+    GET & \path|/api/pods/\{pod\_id\}| & Returns details of a specific pod session. & Yes & Pod owner \\
+    \hline
+    DELETE & \path|/api/pods/\{pod\_id\}| & Terminates a pod session and releases its reserved resources. & Yes & Pod owner \\
+    \hline
+    GET & \path|/api/pods/\{pod\_id\}/metrics| & Streams live pod metrics to the UI through Server-Sent Events. & Yes & Pod owner \\
+    \hline
+    HTTP proxy & \path|/api/pods/\{pod\_id\}/vscode/\{path\}| & Proxies browser-based code-server traffic for an owned pod across \texttt{GET}, \texttt{POST}, \texttt{PUT}, \texttt{PATCH}, \texttt{DELETE}, and \texttt{OPTIONS}. & Yes & Pod owner \\
+    \hline
+    WS & \path|/api/pods/\{pod\_id\}/vscode/\{path\}| & WebSocket upgrade path used by the proxied browser editor. & Yes & Pod owner \\
+    \hline
+    WS & \path|/api/pods/\{pod\_id\}/terminal| & Provides interactive terminal access to a running pod. & Yes & Pod owner \\
+    \hline
+\end{longtable}
+\endgroup
+
+\textbf{Credits and usage endpoints}
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.10\textwidth}|>{\RaggedRight\arraybackslash}p{0.23\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}p{0.12\textwidth}|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endfirsthead
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endhead
+    GET & \path|/api/credits/balance| & Returns the caller's current credit balance and account identifier. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/credits/history?limit=\dots\&offset=\dots| & Returns the caller's credit ledger history using limit-offset pagination. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/credits/teachers| & Lists professor accounts with balances for the admin grant workflow. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/credits/students| & Lists student accounts with balances for allocation workflows. & Yes & Admin or professor \\
+    \hline
+    POST & \path|/api/credits/allocate| & Grants or reallocates credits, with semantics that differ for admin and professor roles. & Yes & Admin or professor \\
+    \hline
+    GET & \path|/api/usage/\{pod\_id\}?range=1h\textbar6h\textbar24h\textbar7d| & Returns historical usage series for a specific pod. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/usage/summary/me/series?range=1h\textbar6h\textbar24h\textbar7d| & Returns aggregated historical usage across all of the caller's pods. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/usage/summary/me| & Returns a recent usage summary for the caller. & Yes & Any authenticated user \\
+    \hline
+\end{longtable}
+\endgroup
+
+\textbf{Administration endpoints}
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.10\textwidth}|>{\RaggedRight\arraybackslash}p{0.23\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}p{0.12\textwidth}|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endfirsthead
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endhead
+    GET & \path|/api/admin/users| & Lists all users with role and teacher-approval metadata. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/teacher-requests| & Lists pending teacher sign-up requests. & Yes & Admin only \\
+    \hline
+    POST & \path|/api/admin/teacher-requests/\{user\_id\}/approve| & Promotes a pending teacher request to the professor role. & Yes & Admin only \\
+    \hline
+    POST & \path|/api/admin/teacher-requests/\{user\_id\}/reject| & Rejects a pending teacher request while keeping the user as student. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/courses| & Returns the current course list. The implementation is presently an empty proof-of-concept response. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/nodes| & Returns cluster node capacity and readiness data via the orchestrator. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/stats| & Returns aggregate dashboard statistics such as total users and active VMs. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/active-vms| & Lists all currently active VM sessions together with owner details. & Yes & Admin only \\
+    \hline
+    PATCH & \path|/api/admin/users/\{user\_id\}/role| & Changes a user's role with safeguards against invalid or dangerous demotions. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/admin/audit-logs?limit=\dots\&offset=\dots| & Returns recent audit-log entries using limit-offset pagination. & Yes & Admin only \\
+    \hline
+\end{longtable}
+\endgroup
+
+\textbf{Files, SSH keys, settings, notifications, and issue tracking}
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.10\textwidth}|>{\RaggedRight\arraybackslash}p{0.23\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}p{0.12\textwidth}|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endfirsthead
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Purpose} & \textbf{Auth} & \textbf{Authorized Role} \\
+    \hline
+    \endhead
+    PUT & \path|/api/settings/vscode| & Accepts a VS Code settings blob. The current implementation acknowledges the request but still documents future persistence work in comments. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/ssh-keys/| & Lists the caller's SSH public keys. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/ssh-keys/| & Adds an SSH public key after format, duplicate, and per-user quota checks. & Yes & Any authenticated user \\
+    \hline
+    DELETE & \path|/api/ssh-keys/\{key\_id\}| & Deletes one of the caller's SSH keys. & Yes & Key owner \\
+    \hline
+    GET & \path|/api/files/\{pod\_id\}/list| & Lists files inside a running pod directory. & Yes & Pod owner \\
+    \hline
+    POST & \path|/api/files/\{pod\_id\}/upload| & Uploads a file to a running pod using multipart form submission and SCP behind the gateway. & Yes & Pod owner \\
+    \hline
+    GET & \path|/api/files/\{pod\_id\}/download| & Downloads a file from a running pod as an octet-stream attachment. & Yes & Pod owner \\
+    \hline
+    POST & \path|/api/issues/| & Creates a user issue report, optionally linked to a pod. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/issues/me| & Lists issue reports submitted by the current user. & Yes & Any authenticated user \\
+    \hline
+    GET & \path|/api/issues/admin?status=\dots| & Lists issue reports for administrative triage, optionally filtered by status. & Yes & Admin only \\
+    \hline
+    POST & \path|/api/issues/admin/\{issue\_id\}/resolve| & Marks an issue report as resolved. & Yes & Admin only \\
+    \hline
+    GET & \path|/api/notifications/| & Returns recent notifications together with an unread count. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/notifications/read-all| & Marks all of the caller's notifications as read. & Yes & Any authenticated user \\
+    \hline
+    POST & \path|/api/notifications/\{notification\_id\}/read| & Marks one notification as read. & Yes & Notification owner \\
+    \hline
+    GET & \path|/api/notifications/stream| & Streams live notifications to the browser using Server-Sent Events. & Yes & Any authenticated user \\
+    \hline
+\end{longtable}
+\endgroup
 
 \subsection{Swagger / Postman Collection Link}
-\todo{Add the public Swagger UI or Postman collection URL if available.}
+The FastAPI gateway exposes the default Swagger UI, and the repository's ingress configuration makes it reachable publicly at \url{https://hopper.farefin.com/api/docs}. This URL is verified from the combination of the gateway's default FastAPI documentation settings and the ingress rule that forwards the external \path|/api| prefix to the backend service.
+
+No Postman collection URL was found in the inspected repository. The report therefore retains that gap explicitly: \todo{Add a public Postman collection URL if the team publishes one later.}
 
 \subsection{Sample Request \& Response}
-\todo{Insert one verified request/response pair for a representative endpoint.}
+\textbf{Example 1: direct login request}
 
-\begin{lstlisting}[language=bash,caption={Placeholder for a sample API request}]
-# TODO: Add a verified request example.
+The following example reflects the request body accepted by \path|LoginRequest| in \path|services/api-gateway/app/schemas/user.py|. On success, the handler also sets secure HttpOnly session cookies; those headers are omitted here for brevity and because tokens must not be reproduced in a report.
+
+\begin{lstlisting}[language=bash,caption={Representative login request to the Hopper API}]
+curl -X POST "https://hopper.farefin.com/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "student@example.edu",
+    "password": "[REDACTED]"
+  }'
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative login response body}]
+{
+  "id": "2f3ac4d8-7d3d-4f7b-a2df-0e4f07a8d421",
+  "email": "student@example.edu",
+  "name": "Example Student",
+  "role": "student"
+}
+\end{lstlisting}
+
+\textbf{Example 2: pod creation request}
+
+This second example shows a provision request based on the verified \path|CreatePodRequest| and \path|PodResponse| schemas. The route may return \texttt{201 Created} for immediate admission or \texttt{202 Accepted} when the request is queued; the JSON below illustrates the immediate-creation path.
+
+\begin{lstlisting}[language=bash,caption={Representative pod creation request}]
+curl -X POST "https://hopper.farefin.com/api/pods/" \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_token=[REDACTED]" \
+  -d '{
+    "plan": "small",
+    "template": "ubuntu"
+  }'
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative pod creation response body}]
+{
+  "id": "9bc3d6ee-4b7a-4482-a9de-4948fdde2ce1",
+  "user_id": "2f3ac4d8-7d3d-4f7b-a2df-0e4f07a8d421",
+  "state": "running",
+  "plan": "small",
+  "image": "hopper/vm-ubuntu:22.04",
+  "cpu": "1",
+  "memory": "2Gi",
+  "node_name": "worker-1",
+  "namespace": "hopper-user-2f3ac4d8",
+  "ssh_port": 32022,
+  "vscode_port": 32080,
+  "ssh_password": "[REDACTED]",
+  "network_group": null,
+  "created_at": "2026-07-19T12:00:00Z",
+  "updated_at": "2026-07-19T12:00:30Z"
+}
 \end{lstlisting}
 
 \section{Authentication \& Security}
@@ -267,7 +582,7 @@
 
 \begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.17\textwidth}|>{\RaggedRight\arraybackslash}p{0.29\textwidth}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}p{0.13\textwidth}|}
     \hline
-    \textbf{Member Name} & \textbf{Core Responsibilities \& Feature Ownership} & \textbf{Key PRs / Commit Contributions} & \textbf{Estimated \% Contribution} \\
+    \textbf{Member Name} & \textbf{Core Responsibilities \& Feature Ownership} & \textbf{Key PRs / Commit Contributions} & \textbf{Share (\%)} \\
     \hline
     \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
     \hline

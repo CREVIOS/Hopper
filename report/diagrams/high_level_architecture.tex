@@ -1,0 +1,35 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Latex,
+    node distance=9mm and 10mm,
+    service/.style={draw, rounded corners, align=center, minimum width=29mm, minimum height=9mm, fill=blue!5},
+    infra/.style={draw, rounded corners, align=center, minimum width=29mm, minimum height=9mm, fill=green!6},
+    ext/.style={draw, rounded corners, align=center, minimum width=26mm, minimum height=9mm, fill=orange!10},
+    flow/.style={->, thick}
+]
+\node[ext] (browser) {Browser};
+\node[service, below=of browser] (frontend) {Frontend\\SvelteKit};
+\node[service, below left=of frontend] (api) {API Gateway\\FastAPI};
+\node[service, below right=of frontend] (keycloak) {Keycloak\\OIDC};
+\node[service, below=18mm of frontend] (orch) {Orchestrator\\Go + gRPC};
+\node[service, right=of orch] (nats) {NATS\\JetStream};
+\node[infra, left=of orch] (db) {PostgreSQL\\+ TimescaleDB};
+\node[infra, below=of orch] (k8s) {Kubernetes Cluster};
+\node[infra, below left=of k8s] (pods) {VM Pod Sessions\\SSH / code-server};
+\node[infra, below right=of k8s] (ingress) {Nginx Ingress\\+ TLS routing};
+
+\draw[flow] (browser) -- (frontend);
+\draw[flow] (browser.east) to[bend left=16] node[right, font=\scriptsize] {login redirect} (keycloak.north);
+\draw[flow] (frontend) -- node[left, font=\scriptsize] {SSR / API calls} (api);
+\draw[flow] (api) -- node[above, font=\scriptsize] {SQLAlchemy + Alembic schema} (db);
+\draw[flow] (api) -- node[above, font=\scriptsize] {gRPC PodOrchestrator} (orch);
+\draw[flow] (api) -- node[right, font=\scriptsize] {auth callback / JWKS} (keycloak);
+\draw[flow] (orch) -- node[above, font=\scriptsize] {billing / lifecycle / metrics events} (nats);
+\draw[flow] (nats) -- node[right, font=\scriptsize] {consumers + SSE fan-out} (api);
+\draw[flow] (orch) -- node[left, font=\scriptsize] {pod create / terminate / watch} (k8s);
+\draw[flow] (k8s) -- (pods);
+\draw[flow] (ingress.north) -- node[right, font=\scriptsize] {/ , /api , /realms , /code} (browser.south east);
+\draw[flow] (ingress.west) -- (frontend.east);
+\draw[flow] (ingress) -- (api);
+\draw[flow] (ingress) -- (keycloak);
+\end{tikzpicture}

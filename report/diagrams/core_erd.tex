@@ -1,0 +1,26 @@
+\begin{tikzpicture}[
+    font=\scriptsize,
+    >=Latex,
+    node distance=7mm and 9mm,
+    entity/.style={draw, rounded corners, align=left, fill=yellow!8, text width=42mm, inner sep=3mm},
+    rel/.style={->, thick},
+    apprel/.style={->, thick, dashed}
+]
+\node[entity] (users) {\textbf{users}\\PK id\\UNIQUE email\\name, role, pending\_teacher\\university\_id, timestamps};
+\node[entity, right=of users] (sessions) {\textbf{pod\_sessions}\\PK id\\INDEX user\_id\\plan, image, cpu, memory\\namespace, pod\_name\\ssh\_port, vscode\_port\\network\_group, state\\credits\_charged, grace\_expires\_at};
+\node[entity, below=of users] (accounts) {\textbf{accounts}\\PK id\\name, type\\owner\_id, owner\_type};
+\node[entity, right=of accounts] (transfers) {\textbf{transfers}\\PK id\\type, metadata\\event\_at};
+\node[entity, right=of transfers] (entries) {\textbf{ledger\_entries}\\PK id\\FK transfer\_id -> transfers.id\\FK account\_id -> accounts.id\\amount, direction\\previous\_balance, current\_balance\\INDEX account\_id, transfer\_id};
+\node[entity, below=of sessions] (queue) {\textbf{vm\_queue\_entries}\\PK id\\INDEX user\_id\\UNIQUE seq\\state, template, image\\cpu, memory, network\_group\\FK pod\_session\_id -> pod\_sessions.id\\PARTIAL INDEX queued seq};
+\node[entity, below=of transfers] (metrics) {\textbf{metrics\_samples}\\PK (time, pod\_id)\\INDEX user\_id\\cpu\_percent\\memory\_used\_bytes\\memory\_limit\_bytes};
+\node[entity, below=of entries] (notifications) {\textbf{notifications}\\PK id\\INDEX (user\_id, created\_at)\\type, title, body, data\\read, created\_at};
+
+\draw[apprel] (users) -- node[above, sloped] {app-level user\_id link} (sessions);
+\draw[apprel] (users) -- node[left] {owner\_id / user\_id} (accounts);
+\draw[apprel] (users) -- node[above, sloped] {user\_id} (queue);
+\draw[apprel] (users) -- node[left] {user\_id} (notifications);
+\draw[apprel] (users) -- node[above, sloped] {user\_id} (metrics);
+\draw[rel] (transfers) -- (entries);
+\draw[rel] (accounts) -- (entries);
+\draw[rel] (queue) -- (sessions);
+\end{tikzpicture}

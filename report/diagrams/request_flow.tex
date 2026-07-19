@@ -1,0 +1,28 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Latex,
+    node distance=8mm and 8mm,
+    box/.style={draw, rounded corners, align=center, minimum width=24mm, minimum height=8mm, fill=blue!4},
+    data/.style={draw, rounded corners, align=center, minimum width=24mm, minimum height=8mm, fill=green!6},
+    flow/.style={->, thick}
+]
+\node[box] (ui) {Browser UI};
+\node[box, right=of ui] (fe) {SvelteKit routes\\+\texttt{apiUrl()}};
+\node[box, right=of fe] (api) {FastAPI routers\\+\texttt{Depends()}};
+\node[box, below=of api] (orch) {Go orchestrator\\gRPC};
+\node[data, below=of fe] (db) {PostgreSQL\\pod\_sessions / ledger};
+\node[data, right=of orch] (nats) {NATS subjects\\metrics.*\\billing.*};
+\node[data, below=of orch] (k8s) {Kubernetes pods\\NodePort / port-forward};
+
+\draw[flow] (ui) -- node[above, font=\scriptsize] {page load / actions} (fe);
+\draw[flow] (fe) -- node[above, font=\scriptsize] {/api/* through ingress} (api);
+\draw[flow] (api) -- node[left, font=\scriptsize] {read / write session state} (db);
+\draw[flow] (api) -- node[right, font=\scriptsize] {CreatePod / TerminatePod / ListNodes} (orch);
+\draw[flow] (orch) -- node[right, font=\scriptsize] {create / watch / terminate} (k8s);
+\draw[flow] (orch) -- node[above, font=\scriptsize] {publish lifecycle + metrics} (nats);
+\draw[flow] (nats) -- node[right, font=\scriptsize] {billing + metrics consumers} (api);
+\draw[flow] (api) to[bend right=18] node[left, font=\scriptsize] {202 queue or 201 pod response} (fe);
+\draw[flow] (api) to[bend right=30] node[below, font=\scriptsize] {SSE /notifications + /pods/\{id\}/metrics} (ui);
+\draw[flow] (ui) to[bend left=22] node[below, font=\scriptsize] {terminal / VS Code WebSocket} (api);
+\draw[flow] (api) -- node[left, font=\scriptsize] {SSH bridge / HTTP proxy} (k8s);
+\end{tikzpicture}
