@@ -109,6 +109,12 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 	if apiPodID == "" {
 		apiPodID = podName
 	}
+	// Resolve the billing rate once: the gateway-supplied credits_per_hour
+	// (from the admin-managed DB catalogue) wins, else the built-in map. The
+	// SAME resolved value is stamped on the pod annotation and drives the
+	// ticker, so Reconcile reads back the exact rate the VM is billed at —
+	// never a raw sentinel that could drift if the built-in map is edited.
+	rate := billingpkg.ResolveRate(req.CreditsPerHour, req.Plan)
 	ports, err := s.server.k8sPods.CreatePod(ctx, k8s.CreatePodOpts{
 		PodName:             podName,
 		PodID:               apiPodID,
@@ -121,7 +127,11 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		WorkspaceCapacityGB: int(req.WorkspaceCapacityGb),
 		StorageClass:        req.StorageClass,
 		AuthorizedKeys:      req.AuthorizedKeys,
-		NetworkGroup:        networkGroup,
+		// The resolved billing rate travels onto the pod as an annotation so
+		// billing restarts at the correct rate after an orchestrator restart
+		// (Reconcile reads it back), independent of the built-in map.
+		CreditsPerHr: rate,
+		NetworkGroup: networkGroup,
 	})
 	if err != nil {
 		_ = s.server.podManager.Transition(p.ID, pod.StateFailed)
@@ -151,24 +161,23 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		"plan":        req.Plan,
 	})
 
-	// 6. Start billing ticker
-	plan, ok := billingpkg.Plans[req.Plan]
-	if ok {
-		s.server.ticker.Start(p.ID, plan, func(ev billingpkg.TickEvent) {
-			s.server.logger.Info("billing tick",
-				zap.String("pod_id", ev.PodID),
-				zap.Float64("amount", ev.Amount),
-				zap.String("tx_id", ev.TxID),
-			)
-			_ = events.Publish(s.server.nc, events.SubjectBillDeduct, map[string]interface{}{
-				"pod_id":  ev.PodID,
-				"amount":  ev.Amount,
-				"user_id": req.UserId,
-				"tx_id":   ev.TxID,
-				"seq":     ev.Seq,
-			})
+	// 6. Start billing at the resolved rate (computed above and stamped on the
+	// pod). ticker.Start is a no-op at rate 0, so an unknown/unpriced plan is
+	// left unbilled rather than charged a guessed rate.
+	s.server.ticker.Start(p.ID, billingpkg.VmPlan{Name: req.Plan, CreditsPerHr: rate}, func(ev billingpkg.TickEvent) {
+		s.server.logger.Info("billing tick",
+			zap.String("pod_id", ev.PodID),
+			zap.Float64("amount", ev.Amount),
+			zap.String("tx_id", ev.TxID),
+		)
+		_ = events.Publish(s.server.nc, events.SubjectBillDeduct, map[string]interface{}{
+			"pod_id":  ev.PodID,
+			"amount":  ev.Amount,
+			"user_id": req.UserId,
+			"tx_id":   ev.TxID,
+			"seq":     ev.Seq,
 		})
-	}
+	})
 
 	// Refresh the pod to include ssh_port
 	p, _ = s.server.podManager.Get(p.ID)

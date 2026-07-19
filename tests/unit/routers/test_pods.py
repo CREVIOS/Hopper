@@ -437,6 +437,43 @@ async def test_create_pod_injects_users_ssh_keys(monkeypatch):
     assert captured["authorized_keys"] == ["ssh-ed25519 AAA", "ssh-rsa BBB"]
 
 
+async def test_create_pod_bills_at_plan_rate(monkeypatch):
+    """The plan's DB credits_per_hour is forwarded to the orchestrator so billing
+    uses the admin-set price, not the orchestrator's built-in fallback map."""
+    captured = {}
+
+    class FakeOrchestratorResponse:
+        id = "vm-x"
+        state = "running"
+        ssh_port = 1
+        vscode_port = 2
+        ssh_password = "p"
+
+    async def fake_create_pod(**kwargs):
+        captured.update(kwargs)
+        return FakeOrchestratorResponse()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    # active-VMs check (empty), then the SSH-key lookup (no keys).
+    db = FakeDB(execute_results=[[], []])
+
+    await create_pod.__wrapped__(
+        request=None,
+        response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL),
+        current_user=_payload(),
+        db=db,
+    )
+
+    # _stub_plan_catalogue prices "small" at 1.0 credits/hr.
+    assert captured["credits_per_hour"] == 1.0
+
+
 async def test_create_pod_marks_session_failed_when_orchestrator_raises(monkeypatch):
     async def fake_get_balance(db, user_id):
         return 100.0
