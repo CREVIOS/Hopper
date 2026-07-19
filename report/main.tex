@@ -1,0 +1,300 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage{ragged2e}
+\usepackage{parskip}
+\usepackage{pdflscape}
+
+\graphicspath{{figures/}}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    pdftitle={Hopper Project Report},
+    pdfauthor={Four-Eyed Raven}
+}
+
+\definecolor{todored}{RGB}{180,0,0}
+\newcommand{\todo}[1]{\textcolor{todored}{TODO: #1}}
+
+\lstdefinestyle{hoppercode}{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible,
+    keepspaces=true
+}
+\lstset{style=hoppercode}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Hopper}
+\rhead{Internet Programming Lab Report}
+\cfoot{\thepage}
+\setlength{\headheight}{14.5pt}
+\setstretch{1.15}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\begin{document}
+\pagenumbering{gobble}
+
+\begin{titlepage}
+    \centering
+    \vspace*{1.5cm}
+
+    {\Large \textbf{CSE 4113 -- Internet Programming Lab}\par}
+    \vspace{1cm}
+    {\LARGE \textbf{Project Report}\par}
+    \vspace{1.25cm}
+    {\Huge \textbf{Hopper}\par}
+    \vspace{0.5cm}
+    {\Large \textbf{Team: Four-Eyed Raven}\par}
+    \vspace{1.25cm}
+
+    {\large \textbf{Submitted By}\par}
+    \vspace{0.5cm}
+
+    \renewcommand{\arraystretch}{1.35}
+    \begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
+        \hline
+        \textbf{Team Member} & \textbf{Student ID} \\
+        \hline
+        \todo{Add member 1 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 2 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 3 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 4 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 5 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 6 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 7 name} & \todo{Add student ID} \\
+        \hline
+        \todo{Add member 8 name} & \todo{Add student ID} \\
+        \hline
+    \end{tabularx}
+
+    \vfill
+
+    {\large \textbf{\todo{Add batch information}}\par}
+    \vspace{0.25cm}
+    {\large Department of Computer Science \& Engineering\par}
+    {\large University of Dhaka\par}
+    \vspace{0.75cm}
+    {\large \textbf{Submitted On}\par}
+    {\large \todo{Add submission date}\par}
+\end{titlepage}
+
+\clearpage
+\pagenumbering{arabic}
+\tableofcontents
+\newpage
+
+\section*{Project Links}
+\addcontentsline{toc}{section}{Project Links}
+
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.34\textwidth}|>{\RaggedRight\arraybackslash}X|}
+    \hline
+    \textbf{Item} & \textbf{URL} \\
+    \hline
+    Public Git Repository & \todo{Add public repository URL if available} \\
+    \hline
+    Deployed Application URL & \todo{Add public live application URL} \\
+    \hline
+    API Docs (Swagger/Postman) -- public link & \todo{Add public API documentation URL} \\
+    \hline
+    Demo Video & \todo{Add public demo video URL} \\
+    \hline
+\end{tabularx}
+
+\newpage
+
+\section{Introduction}
+\subsection{Problem Definition \& Context}
+\todo{Summarize the problem Hopper solves using verified project goals from the repository.}
+
+\subsection{Target Users \& Use Cases}
+\todo{List verified user groups, roles, and their core use cases.}
+
+\subsection{Core Features}
+\todo{Document the confirmed feature set from the current repository and deployment flow.}
+
+\subsection{Tech Stack Overview}
+\todo{Summarize the verified frontend, backend, database, messaging, authentication, and infrastructure stack.}
+
+\section{System Architecture}
+\subsection{High-Level Architecture Diagram}
+\todo{Insert a system architecture diagram exported to report/figures/.}
+
+\begin{figure}[H]
+    \centering
+    \fbox{\rule{0pt}{2in}\rule{0.85\textwidth}{0pt}}
+    \caption{Placeholder for a Hopper architecture diagram from \texttt{report/figures/}.}
+\end{figure}
+
+\subsection{Frontend Architecture}
+\todo{Describe the verified frontend structure, routes, and state management choices.}
+
+\subsection{Backend Architecture}
+\todo{Describe the verified backend services, communication patterns, and design choices.}
+
+\subsection{Database Design}
+\todo{Add the ERD, schema summary, indexing decisions, and verified real-time update flow.}
+
+\section{API Documentation}
+\subsection{API Design Overview}
+\todo{State the verified API style, base paths, and any versioning decisions.}
+
+\subsection{Endpoint Reference}
+\todo{Replace the placeholder rows below with verified endpoints only.}
+
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.11\textwidth}|>{\RaggedRight\arraybackslash}p{0.24\textwidth}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}p{0.14\textwidth}|}
+    \hline
+    \textbf{Method} & \textbf{Route} & \textbf{Description} & \textbf{Auth Required} \\
+    \hline
+    \todo{GET} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \hline
+    \todo{POST} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \hline
+    \todo{PUT} & \todo{/example} & \todo{Add verified endpoint details} & \todo{Yes/No} \\
+    \hline
+\end{tabularx}
+
+\subsection{Swagger / Postman Collection Link}
+\todo{Add the public Swagger UI or Postman collection URL if available.}
+
+\subsection{Sample Request \& Response}
+\todo{Insert one verified request/response pair for a representative endpoint.}
+
+\begin{lstlisting}[language=bash,caption={Placeholder for a sample API request}]
+# TODO: Add a verified request example.
+\end{lstlisting}
+
+\section{Authentication \& Security}
+\subsection{Authentication Strategy}
+\todo{Describe the verified authentication flow and why it was chosen.}
+
+\subsection{Authorization \& Role Management}
+\todo{Document the confirmed application roles and access-control model.}
+
+\subsection{Security Measures}
+\todo{Summarize verified validation, secrets handling, rate limiting, network, and transport protections.}
+
+\subsection{Known Vulnerabilities \& Mitigations}
+\todo{Add verified known risks, mitigations, and remaining gaps from the repository or test docs.}
+
+\section{Testing \& Quality Assurance}
+\subsection{Testing Strategy}
+\todo{Summarize the verified unit, integration, end-to-end, and other automated test layers.}
+
+\subsection{Test Coverage Summary}
+\todo{Add measured coverage or coverage-report references after verification.}
+
+\subsection{Bug Tracking \& Resolution Log}
+\todo{Summarize verified bug-tracking artifacts such as BUG\_TRACKING\_LOG.md.}
+
+\subsection{Sample Test Cases}
+\todo{Add representative verified test cases from the current suites.}
+
+\section{CI/CD \& Deployment}
+\subsection{Pipeline Overview}
+\todo{Describe the verified CI and delivery workflow from repository automation and scripts.}
+
+\subsection{Environments}
+\todo{Document the confirmed development, test, staging, and production environments if they exist.}
+
+\subsection{Deployment Steps}
+\todo{Summarize the verified deployment procedure from current infrastructure files.}
+
+\subsection{Hosting Platform \& Live URL}
+\todo{Add the actual hosting platform and public live URL after verification.}
+
+\subsection{Monitoring \& Logging}
+\todo{Describe the verified monitoring, logging, and observability components.}
+
+\section{Repository \& Documentation Quality}
+\subsection{Branching Strategy \& Commit Conventions}
+\todo{Add the actual branching and commit practices only after verifying repository history or team policy.}
+
+\subsection{README Completeness Checklist}
+\todo{Audit the README against setup, environment, run/test, and usage expectations.}
+
+\subsection{Code Organization / Folder Structure}
+\todo{Summarize the verified repository structure and service boundaries.}
+
+\subsection{Local Setup Instructions}
+\todo{Condense the verified local setup steps for reproducibility.}
+
+\section{Evaluation \& Reflection}
+\subsection{Web Performance \& Core Web Vitals}
+\todo{Add measured Lighthouse or browser-tool performance metrics later.}
+
+\subsection{Challenges \& Solutions}
+\todo{Add verified implementation or deployment challenges and how they were addressed.}
+
+\subsection{Limitations \& Future Work}
+\todo{Add realistic limitations and future improvements based on verified project scope.}
+
+\subsection{Lessons Learned}
+\todo{Summarize team-level lessons after the full report content is drafted.}
+
+\subsection{Individual Responsibility}
+\todo{Replace the placeholder rows with actual team-member responsibilities and contribution evidence.}
+
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.17\textwidth}|>{\RaggedRight\arraybackslash}p{0.29\textwidth}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}p{0.13\textwidth}|}
+    \hline
+    \textbf{Member Name} & \textbf{Core Responsibilities \& Feature Ownership} & \textbf{Key PRs / Commit Contributions} & \textbf{Estimated \% Contribution} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
+    \hline
+\end{tabularx}
+
+\appendix
+\section{Screenshots / UI Walkthrough}
+\todo{Add annotated screenshots, UI flows, and captions using image files placed under report/figures/.}
+
+\begin{figure}[H]
+    \centering
+    \fbox{\rule{0pt}{2in}\rule{0.85\textwidth}{0pt}}
+    \caption{Placeholder for a UI walkthrough screenshot loaded from \texttt{report/figures/}.}
+\end{figure}
+
+\end{document}
