@@ -101,12 +101,14 @@ def test_user_response_defaults_pending_teacher_to_false_and_serializes():
     )
 
     assert response.pending_teacher is False
+    assert response.role_stale is False
     assert response.model_dump() == {
         "id": "user-1",
         "email": "student@example.com",
         "name": "Test Student",
         "role": "student",
         "pending_teacher": False,
+        "role_stale": False,
     }
 
 
