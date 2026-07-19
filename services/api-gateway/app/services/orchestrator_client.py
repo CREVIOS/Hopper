@@ -97,7 +97,8 @@ class OrchestratorClient:
     async def create_pod(
         self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
         pod_id: str = "", workspace_pvc_name: str = "", workspace_capacity_gb: int = 0,
-        storage_class: str = "", network_group: str = "",
+        storage_class: str = "", authorized_keys: list[str] | None = None,
+        network_group: str = "",
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -122,6 +123,9 @@ class OrchestratorClient:
             workspace_pvc_name=workspace_pvc_name,
             workspace_capacity_gb=workspace_capacity_gb,
             storage_class=storage_class,
+            # OpenSSH public keys the user registered — the orchestrator writes
+            # them to /root/.ssh/authorized_keys so key-based SSH works.
+            authorized_keys=authorized_keys or [],
             labels=labels,
         )
         resp = await stub.CreatePod(req, timeout=30)

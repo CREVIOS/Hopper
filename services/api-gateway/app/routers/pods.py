@@ -25,6 +25,7 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import CreatePodRequest, PodResponse
 from app.schemas.user import TokenPayload
@@ -148,6 +149,14 @@ async def _provision_pod(
     On failure the session is marked ``failed`` rather than raising, matching the
     original launch behaviour (the caller returns the session either way).
     """
+    # The user's registered SSH public keys, injected into the VM's
+    # /root/.ssh/authorized_keys so key-based SSH works (the key CRUD previously
+    # stored keys that never reached the VM). Public keys are not secret.
+    keys_result = await db.execute(
+        select(SSHKey.public_key).where(SSHKey.user_id == session.user_id)
+    )
+    authorized_keys = list(keys_result.scalars().all())
+
     # The per-user workspace (FR-HC-28). get_or_create is idempotent, so a resume
     # resolves the SAME PVC the stopped VM was using and the files come back.
     workspace = await workspace_service.get_or_create_workspace(
@@ -164,6 +173,7 @@ async def _provision_pod(
             workspace_pvc_name=workspace.pvc_name,
             workspace_capacity_gb=workspace.capacity_gb,
             storage_class=workspace.storage_class or "",
+            authorized_keys=authorized_keys,
             network_group=network_group or "",
         )
         session.state = resp.state
