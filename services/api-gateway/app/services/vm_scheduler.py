@@ -23,6 +23,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -218,6 +219,10 @@ async def _reserve_pod_session(
             id=pod_id, user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
             namespace=_NAMESPACE, pod_name=f"vm-{pod_id[:8]}", state="pending",
             network_group=network_group,
+            # Stamp the session TTL now so both the sync fast-path and queued
+            # (overflow) VMs are reaped like any other launch; a reserved row
+            # would otherwise have no expiry (FR-HC-27).
+            expires_at=datetime.utcnow() + timedelta(hours=settings.session_ttl_hours),
         )
     )
     await db.flush()

@@ -9,6 +9,9 @@ class PodState(str, Enum):
     CREATING = "creating"
     RUNNING = "running"
     STOPPING = "stopping"
+    # Stopped-but-resumable (FR-HC-28): the K8s pod is gone but the session row
+    # and the per-user /workspace PVC survive, so resume rebuilds the VM.
+    STOPPED = "stopped"
     TERMINATED = "terminated"
     FAILED = "failed"
 
@@ -82,6 +85,8 @@ class PodResponse(BaseModel):
     vscode_port: int | None = None
     ssh_password: str | None = None
     network_group: str | None = None
+    # 1-hour TTL extensions spent on this session (FR-HC-27).
+    extension_count: int = 0
     created_at: datetime
     updated_at: datetime
 

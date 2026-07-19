@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -10,12 +10,15 @@ from app.routers.pods import (
     cancel_queue_entry,
     _session_to_response,
     create_pod,
+    extend_pod,
     get_availability,
     get_pod,
     list_queue,
     list_plans,
     list_pods,
     list_templates,
+    resume_pod,
+    stop_pod,
     terminate_pod,
     stream_metrics,
     vscode_proxy,
@@ -1039,3 +1042,135 @@ async def test_safe_send_ignores_runtime_error():
             raise RuntimeError("closed")
 
     await _safe_send(FakeWebSocket(), "hello")
+
+
+# --- Stop / Resume / Extend lifecycle (FR-HC-27 + durability) ----------------
+
+
+def _async(value):
+    async def _coro():
+        return value
+
+    return _coro()
+
+
+def _running_session(state="running", started_at=None, expires_at=None, extension_count=0):
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    return PodSession(
+        id="pod-1",
+        user_id="user-1",
+        plan="small",
+        image="hopper/vm-ubuntu:22.04",
+        cpu="1",
+        memory="2Gi",
+        namespace="hopper",
+        pod_name="vm-pod-1",
+        state=state,
+        started_at=started_at or now,
+        expires_at=expires_at if expires_at is not None else datetime(2026, 1, 1, 16, 0, 0),
+        extension_count=extension_count,
+    )
+
+
+def _stub_plan_rate(monkeypatch, rate=1.0):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.routers.pods.plan_service.get_plan",
+        lambda db, name, **kw: _async(SimpleNamespace(credits_per_hour=rate)),
+    )
+
+
+async def test_extend_pod_extends_running_session(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    _stub_plan_rate(monkeypatch, rate=1.0)
+    session = _running_session()
+    db = FakeDB(execute_results=[session])
+
+    result = await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert session.extension_count == 1
+    assert result["extensions_remaining"] == 2
+    assert session.expires_at == datetime(2026, 1, 1, 17, 0, 0)  # was 16:00, +1h
+
+
+async def test_extend_pod_rejects_after_max_extensions():
+    session = _running_session(extension_count=3)
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "extension_limit_reached"
+
+
+async def test_extend_pod_rejects_past_wall_clock_cap():
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    # started 8h ago -> wall-clock cap is now; current expiry at the cap -> +1h exceeds it.
+    session = _running_session(started_at=now - timedelta(hours=8), expires_at=now, extension_count=1)
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "ttl_cap_reached"
+
+
+async def test_extend_pod_rejects_insufficient_credits(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(0.0))
+    _stub_plan_rate(monkeypatch, rate=1.0)
+    session = _running_session()
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 402
+
+
+async def test_extend_pod_rejects_when_not_running():
+    session = _running_session(state="terminated")
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await extend_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 400
+
+
+async def test_stop_pod_rejects_non_running():
+    session = _running_session(state="stopped")
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await stop_pod("pod-1", current_user=_payload(), db=db)
+
+    assert exc.value.status_code == 400
+
+
+async def test_resume_pod_rejects_non_stopped():
+    session = _running_session(state="running")
+    db = FakeDB(execute_results=[session])
+
+    with pytest.raises(HTTPException) as exc:
+        await resume_pod.__wrapped__(
+            request=None, response=None, pod_id="pod-1", current_user=_payload(), db=db
+        )
+
+    assert exc.value.status_code == 400
+
+
+async def test_resume_pod_enforces_concurrent_quota(monkeypatch):
+    monkeypatch.setattr("app.routers.pods.get_balance", lambda db, uid: _async(100.0))
+    session = _running_session(state="stopped")
+    # session lookup, then the active-VMs list at the concurrent quota (default 3).
+    db = FakeDB(execute_results=[session, [object(), object(), object()]])
+
+    with pytest.raises(HTTPException) as exc:
+        await resume_pod.__wrapped__(
+            request=None, response=None, pod_id="pod-1", current_user=_payload(), db=db
+        )
+
+    assert exc.value.status_code == 429

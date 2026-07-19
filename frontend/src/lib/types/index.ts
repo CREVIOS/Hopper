@@ -3,6 +3,7 @@ export type PodState =
   | 'creating'
   | 'running'
   | 'stopping'
+  | 'stopped'
   | 'terminated'
   | 'failed';
 

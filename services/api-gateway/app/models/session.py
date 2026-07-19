@@ -35,4 +35,7 @@ class PodSession(Base):
     # each other over the pod network; NULL = fully isolated (the default).
     network_group: Mapped[str | None] = mapped_column(String(32), nullable=True)
     credits_charged: Mapped[float] = mapped_column(Numeric(12, 4), default=0)
+    # Number of 1-hour TTL extensions the user has spent on this session
+    # (FR-HC-27). Capped at SESSION_MAX_EXTENSIONS; reset to 0 on resume.
+    extension_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
