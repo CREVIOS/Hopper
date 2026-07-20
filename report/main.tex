@@ -1545,14 +1545,14 @@ cd services/orchestrator && go mod download && cd ../..
 
   \item \textbf{Start application services} (three terminals):
 \begin{lstlisting}
-# Terminal 1 — Frontend (http://127.0.0.1:5173)
+# Terminal 1 - Frontend (http://127.0.0.1:5173)
 cd frontend && pnpm dev
 
-# Terminal 2 — API Gateway (http://127.0.0.1:8000)
+# Terminal 2 - API Gateway (http://127.0.0.1:8000)
 cd services/api-gateway
 poetry run uvicorn app.main:app --reload --port 8000
 
-# Terminal 3 — Orchestrator (gRPC :50051)
+# Terminal 3 - Orchestrator (gRPC :50051)
 cd services/orchestrator && go run ./cmd/orchestrator/
 \end{lstlisting}
 

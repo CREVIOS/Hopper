@@ -1,89 +1,159 @@
 % Figure 2 — Main request and data flow
-% Layout: four columns (UI | Frontend | API | Backend) × three rows
-% Legend beneath the diagram explains numbered edge labels.
+% Layout (3 rows × 4 columns, all positions in cm):
+%
+%   Row 0  y= 0.0 : Browser(0) | SvelteKit(4) | API Gateway(8) | Orchestrator(12.5)
+%   Row 1  y=-3.0 :             |               | PostgreSQL(8)  | NATS(12.5)
+%   Row 2  y=-6.0 :             |               |                | Kubernetes(12.5)
+%
+% Strict separation rules:
+%   • API  south  (x=8.0)   → only arrow 5 (API→DB), shifted slightly left
+%   • API  south  (x=8.0)   → arrow 10 (SSH) exits below DB on a far-left rail
+%   • Orch south east (x=12.5) split: arrow 6 exits east side → NATS south,
+%                                     arrow 9 exits south → K8s north
+%   • SSE (11) and WS (12) return paths run above row 0 so nothing crosses boxes
 \begin{tikzpicture}[
     font=\small,
     >=Latex,
-    box/.style ={draw, rounded corners=4pt, align=center,
-                 minimum width=30mm, minimum height=10mm, fill=blue!6},
+    box/.style={draw, rounded corners=4pt, align=center,
+                minimum width=28mm, minimum height=10mm, fill=blue!7},
     data/.style={draw, rounded corners=4pt, align=center,
-                 minimum width=30mm, minimum height=10mm, fill=green!8},
-    arr/.style ={->, thick},
-    labl/.style={font=\scriptsize, inner sep=1pt,
-                 fill=white, rounded corners=2pt}
+                 minimum width=28mm, minimum height=10mm, fill=green!9},
+    arr/.style={->, thick},
+    das/.style={->, thick, dashed},
+    lbl/.style={font=\scriptsize, inner sep=1.5pt,
+                fill=white, rounded corners=2pt},
+    % Single-digit step marker: circle sized for one character
+    stepS/.style={circle, draw, thick, fill=white,
+                  font=\scriptsize\bfseries,
+                  inner sep=1.2pt, minimum size=13pt},
+    % Double-digit step marker: slightly wider circle sized for two characters
+    stepD/.style={circle, draw, thick, fill=white,
+                  font=\tiny\bfseries,
+                  inner sep=0.8pt, minimum size=15pt},
 ]
 
-%% ── Column positions ────────────────────────────────────────────────────────
-% col 0  (x=0)    : Browser / UI layer
-% col 1  (x=4.0)  : Frontend (SvelteKit)
-% col 2  (x=8.0)  : API Gateway
-% col 3  (x=12.0) : Backend services
+%% ── Convenience command: inline circle node on an arrow ─────────────────────
+%% Usage:  \stepnode{style}{number}
+%% Drop one of these with node[stepS]{1} or node[stepD]{10} in draw paths.
 
-%% ── Nodes ───────────────────────────────────────────────────────────────────
-\node[box]  (ui)    at ( 0,   0) {Browser UI};
-\node[box]  (fe)    at ( 4.0, 0) {SvelteKit\\frontend};
-\node[box]  (api)   at ( 8.0, 0) {API Gateway\\FastAPI};
+%% ── Node placement ──────────────────────────────────────────────────────────
+\node[box]  (ui)   at ( 0.0,  0.0) {Browser\\UI};
+\node[box]  (fe)   at ( 4.0,  0.0) {SvelteKit\\frontend};
+\node[box]  (api)  at ( 8.0,  0.0) {API Gateway\\FastAPI};
+\node[data] (orch) at (12.5,  0.0) {Orchestrator\\Go/gRPC};
+\node[data] (db)   at ( 8.0, -3.0) {PostgreSQL\\pod\_sessions, ledger};
+\node[data] (nats) at (12.5, -3.0) {NATS\\JetStream};
+\node[data] (k8s)  at (12.5, -6.0) {Kubernetes\\VM Pods};
 
-\node[data] (orch)  at (12.0, 0)  {Orchestrator\\Go/gRPC};
-\node[data] (db)    at ( 8.0,-3.0){PostgreSQL\\pod\_sessions, ledger};
-\node[data] (nats)  at (12.0,-3.0){NATS\\subjects};
-\node[data] (k8s)   at (12.0,-6.0){Kubernetes\\VM Pods};
+%% ── Arrow 1 : Browser → SvelteKit (page load / user actions) ───────────────
+\draw[arr] (ui.east)
+    -- node[stepS, above] {1}
+    (fe.west);
 
-%% ── Horizontal arrows (UI ↔ FE ↔ API ↔ Orch) ────────────────────────────────
-\draw[arr] (ui)  -- node[labl, above] {\textcircled{1}} (fe);
-\draw[arr] (fe)  -- node[labl, above] {\textcircled{2}} (api);
-\draw[arr] (api) -- node[labl, above] {\textcircled{3}} (orch);
+%% ── Arrow 2 : SvelteKit → API Gateway (/api/* through ingress) ─────────────
+\draw[arr] (fe.east)
+    -- node[stepS, above] {2}
+    (api.west);
 
-%% ── Response path (right to left, offset below) ─────────────────────────────
-\draw[arr] (fe.south) ++(-0mm,0) -- ++(0,-0.6)
-    -- node[labl, below] {\textcircled{4}} ($(api.south) + (0,-0.6)$)
-    -- (api.south);
+%% ── Arrow 3 : API Gateway → Orchestrator (gRPC) ────────────────────────────
+\draw[arr] (api.east)
+    -- node[stepS, above] {3}
+    (orch.west);
 
-%% ── API → DB ─────────────────────────────────────────────────────────────────
-\draw[arr] (api.south) -- node[labl, right] {\textcircled{5}} (db.north);
+%% ── Arrow 4 : Response 201/202 (Orchestrator → API → SvelteKit → Browser)
+%%    Routed BELOW row 0 as a separate return rail (y = -1.2) ─────────────────
+\coordinate (ret1) at (12.5, -1.2);
+\coordinate (ret2) at ( 4.0, -1.2);
+\draw[arr]
+    (orch.south) -- (ret1)
+    -- node[stepS, below] {4}
+    (ret2) -- (fe.south);
 
-%% ── Orch → NATS ──────────────────────────────────────────────────────────────
-\draw[arr] (orch.south) -- node[labl, right] {\textcircled{6}} (nats.north);
+%% ── Arrow 5 : API → PostgreSQL (session & ledger read/write) ────────────────
+%%    Exit from api.south west anchor to avoid collision with arrow 3/10
+\draw[arr]
+    (api.south west)
+    ++(0.25, 0)
+    -- node[stepS, right] {5}
+    (db.north west |- api.south west)
+    -- (db.north west);
 
-%% ── NATS → API (consumers) ───────────────────────────────────────────────────
-\draw[arr] (nats.west) -- node[labl, below] {\textcircled{7}} (db.east);
-\draw[arr] (nats.north) to[out=90, in=0]
-    node[labl, right, pos=0.5] {\textcircled{8}} (api.east);
+%% ── Arrow 6 : Orchestrator → NATS (publish lifecycle + metrics events) ──────
+\draw[arr]
+    (orch.south)
+    -- node[stepS, right] {6}
+    (nats.north);
 
-%% ── Orch → K8s ───────────────────────────────────────────────────────────────
-\draw[arr] (orch.south) to[out=270, in=0]
-    node[labl, right, pos=0.6] {\textcircled{9}} (k8s.east);
+%% ── Arrow 7 : NATS → PostgreSQL (billing consumer writes credit entries) ────
+\draw[arr]
+    (nats.west)
+    -- node[stepS, above] {7}
+    (db.east);
 
-%% ── API ↔ K8s (SSH / proxy) ──────────────────────────────────────────────────
-\draw[arr] (api.south) to[out=270, in=90]
-    node[labl, left, pos=0.45] {\textcircled{10}} (k8s.north west);
+%% ── Arrow 8 : NATS consumers → API Gateway (billing + metrics fan-out) ──────
+%%    Route: NATS north → bend left of orch → API east anchor offset up
+\draw[arr]
+    (nats.north west)
+    to[out=140, in=-40]
+    node[stepS, above, pos=0.45] {8}
+    (api.south east);
 
-%% ── SSE back to UI ───────────────────────────────────────────────────────────
-\draw[arr, dashed] (api.west) to[out=180, in=270]
-    node[labl, below, pos=0.5] {\textcircled{11}} (ui.south);
+%% ── Arrow 9 : Orchestrator → Kubernetes (pod create / watch / terminate) ────
+\draw[arr]
+    (nats.south)
+    -- node[stepS, right] {9}
+    (k8s.north);
 
-%% ── WebSocket UI → API ───────────────────────────────────────────────────────
-\draw[arr, dashed] (ui.south east) to[out=315, in=225]
-    node[labl, below, pos=0.5] {\textcircled{12}} (api.south west);
+%% ── Arrow 10 : API → Kubernetes (SSH bridge / HTTP proxy) ───────────────────
+%%    Route down a far-left rail (x = 5.6) to stay clear of db and nats boxes
+\coordinate (sshA) at (5.6,  0.0);
+\coordinate (sshB) at (5.6, -6.0);
+\draw[arr]
+    (api.south west)
+    to[out=200, in=90]
+    (sshA)
+    -- (sshB)
+    to[out=270, in=180]
+    node[stepD, below, pos=0.7] {10}
+    (k8s.west);
 
-%% ── Legend ───────────────────────────────────────────────────────────────────
-\node[draw, rounded corners=3pt, fill=gray!5,
-      align=left, font=\scriptsize, inner sep=4pt,
-      text width=125mm]
-  at (6.0, -8.6) {
-  \textbf{Arrow legend:}\\[2pt]
-  \textcircled{1} Page load / user actions \quad
-  \textcircled{2} /api/* through ingress \quad
-  \textcircled{3} gRPC: CreatePod / TerminatePod / ListNodes \\[1pt]
-  \textcircled{4} 201 pod or 202 queued response \quad
-  \textcircled{5} Read / write session \& ledger state \quad
-  \textcircled{6} Publish lifecycle + metrics events \\[1pt]
-  \textcircled{7} Billing consumer writes credit entries \quad
-  \textcircled{8} Billing + metrics consumers fan-out to API \quad
-  \textcircled{9} Pod create / watch / terminate \\[1pt]
-  \textcircled{10} SSH bridge / HTTP proxy \quad
-  \textcircled{11} SSE: /notifications, /pods/\{id\}/metrics (dashed = push) \quad
-  \textcircled{12} Terminal / VS Code WebSocket (dashed = push)
-};
+%% ── Arrow 11 : SSE push (API → Browser) — dashed ────────────────────────────
+%%    Travels ABOVE row 0 (y = +1.5) so it clears all top box edges
+\coordinate (sse1) at ( 8.0,  1.5);
+\coordinate (sse2) at ( 0.0,  1.5);
+\draw[das]
+    (api.north)  -- (sse1)
+    -- node[stepD, above] {11}
+    (sse2) -- (ui.north);
+
+%% ── Arrow 12 : WebSocket (Browser → API) — dashed ───────────────────────────
+%%    Travels above row 0 slightly lower (y = +2.2) so it doesn't merge with 11
+\coordinate (ws1) at ( 0.0,  2.2);
+\coordinate (ws2) at ( 8.0,  2.2);
+\draw[das]
+    (ui.north)  -- (ws1)
+    -- node[stepD, above] {12}
+    (ws2) -- (api.north);
+
+%% ── Compact 2-column legend ─────────────────────────────────────────────────
+\node[anchor=north west, inner sep=0pt]
+  at (-0.2, -7.0) {%
+    \renewcommand{\arraystretch}{1.15}%
+    \scriptsize
+    \begin{tabular}{@{}r@{~}l@{\hspace{6mm}}r@{~}l@{}}
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{1}; & Page load / user actions
+        & \tikz[baseline=-2pt]\node[stepS,scale=0.72]{7}; & Billing consumer writes credit entries \\
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{2}; & \texttt{/api/*} through ingress
+        & \tikz[baseline=-2pt]\node[stepS,scale=0.72]{8}; & Billing + metrics consumers fan-out to API \\
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{3}; & gRPC: CreatePod / TerminatePod / ListNodes
+        & \tikz[baseline=-2pt]\node[stepS,scale=0.72]{9}; & Pod create / watch / terminate \\
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{4}; & 201 pod or 202 queued response
+        & \tikz[baseline=-2pt]\node[stepD,scale=0.72]{10}; & SSH bridge / HTTP proxy \\
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{5}; & Read/write session \& ledger state
+        & \tikz[baseline=-2pt]\node[stepD,scale=0.72]{11}; & SSE: metrics + notifications \emph{(dashed)} \\
+      \tikz[baseline=-2pt]\node[stepS,scale=0.72]{6}; & Publish lifecycle + metrics events
+        & \tikz[baseline=-2pt]\node[stepD,scale=0.72]{12}; & Terminal / VS Code WebSocket \emph{(dashed)} \\
+    \end{tabular}%
+  };
 
 \end{tikzpicture}

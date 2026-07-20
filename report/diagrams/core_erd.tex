@@ -1,26 +1,188 @@
 \begin{tikzpicture}[
     font=\scriptsize,
     >=Latex,
-    node distance=7mm and 9mm,
-    entity/.style={draw, rounded corners, align=left, fill=yellow!8, text width=42mm, inner sep=3mm},
-    rel/.style={->, thick},
-    apprel/.style={->, thick, dashed}
+    entity/.style={
+        draw,
+        rounded corners=3pt,
+        align=left,
+        fill=yellow!8,
+        inner sep=2.5mm
+    },
+    rel/.style={
+        ->,
+        thick,
+        rounded corners=4pt
+    },
+    apprel/.style={
+        ->,
+        thick,
+        dashed,
+        rounded corners=4pt
+    },
+    edgeLabel/.style={
+        font=\tiny,
+        fill=white,
+        inner sep=1.5pt,
+        align=center
+    }
 ]
-\node[entity] (users) {\textbf{users}\\PK id\\UNIQUE email\\name, role, pending\_teacher\\university\_id, timestamps};
-\node[entity, right=of users] (sessions) {\textbf{pod\_sessions}\\PK id\\INDEX user\_id\\plan, image, cpu, memory\\namespace, pod\_name\\ssh\_port, vscode\_port\\network\_group, state\\credits\_charged, grace\_expires\_at};
-\node[entity, below=of users] (accounts) {\textbf{accounts}\\PK id\\name, type\\owner\_id, owner\_type};
-\node[entity, right=of accounts] (transfers) {\textbf{transfers}\\PK id\\type, metadata\\event\_at};
-\node[entity, right=of transfers] (entries) {\textbf{ledger\_entries}\\PK id\\FK transfer\_id -> transfers.id\\FK account\_id -> accounts.id\\amount, direction\\previous\_balance, current\_balance\\INDEX account\_id, transfer\_id};
-\node[entity, below=of sessions] (queue) {\textbf{vm\_queue\_entries}\\PK id\\INDEX user\_id\\UNIQUE seq\\state, template, image\\cpu, memory, network\_group\\FK pod\_session\_id -> pod\_sessions.id\\PARTIAL INDEX queued seq};
-\node[entity, below=of transfers] (metrics) {\textbf{metrics\_samples}\\PK (time, pod\_id)\\INDEX user\_id\\cpu\_percent\\memory\_used\_bytes\\memory\_limit\_bytes};
-\node[entity, below=of entries] (notifications) {\textbf{notifications}\\PK id\\INDEX (user\_id, created\_at)\\type, title, body, data\\read, created\_at};
 
-\draw[apprel] (users) -- node[above, sloped] {app-level user\_id link} (sessions);
-\draw[apprel] (users) -- node[left] {owner\_id / user\_id} (accounts);
-\draw[apprel] (users) -- node[above, sloped] {user\_id} (queue);
-\draw[apprel] (users) -- node[left] {user\_id} (notifications);
-\draw[apprel] (users) -- node[above, sloped] {user\_id} (metrics);
-\draw[rel] (transfers) -- (entries);
-\draw[rel] (accounts) -- (entries);
-\draw[rel] (queue) -- (sessions);
+% Left column
+\node[entity, text width=38mm] (users) at (0,0) {
+    \textbf{users}\\
+    PK id\\
+    UNIQUE email\\
+    name, role, pending\_teacher\\
+    university\_id, timestamps
+};
+
+\node[entity, text width=38mm] (accounts) at (0,-4.2) {
+    \textbf{accounts}\\
+    PK id\\
+    name, type\\
+    owner\_id, owner\_type
+};
+
+% Centre column
+\node[entity, text width=46mm] (sessions) at (5.6,0) {
+    \textbf{pod\_sessions}\\
+    PK id\\
+    INDEX user\_id\\
+    plan, image, cpu, memory\\
+    namespace, pod\_name\\
+    ssh\_port, vscode\_port\\
+    network\_group, state\\
+    credits\_charged, grace\_expires\_at
+};
+
+\node[entity, text width=46mm] (queue) at (5.6,-4.9) {
+    \textbf{vm\_queue\_entries}\\
+    PK id\\
+    INDEX user\_id\\
+    UNIQUE seq\\
+    state, template, image\\
+    cpu, memory, network\_group\\
+    FK pod\_session\_id $\rightarrow$ pod\_sessions.id\\
+    PARTIAL INDEX queued seq
+};
+
+\node[entity, text width=46mm] (metrics) at (5.6,-9.3) {
+    \textbf{metrics\_samples}\\
+    PK (time, pod\_id)\\
+    INDEX user\_id\\
+    cpu\_percent\\
+    memory\_used\_bytes\\
+    memory\_limit\_bytes
+};
+
+% Right column
+\node[entity, text width=42mm] (transfers) at (11.4,0) {
+    \textbf{transfers}\\
+    PK id\\
+    type, metadata\\
+    event\_at
+};
+
+\node[entity, text width=45mm] (entries) at (11.4,-4.8) {
+    \textbf{ledger\_entries}\\
+    PK id\\
+    FK transfer\_id $\rightarrow$ transfers.id\\
+    FK account\_id $\rightarrow$ accounts.id\\
+    amount, direction\\
+    previous\_balance, current\_balance\\
+    INDEX account\_id, transfer\_id
+};
+
+\node[entity, text width=45mm] (notifications) at (11.4,-9.3) {
+    \textbf{notifications}\\
+    PK id\\
+    INDEX (user\_id, created\_at)\\
+    type, title, body, data\\
+    read, created\_at
+};
+
+% Direct relationships
+\draw[apprel]
+    (users.east)
+    --
+    node[edgeLabel, above] {app-level \texttt{user\_id}}
+    (sessions.west);
+
+\draw[apprel]
+    (users.south)
+    --
+    node[edgeLabel, left] {\texttt{owner\_id / user\_id}}
+    (accounts.north);
+
+\draw[rel]
+    (queue.north)
+    --
+    node[edgeLabel, right] {\texttt{pod\_session\_id}}
+    (sessions.south);
+
+\draw[rel]
+    (transfers.south)
+    --
+    node[edgeLabel, right] {\texttt{transfer\_id}}
+    (entries.north);
+
+% Users to queue, routed through the empty middle gap
+\coordinate (userQueueA) at (2.5,-2.2);
+\coordinate (userQueueB) at (4.4,-2.2);
+
+\draw[apprel]
+    (users.south east)
+    --
+    (userQueueA)
+    --
+    node[edgeLabel, above] {\texttt{user\_id}}
+    (userQueueB)
+    --
+    (queue.north west);
+
+% Accounts to ledger entries, routed below the middle row
+\coordinate (accountEntryA) at (0,-7.3);
+\coordinate (accountEntryB) at (11.4,-7.3);
+
+\draw[rel]
+    (accounts.south)
+    --
+    (accountEntryA)
+    --
+    node[edgeLabel, below] {\texttt{account\_id}}
+    (accountEntryB)
+    --
+    (entries.south);
+
+% Users to metrics, routed outside the left edge
+\coordinate (metricsRouteA) at (-2.7,0);
+\coordinate (metricsRouteB) at (-2.7,-9.3);
+
+\draw[apprel]
+    (users.west)
+    --
+    (metricsRouteA)
+    --
+    node[edgeLabel, left] {\texttt{user\_id}}
+    (metricsRouteB)
+    --
+    (metrics.west);
+
+% Users to notifications, routed outside the top and right edges
+\coordinate (notifyRouteA) at (0,1.5);
+\coordinate (notifyRouteB) at (14.2,1.5);
+\coordinate (notifyRouteC) at (14.2,-9.3);
+
+\draw[apprel]
+    (users.north)
+    --
+    (notifyRouteA)
+    --
+    node[edgeLabel, above] {\texttt{user\_id}}
+    (notifyRouteB)
+    --
+    (notifyRouteC)
+    --
+    (notifications.east);
+
 \end{tikzpicture}

@@ -1,30 +1,125 @@
 \begin{tikzpicture}[
-    font=\small,
+    font=\footnotesize,
     >=Latex,
-    node distance=8mm and 9mm,
-    box/.style={draw, rounded corners, align=center, minimum width=28mm, minimum height=8mm, fill=cyan!6},
-    store/.style={draw, rounded corners, align=center, minimum width=28mm, minimum height=8mm, fill=purple!6},
-    flow/.style={->, thick}
+    box/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        minimum height=10mm,
+        text width=34mm,
+        inner sep=2.5mm,
+        fill=cyan!6
+    },
+    store/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        minimum height=10mm,
+        text width=38mm,
+        inner sep=2.5mm,
+        fill=purple!6
+    },
+    flow/.style={
+        ->,
+        thick,
+        rounded corners=4pt
+    },
+    lab/.style={
+        font=\scriptsize,
+        fill=white,
+        inner sep=1.2pt,
+        align=center
+    }
 ]
-\node[box] (layout) {+\texttt{layout.server.ts}\\SSR auth + balance};
-\node[store, right=of layout] (client) {\texttt{api/client.ts}\\401 refresh retry};
-\node[box, right=of client] (gateway) {API Gateway};
-\node[store, below=of layout] (notifstore) {\texttt{notifications.ts}\\Svelte writable stores};
-\node[box, right=of notifstore] (notifstream) {GET /notifications/stream\\EventSource};
-\node[box, below=of notifstore] (podpage) {pod detail page\\EventSource + WebSocket};
-\node[box, right=of podpage] (podstream) {GET /pods/\{id\}/metrics\\WS /pods/\{id\}/terminal};
-\node[box, below right=of gateway] (nats) {NATS + metrics consumer};
-\node[box, above right=of gateway] (k8s) {port-forward / SSH\\code-server proxy};
 
-\draw[flow] (layout) -- node[above, font=\scriptsize] {server fetch + cookie forward} (gateway);
-\draw[flow] (client) -- node[above, font=\scriptsize] {browser fetch /auth/refresh} (gateway);
-\draw[flow] (notifstore) -- node[above, font=\scriptsize] {initial list + unread count} (gateway);
-\draw[flow] (notifstore) -- (notifstream);
-\draw[flow] (notifstream) -- (gateway);
-\draw[flow] (podpage) -- (podstream);
-\draw[flow] (podstream) -- (gateway);
-\draw[flow] (nats) -- node[right, font=\scriptsize] {metrics.* + notify.user.*} (gateway);
-\draw[flow] (gateway) -- node[right, font=\scriptsize] {proxy / bridge} (k8s);
-\draw[flow] (gateway) to[bend left=18] node[below, font=\scriptsize] {SSE updates} (notifstore);
-\draw[flow] (gateway) to[bend right=18] node[below, font=\scriptsize] {live metrics / terminal bytes} (podpage);
+% Nodes
+\node[store] (layout) at (0,0) {+\texttt{layout.server.ts}\\SSR auth + balance};
+\node[store] (client) at (5.7,0) {\texttt{api/client.ts}\\401 refresh retry};
+\node[box]   (gateway) at (11.6,0) {API Gateway};
+
+\node[store] (notifstore) at (0,-3.6) {\texttt{notifications.ts}\\Svelte writable stores};
+\node[box]   (notifstream) at (5.7,-3.6) {GET /notifications/stream\\EventSource};
+
+\node[box]   (podpage) at (0,-7.2) {pod detail page\\EventSource + WebSocket};
+\node[box]   (podstream) at (5.7,-7.2) {GET /pods/\{id\}/metrics\\WS /pods/\{id\}/terminal};
+
+\node[box]   (k8s) at (17.4,2.0) {port-forward / SSH\\code-server proxy};
+\node[box]   (nats) at (17.4,-3.6) {NATS + metrics consumer};
+
+% Top request lane: layout -> gateway
+\coordinate (L1a) at ($(layout.north)+(0,0.9)$);
+\coordinate (L1b) at ($(gateway.north)+(0,0.9)$);
+\draw[flow]
+    (layout.north) -- (L1a)
+    -- node[lab, above] {server fetch +\\cookie forward}
+    (L1b) -- (gateway.north);
+
+% Direct browser client -> gateway
+\draw[flow]
+    (client.east) -- node[lab, above] {browser fetch /\\auth/refresh} (gateway.west);
+
+% Notification store -> stream endpoint
+\draw[flow]
+    (notifstore.east) -- node[lab, above] {open stream} (notifstream.west);
+
+% Notification store -> gateway (initial list)
+\coordinate (N1a) at ($(notifstore.north)+(0,0.9)$);
+\coordinate (N1b) at ($(gateway.west)+(-1.0,-1.3)$);
+\draw[flow]
+    (notifstore.north) -- (N1a)
+    -- node[lab, above] {initial list +\\unread count}
+    (N1b) -- (gateway.west);
+
+% Stream endpoint -> gateway
+\coordinate (N2a) at ($(notifstream.east)+(0.8,0)$);
+\coordinate (N2b) at ($(gateway.south)+(0,-1.0)$);
+\draw[flow]
+    (notifstream.east) -- (N2a)
+    -- node[lab, right] {SSE endpoint}
+    (N2b) -- (gateway.south);
+
+% Pod page -> pod stream endpoint
+\draw[flow]
+    (podpage.east) -- node[lab, above] {open stream /\\terminal session} (podstream.west);
+
+% Pod stream endpoint -> gateway
+\coordinate (P1a) at ($(podstream.east)+(0.8,0)$);
+\coordinate (P1b) at ($(gateway.south)+(0,-2.4)$);
+\draw[flow]
+    (podstream.east) -- (P1a)
+    -- node[lab, right] {metrics + terminal\\proxy requests}
+    (P1b) -- (gateway.south);
+
+% NATS -> gateway
+\coordinate (R1a) at ($(nats.west)+(-1.2,0)$);
+\coordinate (R1b) at ($(gateway.east)+(1.0,-1.0)$);
+\draw[flow]
+    (nats.west) -- (R1a)
+    -- node[lab, above] {metrics.* +\\notify.user.*}
+    (R1b) -- (gateway.east);
+
+% Gateway -> k8s proxy
+\coordinate (K1a) at ($(gateway.east)+(1.0,0.9)$);
+\coordinate (K1b) at ($(k8s.west)+(-1.0,0)$);
+\draw[flow]
+    (gateway.east) -- (K1a)
+    -- node[lab, above] {proxy / bridge}
+    (K1b) -- (k8s.west);
+
+% Gateway -> notifstore (SSE updates)
+\coordinate (S1a) at ($(gateway.south)+(0,-1.7)$);
+\coordinate (S1b) at ($(notifstore.east)+(1.0,0)$);
+\draw[flow]
+    (gateway.south) -- (S1a)
+    -- node[lab, below] {SSE updates}
+    ($(S1b |- S1a)$) -- (S1b) -- (notifstore.east);
+
+% Gateway -> podpage (live data back to UI)
+\coordinate (P2a) at ($(gateway.south)+(0,-4.6)$);
+\coordinate (P2b) at ($(podpage.east)+(1.0,0)$);
+\draw[flow]
+    (gateway.south) -- (P2a)
+    -- node[lab, below] {live metrics /\\terminal bytes}
+    ($(P2b |- P2a)$) -- (P2b) -- (podpage.east);
+
 \end{tikzpicture}
