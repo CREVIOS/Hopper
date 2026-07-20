@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     # user_quotas override row. Admins can override per user.
     default_max_concurrent_vms: int = 3
     default_max_workspace_gb: int = 100
+    # Registry/prefix for the VM base images (images/hopper-vm-*). The plan→image
+    # map is built as "{prefix}vm-<template>:22.04". Default "hopper/" keeps the
+    # locally-imported images working on a single node; the deployed cluster sets
+    # HOPPER_VM_IMAGE_PREFIX="ghcr.io/<owner>/hopper-" so every node pulls the
+    # images from GHCR instead of needing a manual `ctr images import`.
+    vm_image_prefix: str = "hopper/"
 
     # Idle auto-shutdown. A VM whose CPU stays below idle_cpu_percent for
     # idle_window_minutes is considered idle: the user is warned and the VM is

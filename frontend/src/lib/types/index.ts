@@ -45,6 +45,10 @@ export interface User {
   role: UserRole;
   // True while a teacher signup awaits admin approval (role stays 'student').
   pending_teacher?: boolean;
+  // True when `role` above comes from an access token that predates a role
+  // change (e.g. this user was just approved as a teacher). The root layout
+  // refreshes the session when it sees this so the new role takes effect.
+  role_stale?: boolean;
 }
 
 export type NotificationType = 'success' | 'warning' | 'error' | 'info';

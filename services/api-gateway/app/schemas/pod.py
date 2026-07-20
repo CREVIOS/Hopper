@@ -3,6 +3,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from app.config import settings
+
 
 class PodState(str, Enum):
     PENDING = "pending"
@@ -33,13 +35,13 @@ VM_PLAN_RESOURCES = {
 
 
 # Frontend sends `template` (a friendly key); backend resolves to the actual
-# container image tag. Keep these in sync with images/hopper-vm-* Dockerfiles
-# and the build target in Makefile (`make vm-images`).
+# container image tag. The reference is "{prefix}vm-<template>:22.04" — prefix
+# defaults to "hopper/" (locally imported images) and is set to a GHCR path in
+# the deployed cluster so every node pulls from the registry. Keep the template
+# keys in sync with the images/hopper-vm-* Dockerfiles.
+_VM_TEMPLATES = ("ubuntu", "python-ml", "cpp", "java")
 VM_TEMPLATE_IMAGES: dict[str, str] = {
-    "ubuntu":    "hopper/vm-ubuntu:22.04",
-    "python-ml": "hopper/vm-python-ml:22.04",
-    "cpp":       "hopper/vm-cpp:22.04",
-    "java":      "hopper/vm-java:22.04",
+    t: f"{settings.vm_image_prefix}vm-{t}:22.04" for t in _VM_TEMPLATES
 }
 DEFAULT_TEMPLATE = "ubuntu"
 
