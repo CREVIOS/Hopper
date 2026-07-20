@@ -880,6 +880,7 @@ Triggered on every push or pull-request targeting \texttt{main}/\texttt{master}.
 A \texttt{concurrency} group cancels in-progress runs on the same ref.
 The workflow contains \textbf{twelve parallel-capable jobs}:
 
+\begin{sloppypar}
 \begin{itemize}[leftmargin=1.5em]
   \item \textbf{frontend} (20\,min timeout) --- installs pnpm 10 / Node 22,
         runs \texttt{frontend-validate} (TypeScript check + ESLint) and
@@ -917,8 +918,9 @@ The workflow contains \textbf{twelve parallel-capable jobs}:
   \item \textbf{docker} (30\,min) --- builds all three service images via
         \texttt{scripts/ci/docker-build.sh} as a smoke check (no push).
 \end{itemize}
+\end{sloppypar}
 
-\medskip
+\begin{sloppypar}
 \noindent\textbf{\texttt{publish.yml} --- Image Publish \& Rollout (CD)}
 
 Triggered on push to \texttt{main}/\texttt{master}, version tags (\texttt{v*}),
@@ -933,14 +935,16 @@ or manual \texttt{workflow\_dispatch}. Two jobs:
   \item \textbf{deploy} --- conditional on \texttt{build-push} succeeding
         and either a manual \texttt{deploy=true} input or the repo variable
         \texttt{AUTO\_DEPLOY\_K8S=true}. SSHes into the VPS using
-        \texttt{VPS\_SSH\_KEY}/\texttt{VPS\allowbreak\_HOST}/\texttt{VPS\allowbreak\_USER}
+        \texttt{VPS\_SSH\_KEY}/\texttt{VPS\_HOST}/\texttt{VPS\_USER}
         secrets, pipes \texttt{scripts/cd/k8s-rollout.sh} over the SSH
         connection. The rollout script calls \texttt{kubectl set image} on
         \texttt{api-gateway}, \texttt{orchestrator}, and \texttt{frontend}
         deployments and waits for each rollout with a configurable timeout
         (default 900\,s).
 \end{itemize}
+\end{sloppypar}
 
+\begin{sloppypar}
 \medskip
 \noindent\textbf{\texttt{test-platform.yml} --- Extended Platform Tests}
 
@@ -952,6 +956,7 @@ run with SvelteKit dev server, FastAPI, and Go orchestrator), \texttt{load-smoke
 \texttt{cross-browser-real-stack-e2e} (opt-in; Chromium + Firefox + WebKit,
 enabled via \texttt{E2E\_CROSS\_BROWSER=true} or
 \texttt{CROSS\_BROWSER\_E2E} repo variable).
+\end{sloppypar}
 
 \medskip
 \noindent\textbf{\texttt{staging-validation.yml} --- Staging QA}
@@ -1011,8 +1016,8 @@ Staging &
 Production &
   \texttt{hopper.farefin.com} / \texttt{values-prod.yaml} &
   Two API Gateway replicas, Let's Encrypt \textbf{prod} issuer, Cilium
-  NetworkPolicies, nightly \texttt{pg\_dump} CronJob (14-day retention on
-  10\,Gi PVC), SMTP relay via socat on node (port 2525). \\
+  NetworkPolicies, nightly \texttt{pg\_dump} CronJob (14-day retention,
+  10\,Gi PVC), SMTP relay via socat (port~2525). \\
 \hline
 \end{tabularx}
 \end{table}
@@ -1036,8 +1041,8 @@ TAG=$(git rev-parse --short HEAD)
 REGISTRY=ghcr.io/crevios ./scripts/ci/docker-build.sh
 \end{lstlisting}
         Images produced: \texttt{hopper-api-gateway:\$TAG},
-        \texttt{hopper-orchestrator:\$TAG}, \texttt{hopper-frontend:\$TAG}.
-        The CI \texttt{publish.yml} workflow sets \texttt{DOCKER\_PUSH=1}
+        \texttt{hopper-orchestrator:\$TAG}, and \texttt{hopper-frontend:\$TAG}.
+        The CI \texttt{publish.yml} workflow sets \texttt{DOCKER\allowbreak\_PUSH=1}
         to push to GHCR automatically.
 
   \item \textbf{Import VM template images} into the k3s containerd runtime
@@ -1473,12 +1478,138 @@ make test-e2e           # Playwright mock-backed E2E
 
 \appendix
 \section{Screenshots / UI Walkthrough}
-\todo{Add annotated screenshots, UI flows, and captions using image files placed under report/figures/.}
-
-\begin{figure}[H]
+% -----------------------------------------------------------------------
+% Helper: uniform screenshot placeholder
+% Usage: \uiscreen{Label}{Description text}
+% -----------------------------------------------------------------------
+\newcommand{\uiscreen}[2]{%
+  \begin{figure}[H]
     \centering
-    \fbox{\rule{0pt}{2in}\rule{0.85\textwidth}{0pt}}
-    \caption{Placeholder for a UI walkthrough screenshot loaded from \texttt{report/figures/}.}
-\end{figure}
+    \begin{tikzpicture}
+      \draw[rounded corners=4pt, fill=gray!8, draw=gray!50, line width=0.8pt]
+        (0,0) rectangle (\textwidth-2pt, 5.5cm);
+      \node[gray!60, font=\sffamily\bfseries\large] at (0.5\textwidth-1pt, 3.8cm) {#1};
+      \node[gray!50, font=\sffamily\small, text width=0.7\textwidth, align=center]
+        at (0.5\textwidth-1pt, 2.5cm) {#2};
+      \node[gray!40, font=\sffamily\footnotesize] at (0.5\textwidth-1pt, 0.6cm)
+        {\textit{Screenshot not yet captured. Place image in \texttt{report/figures/} and replace this block.}};
+    \end{tikzpicture}
+    \caption{#1}
+  \end{figure}%
+}
+
+No UI screenshots have been captured for this submission.
+The figures directory (\texttt{report/figures/}) is reserved for image files.
+Each placeholder below marks the screen that should be captured, its route,
+and the key UI elements it contains.
+When screenshots become available, replace each \texttt{\textbackslash uiscreen}
+block with a standard \texttt{\textbackslash includegraphics} figure.
+
+% -------------------------------------------------------------------
+% 1. Public landing page
+% -------------------------------------------------------------------
+\uiscreen{Screen 1 --- Public Landing Page (\texttt{/})}{%
+  Hero section with Hopper logo, tagline, and ``Get started'' CTA.
+  Navbar: Product, Use Cases, Docs, Pricing, theme toggle.
+  Feature highlights: credit billing, SSH/VSCode access, zero-trust networking.
+  VM plan cards (Small / Medium / Large) with credit rates.
+  FAQ accordion and animated server-rack illustration.}
+
+% -------------------------------------------------------------------
+% 2. Login page
+% -------------------------------------------------------------------
+\uiscreen{Screen 2 --- Login (\texttt{/login})}{%
+  ``Sign in with email'' heading; email and password fields; ``Forgot password?'' link.
+  ``University SSO'' button for Keycloak OIDC flow.
+  Link to signup page. Theme toggle in header.}
+
+% -------------------------------------------------------------------
+% 3. Student dashboard
+% -------------------------------------------------------------------
+\uiscreen{Screen 3 --- Student Dashboard (\texttt{/dashboard})}{%
+  Stat cards: credit balance, active VMs, total usage.
+  Running VMs table with plan badge, status badge, SSH port.
+  Recent credit-transaction history with debit/credit amounts.
+  Usage-trend chart (Donut or sparkline) and credit-allocation section.}
+
+% -------------------------------------------------------------------
+% 4. VM list and launch
+% -------------------------------------------------------------------
+\uiscreen{Screen 4 --- VM List \& Launch (\texttt{/pods})}{%
+  List of the user's VMs with plan, status, SSH port, and action buttons
+  (Open Terminal, Open VSCode, Stop).
+  ``Launch VM'' button opens a confirmation dialog.
+  Plan selector (Small / Medium / Large) with resource and credit-rate details.
+  Availability gauge showing current cluster headroom.}
+
+% -------------------------------------------------------------------
+% 5. VM detail --- Overview tab
+% -------------------------------------------------------------------
+\uiscreen{Screen 5 --- VM Detail: Overview Tab (\texttt{/pods/[id]})}{%
+  VM header: name, plan badge, running/stopped status indicator.
+  Tabs: Overview, Terminal, Files.
+  Overview tab: SSH connection details (host, port, username, copy button),
+  Live Metrics panel (CPU \%, memory \% bars updated via SSE),
+  VM uptime and credit-burn rate.}
+
+% -------------------------------------------------------------------
+% 6. VM detail --- Terminal tab
+% -------------------------------------------------------------------
+\uiscreen{Screen 6 --- VM Detail: Terminal Tab (\texttt{/pods/[id]?tab=terminal})}{%
+  Full-height xterm.js terminal panel connected via WebSocket to the VM.
+  Tab bar showing active terminal sessions; ``New terminal'' button.
+  Terminal resize handles; reconnect status indicator on disconnect.}
+
+% -------------------------------------------------------------------
+% 7. Credits page
+% -------------------------------------------------------------------
+\uiscreen{Screen 7 --- Credits (\texttt{/credits})}{%
+  Credit balance card (large balance display).
+  Transaction history table: timestamp, description, VM ID, amount (debit/credit).
+  Low-balance warning banner when balance is below threshold.
+  For professors: student credit-allocation form (select user, enter amount).}
+
+% -------------------------------------------------------------------
+% 8. Admin console
+% -------------------------------------------------------------------
+\uiscreen{Screen 8 --- Admin Console (\texttt{/admin})}{%
+  Overview tab: stats cards (total users, active VMs, total credits issued).
+  Active VMs table with user, plan, node, uptime columns.
+  Users tab: searchable user table with role badges; role-change dropdown;
+  credit-allocation control.
+  Nodes tab: Kubernetes node inventory with CPU/memory capacity.}
+
+% -------------------------------------------------------------------
+% 9. Teacher console
+% -------------------------------------------------------------------
+\uiscreen{Screen 9 --- Teacher (Professor) Console (\texttt{/teacher})}{%
+  Course-student list with individual credit balances.
+  Bulk credit-allocation form.
+  Student VM activity overview for the professor's course.}
+
+% -------------------------------------------------------------------
+% 10. Queue page
+% -------------------------------------------------------------------
+\uiscreen{Screen 10 --- VM Queue (\texttt{/pods/queue})}{%
+  Queue entry card showing position, requested plan, and estimated wait.
+  Cancel queue entry button.
+  Rendered when all cluster capacity is occupied and the VM request is queued.}
+
+% -------------------------------------------------------------------
+% 11. Settings --- SSH keys
+% -------------------------------------------------------------------
+\uiscreen{Screen 11 --- Settings: SSH Keys (\texttt{/settings/ssh-keys})}{%
+  List of registered SSH public keys with name, fingerprint, and creation date.
+  ``Add SSH key'' form (name + public key textarea).
+  Delete key button with confirmation.}
+
+% -------------------------------------------------------------------
+% 12. Signup / email verification
+% -------------------------------------------------------------------
+\uiscreen{Screen 12 --- Signup \& Email Verification (\texttt{/signup}, \texttt{/verify-email})}{%
+  Signup form: first name, last name, email, password, role selector
+  (Student / Teacher).
+  Password-policy feedback (min 12 chars, upper, lower, digit).
+  Verification-code entry screen after signup; resend code link.}
 
 \end{document}
