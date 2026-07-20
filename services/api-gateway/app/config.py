@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
+    # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
+    # user_quotas override row. Admins can override per user.
+    default_max_concurrent_vms: int = 3
+    default_max_workspace_gb: int = 100
     # Registry/prefix for the VM base images (images/hopper-vm-*). The plan→image
     # map is built as "{prefix}vm-<template>:22.04". Default "hopper/" keeps the
     # locally-imported images working on a single node; the deployed cluster sets

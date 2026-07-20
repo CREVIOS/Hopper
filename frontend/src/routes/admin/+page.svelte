@@ -22,7 +22,8 @@
     CheckCircle2,
     Plus,
     Pencil,
-    Power
+    Power,
+    Gauge
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { onMount, type SvelteComponent } from 'svelte';
@@ -267,6 +268,70 @@
       toast.error('Could not allocate credits', { id, description: msg });
     } finally {
       allocating = false;
+    }
+  }
+
+  // Per-user resource quota dialog (concurrent VMs + workspace GB).
+  let quotaOpen = $state(false);
+  let quotaUser = $state<AdminUser | null>(null);
+  let quotaLoading = $state(false);
+  let quotaSaving = $state(false);
+  let quotaMaxVms = $state<number | string>(3);
+  let quotaMaxGb = $state<number | string>(100);
+  let quotaIsCustom = $state(false);
+
+  async function openQuota(u: AdminUser) {
+    quotaUser = u;
+    quotaOpen = true;
+    quotaLoading = true;
+    try {
+      const q = await api.get<{ max_concurrent_vms: number; max_workspace_gb: number; is_custom: boolean }>(
+        `/admin/users/${u.id}/quota`
+      );
+      quotaMaxVms = q.max_concurrent_vms;
+      quotaMaxGb = q.max_workspace_gb;
+      quotaIsCustom = q.is_custom;
+    } catch (e) {
+      toast.error('Could not load quota', { description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      quotaLoading = false;
+    }
+  }
+
+  async function saveQuota() {
+    if (!quotaUser) return;
+    quotaSaving = true;
+    const tid = toast.loading('Saving quota…');
+    try {
+      await api.put(`/admin/users/${quotaUser.id}/quota`, {
+        max_concurrent_vms: Number(quotaMaxVms),
+        max_workspace_gb: Number(quotaMaxGb)
+      });
+      toast.success('Quota updated', { id: tid });
+      quotaOpen = false;
+    } catch (e) {
+      toast.error('Could not save quota', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      quotaSaving = false;
+    }
+  }
+
+  async function resetQuota() {
+    if (!quotaUser) return;
+    quotaSaving = true;
+    const tid = toast.loading('Resetting to default…');
+    try {
+      const q = await api.delete<{ max_concurrent_vms: number; max_workspace_gb: number; is_custom: boolean }>(
+        `/admin/users/${quotaUser.id}/quota`
+      );
+      quotaMaxVms = q.max_concurrent_vms;
+      quotaMaxGb = q.max_workspace_gb;
+      quotaIsCustom = q.is_custom;
+      toast.success('Reverted to default quota', { id: tid });
+    } catch (e) {
+      toast.error('Could not reset quota', { id: tid, description: e instanceof ApiError ? e.message : '' });
+    } finally {
+      quotaSaving = false;
     }
   }
 
@@ -951,7 +1016,7 @@
                 <Table.Head class="hidden w-56 md:table-cell">Email</Table.Head>
                 <Table.Head class="w-36">Role</Table.Head>
                 <Table.Head class="hidden w-28 sm:table-cell">Joined</Table.Head>
-                <Table.Head class="w-32 text-right">Actions</Table.Head>
+                <Table.Head class="w-44 text-right">Actions</Table.Head>
               </Table.Row>
             </Table.Header>
           </Table.Root>
@@ -1005,20 +1070,36 @@
                   <Table.Cell class="hidden w-28 text-muted-foreground sm:table-cell">
                     {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
                   </Table.Cell>
-                  <Table.Cell class="w-32 text-right">
-                    <Tooltip content="Allocate credits to this user">
-                      {#snippet children(props)}
-                      <Button
-                        {...props}
-                        variant="outline"
-                        size="sm"
-                        class="opacity-70 transition-opacity group-hover:opacity-100"
-                        onclick={() => openAlloc(u)}
-                      >
-                        <Coins class="size-3.5" /> Allocate
-                      </Button>
-                      {/snippet}
-                    </Tooltip>
+                  <Table.Cell class="w-44 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                      <Tooltip content="Resource quota (concurrent VMs + workspace GB)">
+                        {#snippet children(props)}
+                        <Button
+                          {...props}
+                          variant="ghost"
+                          size="sm"
+                          class="px-2 opacity-70 transition-opacity group-hover:opacity-100"
+                          onclick={() => openQuota(u)}
+                          aria-label="Set resource quota"
+                        >
+                          <Gauge class="size-3.5" />
+                        </Button>
+                        {/snippet}
+                      </Tooltip>
+                      <Tooltip content="Allocate credits to this user">
+                        {#snippet children(props)}
+                        <Button
+                          {...props}
+                          variant="outline"
+                          size="sm"
+                          class="opacity-70 transition-opacity group-hover:opacity-100"
+                          onclick={() => openAlloc(u)}
+                        >
+                          <Coins class="size-3.5" /> Allocate
+                        </Button>
+                        {/snippet}
+                      </Tooltip>
+                    </div>
                   </Table.Cell>
                 </Table.Row>
               {/each}
@@ -1730,6 +1811,50 @@
         <Spinner class="size-4" /> Allocating…
       {:else}
         <Coins class="size-4" /> Allocate
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<!-- Per-user resource quota -->
+<Dialog
+  bind:open={quotaOpen}
+  title="Resource quota"
+  description={quotaUser ? (quotaUser.name || quotaUser.email) : ''}
+>
+  {#if quotaLoading}
+    <div class="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+      <Spinner class="size-4" /> Loading current quota…
+    </div>
+  {:else}
+    <div class="space-y-4">
+      <p class="text-xs text-muted-foreground">
+        {quotaIsCustom
+          ? 'This user has a custom quota override.'
+          : 'This user is on the global default quota. Saving creates an override.'}
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <Label for="q-vms">Max concurrent VMs</Label>
+          <Input id="q-vms" type="number" min="0" step="1" bind:value={quotaMaxVms} class="mt-1 font-mono" />
+        </div>
+        <div>
+          <Label for="q-gb">Max workspace (GB)</Label>
+          <Input id="q-gb" type="number" min="0" step="1" bind:value={quotaMaxGb} class="mt-1 font-mono" />
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={resetQuota} disabled={quotaSaving || quotaLoading || !quotaIsCustom}>
+      Reset to default
+    </Button>
+    <Button onclick={saveQuota} disabled={quotaSaving || quotaLoading}>
+      {#if quotaSaving}
+        <Spinner class="size-4" /> Saving…
+      {:else}
+        <Check class="size-4" /> Save quota
       {/if}
     </Button>
   {/snippet}
