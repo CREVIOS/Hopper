@@ -120,6 +120,7 @@ func (s *PodOrchestratorService) CreatePod(ctx context.Context, req *podv1.Creat
 		WorkspacePVCName:    req.WorkspacePvcName,
 		WorkspaceCapacityGB: int(req.WorkspaceCapacityGb),
 		StorageClass:        req.StorageClass,
+		AuthorizedKeys:      req.AuthorizedKeys,
 		NetworkGroup:        networkGroup,
 	})
 	if err != nil {

@@ -387,7 +387,7 @@ async def test_create_pod_updates_session_from_orchestrator_response(monkeypatch
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
     monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
 
-    db = FakeDB(execute_results=[[]])
+    db = FakeDB(execute_results=[[], []])  # active-VMs check, then SSH-keys lookup
 
     result = await create_pod.__wrapped__(
         request=None,
@@ -403,6 +403,40 @@ async def test_create_pod_updates_session_from_orchestrator_response(monkeypatch
     assert db.added[0].pod_name == "vm-real-name"
 
 
+async def test_create_pod_injects_users_ssh_keys(monkeypatch):
+    captured = {}
+
+    class FakeOrchestratorResponse:
+        id = "vm-x"
+        state = "running"
+        ssh_port = 1
+        vscode_port = 2
+        ssh_password = "p"
+
+    async def fake_create_pod(**kwargs):
+        captured.update(kwargs)
+        return FakeOrchestratorResponse()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    # active-VMs check (empty), then the SSH-key lookup returns the user's keys.
+    db = FakeDB(execute_results=[[], ["ssh-ed25519 AAA", "ssh-rsa BBB"]])
+
+    await create_pod.__wrapped__(
+        request=None,
+        response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL),
+        current_user=_payload(),
+        db=db,
+    )
+
+    assert captured["authorized_keys"] == ["ssh-ed25519 AAA", "ssh-rsa BBB"]
+
+
 async def test_create_pod_marks_session_failed_when_orchestrator_raises(monkeypatch):
     async def fake_get_balance(db, user_id):
         return 100.0
@@ -413,7 +447,7 @@ async def test_create_pod_marks_session_failed_when_orchestrator_raises(monkeypa
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
     monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
 
-    db = FakeDB(execute_results=[[]])
+    db = FakeDB(execute_results=[[], []])  # active-VMs check, then SSH-keys lookup
 
     result = await create_pod.__wrapped__(
         request=None,
@@ -842,7 +876,7 @@ async def test_create_pod_network_group_flows_to_orchestrator_and_session(monkey
     monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
     monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
 
-    db = FakeDB(execute_results=[[]])
+    db = FakeDB(execute_results=[[], []])  # active-VMs check, then SSH-keys lookup
 
     result = await create_pod.__wrapped__(
         request=None,
