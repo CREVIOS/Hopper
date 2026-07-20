@@ -139,6 +139,7 @@ async def _provision_pod(
     plan_row,
     image: str,
     network_group: str | None = None,
+    max_workspace_gb: int | None = None,
 ) -> PodSession:
     """Ask the orchestrator for a real K8s pod backing ``session``, and record it.
 
@@ -159,8 +160,11 @@ async def _provision_pod(
 
     # The per-user workspace (FR-HC-28). get_or_create is idempotent, so a resume
     # resolves the SAME PVC the stopped VM was using and the files come back.
+    # Reconciles the workspace capacity upward to the plan's workspace_gb (FR-HC-30),
+    # clamped to the user's storage quota; existing PVCs are grown by the orchestrator.
     workspace = await workspace_service.get_or_create_workspace(
-        db, session.user_id, session.plan, capacity_gb=plan_row.workspace_gb
+        db, session.user_id, session.plan,
+        capacity_gb=plan_row.workspace_gb, max_capacity_gb=max_workspace_gb,
     )
     try:
         resp = await orchestrator_client.create_pod(
@@ -354,7 +358,10 @@ async def create_pod(
 
     # Provision the real K8s pod (mounts the per-user workspace; marks the
     # session 'failed' on error rather than raising). Shared with resume.
-    session = await _provision_pod(db, session, plan_row, image, network_group=body.network_group)
+    session = await _provision_pod(
+        db, session, plan_row, image,
+        network_group=body.network_group, max_workspace_gb=quota["max_workspace_gb"],
+    )
     return _session_to_response(session)
 
 
@@ -656,7 +663,10 @@ async def resume_pod(
     session.extension_count = 0
     await db.commit()
 
-    await _provision_pod(db, session, plan_row, session.image)
+    await _provision_pod(
+        db, session, plan_row, session.image,
+        max_workspace_gb=quota["max_workspace_gb"],
+    )
 
     logger.info("Pod %s resumed by %s (workspace remounted)", pod_id, current_user.sub)
     return _session_to_response(session)

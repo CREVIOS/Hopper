@@ -9,11 +9,13 @@ from app.dependencies import get_current_user, get_db
 from app.models.audit import AuditLog
 from app.models.session import PodSession
 from app.models.user import User
+from app.models.user_workspace import UserWorkspace
 from app.schemas.image import ImageCreateRequest, ImageResponse, ImageUpdateRequest
 from app.schemas.plan import PlanCreateRequest, PlanResponse, PlanUpdateRequest
 from app.schemas.quota import QuotaResponse, QuotaSetRequest
 from app.schemas.user import ChangeRoleRequest, TokenPayload
-from app.services import image_service, plan_service, quota_service
+from app.schemas.workspace import WorkspaceResizeRequest
+from app.services import image_service, plan_service, quota_service, workspace_service
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 from app.services.orchestrator_client import orchestrator_client
 
@@ -435,6 +437,66 @@ async def admin_clear_quota(
     _require_admin(current_user)
     await quota_service.clear_quota(db, user_id)
     return QuotaResponse(**await quota_service.get_effective_quota(db, user_id))
+
+
+# --- Per-user workspaces (FR-HC-30) -----------------------------------------
+
+
+@router.get("/workspaces")
+async def admin_list_workspaces(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every user's persistent workspace, with owner + storage details."""
+    _require_admin(current_user)
+    rows = (
+        await db.execute(
+            select(UserWorkspace, User)
+            .join(User, User.id == UserWorkspace.user_id, isouter=True)
+            .order_by(UserWorkspace.created_at.desc())
+        )
+    ).all()
+    return [
+        {
+            "user_id": ws.user_id,
+            "user_email": u.email if u else None,
+            "user_name": u.name if u else None,
+            "pvc_name": ws.pvc_name,
+            "storage_class": ws.storage_class or "",
+            "capacity_gb": ws.capacity_gb,
+            "used_gb": float(ws.used_gb) if ws.used_gb is not None else None,
+            "created_at": ws.created_at.isoformat() if ws.created_at else None,
+            "last_mounted_at": ws.last_mounted_at.isoformat() if ws.last_mounted_at else None,
+        }
+        for ws, u in rows
+    ]
+
+
+@router.post("/workspaces/{user_id}/resize")
+async def admin_resize_workspace(
+    user_id: str,
+    body: WorkspaceResizeRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Grow a user's workspace (up only). Takes effect at the user's next VM start."""
+    _require_admin(current_user)
+    quota = await quota_service.get_effective_quota(db, user_id)
+    if body.capacity_gb > quota["max_workspace_gb"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{body.capacity_gb} GB exceeds the user's storage quota "
+                f"({quota['max_workspace_gb']} GB) — raise the quota first"
+            ),
+        )
+    try:
+        ws = await workspace_service.resize_workspace(db, user_id, body.capacity_gb)
+    except workspace_service.WorkspaceNotFound:
+        raise HTTPException(status_code=404, detail="User has no workspace yet")
+    except workspace_service.ShrinkNotAllowed as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"user_id": user_id, "capacity_gb": ws.capacity_gb, "applies": "next-start"}
 
 
 # --- VM image / template catalogue (admin CRUD) -----------------------------

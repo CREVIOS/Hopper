@@ -15,6 +15,8 @@ from app.routers.admin import (
     admin_get_quota,
     admin_list_images,
     admin_list_plans,
+    admin_list_workspaces,
+    admin_resize_workspace,
     admin_set_quota,
     admin_update_image,
     admin_update_plan,
@@ -30,6 +32,8 @@ from app.schemas.image import ImageCreateRequest, ImageUpdateRequest
 from app.schemas.plan import PlanCreateRequest, PlanUpdateRequest
 from app.schemas.quota import QuotaSetRequest
 from app.schemas.user import TokenPayload
+from app.schemas.workspace import WorkspaceResizeRequest
+from app.services import workspace_service
 
 
 def _payload(role: str) -> TokenPayload:
@@ -605,3 +609,88 @@ async def test_admin_clear_quota_reverts_to_default(monkeypatch):
 
     assert calls["cleared"] == "user-2"
     assert result.is_custom is False
+
+
+# --- Per-user workspace admin (FR-HC-30) ---
+
+async def test_admin_list_workspaces_shape(monkeypatch):
+    ws = SimpleNamespace(
+        user_id="u1", pvc_name="ws-user-u1", storage_class="longhorn-workspace",
+        capacity_gb=50, used_gb=12.5, created_at=None, last_mounted_at=None,
+    )
+    user = SimpleNamespace(email="a@b.c", name="Ann")
+    db = FakeDB(execute_rows=[[(ws, user)]])
+    rows = await admin_list_workspaces(current_user=_payload("admin"), db=db)
+    assert rows[0]["user_email"] == "a@b.c"
+    assert rows[0]["pvc_name"] == "ws-user-u1"
+    assert rows[0]["storage_class"] == "longhorn-workspace"
+    assert rows[0]["capacity_gb"] == 50
+    assert rows[0]["used_gb"] == 12.5
+
+
+async def test_admin_resize_workspace_ok(monkeypatch):
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    async def fake_resize(db, user_id, new_capacity_gb):
+        return SimpleNamespace(capacity_gb=new_capacity_gb)
+
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_quota)
+    monkeypatch.setattr("app.routers.admin.workspace_service.resize_workspace", fake_resize)
+
+    out = await admin_resize_workspace(
+        "u1", WorkspaceResizeRequest(capacity_gb=60), current_user=_payload("admin"), db=FakeDB()
+    )
+    assert out == {"user_id": "u1", "capacity_gb": 60, "applies": "next-start"}
+
+
+async def test_admin_resize_rejects_over_quota_409(monkeypatch):
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 50, "is_custom": True}
+
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_quota)
+    with pytest.raises(HTTPException) as exc:
+        await admin_resize_workspace(
+            "u1", WorkspaceResizeRequest(capacity_gb=60), current_user=_payload("admin"), db=FakeDB()
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_admin_resize_rejects_shrink_400(monkeypatch):
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    async def fake_resize(db, user_id, new_capacity_gb):
+        raise workspace_service.ShrinkNotAllowed("smaller")
+
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_quota)
+    monkeypatch.setattr("app.routers.admin.workspace_service.resize_workspace", fake_resize)
+    with pytest.raises(HTTPException) as exc:
+        await admin_resize_workspace(
+            "u1", WorkspaceResizeRequest(capacity_gb=60), current_user=_payload("admin"), db=FakeDB()
+        )
+    assert exc.value.status_code == 400
+
+
+async def test_admin_resize_404_when_no_workspace(monkeypatch):
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    async def fake_resize(db, user_id, new_capacity_gb):
+        raise workspace_service.WorkspaceNotFound(user_id)
+
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_quota)
+    monkeypatch.setattr("app.routers.admin.workspace_service.resize_workspace", fake_resize)
+    with pytest.raises(HTTPException) as exc:
+        await admin_resize_workspace(
+            "nobody", WorkspaceResizeRequest(capacity_gb=60), current_user=_payload("admin"), db=FakeDB()
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_admin_resize_requires_admin():
+    with pytest.raises(HTTPException) as exc:
+        await admin_resize_workspace(
+            "u1", WorkspaceResizeRequest(capacity_gb=60), current_user=_payload("student"), db=FakeDB()
+        )
+    assert exc.value.status_code == 403

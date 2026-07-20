@@ -268,10 +268,20 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
             return ExecuteResult(rows=entries)
         if "RETURNING id" in sql:
             return ExecuteResult(first_value=("claimed",))
+        if "ssh_keys" in sql:
+            return ExecuteResult(rows=[])       # queue-admit fetches the user's SSH keys
         return ExecuteResult()
 
     async def fake_get_plan(db, name):
-        return SimpleNamespace(credits_per_hour=1.0)
+        return SimpleNamespace(credits_per_hour=1.0, workspace_gb=20)
+
+    async def fake_quota(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100}
+
+    async def fake_workspace(db, user_id, plan, capacity_gb=None, max_capacity_gb=None):
+        return SimpleNamespace(
+            pvc_name=f"ws-user-{user_id}", capacity_gb=capacity_gb or 20, storage_class=""
+        )
 
     monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_nodes)
     monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
@@ -279,19 +289,9 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
     monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_count)
     monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve)
     monkeypatch.setattr(vm_scheduler.plan_service, "get_plan", fake_get_plan)
-    db = FakeDB(
-        execute_results=[
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-            execute_result,
-        ]
-    )
+    monkeypatch.setattr(vm_scheduler.quota_service, "get_effective_quota", fake_quota)
+    monkeypatch.setattr(vm_scheduler.workspace_service, "get_or_create_workspace", fake_workspace)
+    db = FakeDB(execute_results=[execute_result] * 20)
 
     class Orch:
         def __init__(self):
@@ -312,6 +312,11 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
     # The plan's DB rate is forwarded on the queue-admission path too, not just
     # the synchronous launch — so queued VMs bill at admin-set pricing.
     assert orch.calls[0]["credits_per_hour"] == 1.0
+    # Queue-admitted VMs also get their persistent workspace + SSH keys (the fix).
+    assert orch.calls[0]["workspace_pvc_name"] == "ws-user-user-1"
+    assert orch.calls[0]["workspace_capacity_gb"] == 20
+    assert orch.calls[0]["storage_class"] == ""
+    assert "authorized_keys" in orch.calls[0]
 
 
 def test_lease_ttl_seconds_has_minimum_buffer():

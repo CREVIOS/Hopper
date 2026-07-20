@@ -30,9 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import VM_PLAN_RESOURCES, VmPlan
-from app.services import plan_service, vm_capacity
+from app.services import plan_service, quota_service, vm_capacity, workspace_service
 from app.services.orchestrator_client import OrchestratorClient
 
 logger = logging.getLogger(__name__)
@@ -400,9 +401,26 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
             # VMs too. If the plan row has since vanished, 0.0 lets the
             # orchestrator fall back to its built-in map rather than block admission.
             plan_row = await plan_service.get_plan(db, plan)
+            # Queue-admitted VMs get the SAME persistent workspace + SSH keys the
+            # synchronous launch path gives (pods._provision_pod). Without this a
+            # VM that waited in the queue came up with no /workspace and no keys.
+            keys = list(
+                (await db.execute(select(SSHKey.public_key).where(SSHKey.user_id == user_id)))
+                .scalars().all()
+            )
+            quota = await quota_service.get_effective_quota(db, user_id)
+            ws = await workspace_service.get_or_create_workspace(
+                db, user_id, plan,
+                capacity_gb=plan_row.workspace_gb if plan_row else None,
+                max_capacity_gb=quota["max_workspace_gb"],
+            )
             resp = await orch.create_pod(
                 user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
                 pod_id=pod_id,
+                workspace_pvc_name=ws.pvc_name,
+                workspace_capacity_gb=ws.capacity_gb,
+                storage_class=ws.storage_class or "",
+                authorized_keys=keys,
                 credits_per_hour=float(plan_row.credits_per_hour) if plan_row else 0.0,
                 network_group=network_group or "",
             )

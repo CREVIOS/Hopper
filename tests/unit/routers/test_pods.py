@@ -103,7 +103,7 @@ def _stub_workspace(monkeypatch):
     with a fixed row so these router unit tests stay hermetic (no DB)."""
     from types import SimpleNamespace
 
-    async def fake_get_or_create_workspace(db, user_id, plan, capacity_gb=None):
+    async def fake_get_or_create_workspace(db, user_id, plan, capacity_gb=None, max_capacity_gb=None):
         return SimpleNamespace(
             id="ws-1",
             user_id=user_id,
@@ -1245,3 +1245,39 @@ async def test_resume_pod_enforces_concurrent_quota(monkeypatch):
         )
 
     assert exc.value.status_code == 429
+
+
+async def test_create_pod_passes_quota_cap_to_workspace(monkeypatch):
+    """The user's storage-quota cap is threaded into workspace provisioning so an
+    existing PVC is never grown past quota (FR-HC-30 clamp)."""
+    from types import SimpleNamespace
+
+    captured = {}
+
+    async def fake_ws(db, user_id, plan, capacity_gb=None, max_capacity_gb=None):
+        captured["max_capacity_gb"] = max_capacity_gb
+        return SimpleNamespace(
+            id="ws", user_id=user_id, pvc_name=f"ws-user-{user_id}",
+            capacity_gb=capacity_gb or 20, storage_class="",
+        )
+
+    class FakeOrchestratorResponse:
+        id = "vm-x"; state = "running"; ssh_port = 1; vscode_port = 2; ssh_password = "p"
+
+    async def fake_create_pod(**kwargs):
+        return FakeOrchestratorResponse()
+
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.routers.pods.workspace_service.get_or_create_workspace", fake_ws)
+    monkeypatch.setattr("app.routers.pods.get_balance", fake_get_balance)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.create_pod", fake_create_pod)
+
+    db = FakeDB(execute_results=[[], []])  # active-VMs check, then SSH-key lookup
+    await create_pod.__wrapped__(
+        request=None, response=None,
+        body=CreatePodRequest(plan=VmPlan.SMALL), current_user=_payload(), db=db,
+    )
+    # _stub_quota sets the effective workspace quota to 100 GB.
+    assert captured["max_capacity_gb"] == 100

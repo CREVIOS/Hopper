@@ -91,3 +91,64 @@ async def test_existing_row_keeps_recorded_class(monkeypatch):
     assert ws is existing
     assert ws.storage_class == ""      # unchanged
     assert db.commits == 0             # no write
+
+
+def _seed(db, capacity_gb):
+    row = UserWorkspace(
+        id="w1", user_id="u", pvc_name="ws-user-u", storage_class="", capacity_gb=capacity_gb
+    )
+    db.rows.append(row)
+    return row
+
+
+# --- App-2: capacity reconcile (grow-only) + admin resize (FR-HC-30) ---
+
+async def test_grow_reconciles_capacity_upward():
+    db = FakeDB()
+    row = _seed(db, 20)
+    ws = await workspace_service.get_or_create_workspace(db, "u", "medium", capacity_gb=50)
+    assert ws is row
+    assert ws.capacity_gb == 50
+    assert db.commits == 1
+
+
+async def test_grow_clamped_by_quota_does_not_grow():
+    db = FakeDB()
+    _seed(db, 20)
+    # Requested 50 exceeds the user's quota cap 30 → do not grow (stay at stored).
+    ws = await workspace_service.get_or_create_workspace(db, "u", "medium", capacity_gb=50, max_capacity_gb=30)
+    assert ws.capacity_gb == 20
+    assert db.commits == 0
+
+
+async def test_never_shrinks_on_launch():
+    db = FakeDB()
+    _seed(db, 100)
+    ws = await workspace_service.get_or_create_workspace(db, "u", "small", capacity_gb=20)
+    assert ws.capacity_gb == 100
+    assert db.commits == 0
+
+
+async def test_equal_capacity_is_noop():
+    db = FakeDB()
+    _seed(db, 50)
+    ws = await workspace_service.get_or_create_workspace(db, "u", "medium", capacity_gb=50)
+    assert ws.capacity_gb == 50
+    assert db.commits == 0
+
+
+async def test_resize_workspace_up_only():
+    import pytest
+
+    db = FakeDB()
+    _seed(db, 20)
+    ws = await workspace_service.resize_workspace(db, "u", 60)
+    assert ws.capacity_gb == 60
+    assert db.commits == 1
+
+    with pytest.raises(workspace_service.ShrinkNotAllowed):
+        await workspace_service.resize_workspace(db, "u", 10)
+
+    empty = FakeDB()
+    with pytest.raises(workspace_service.WorkspaceNotFound):
+        await workspace_service.resize_workspace(empty, "nobody", 60)
