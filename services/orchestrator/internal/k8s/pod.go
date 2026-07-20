@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -178,28 +177,11 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		workspacePVC, workspaceSizeGi = fmt.Sprintf("ws-%s", opts.PodName), opts.DiskGiB
 	}
 	if workspacePVC != "" {
-		pvc := &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      workspacePVC,
-				Namespace: pm.namespace,
-				Labels:    labels,
-			},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", workspaceSizeGi)),
-					},
-				},
-			},
-		}
-		if opts.StorageClass != "" {
-			pvc.Spec.StorageClassName = &opts.StorageClass
-		}
-		// Idempotent: a returning user already has their workspace PVC, so
-		// AlreadyExists means "reuse it" (keep the data), not an error.
-		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
-			return PodPorts{}, fmt.Errorf("ensuring workspace pvc: %w", err)
+		// Create-if-absent, expand-if-larger (never shrink). Expansion is a no-op
+		// on storage classes that don't allow it (e.g. local-path), so this is
+		// safe with or without Longhorn. See workspace_pvc.go.
+		if err := pm.EnsureWorkspacePVC(ctx, workspacePVC, workspaceSizeGi, opts.StorageClass, labels); err != nil {
+			return PodPorts{}, err
 		}
 	}
 
