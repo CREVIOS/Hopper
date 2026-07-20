@@ -655,17 +655,209 @@ The table below separates protections already present in code or manifests from 
 \textbf{Automated security test coverage.} Unit tests cover password-policy errors, API-key dependency behavior, rate-limiter keying, and pod authorization edge cases (\path|tests/unit/|). E2E specs cover login cookies, role-scoped navigation, silent refresh, and anonymous \path|401| responses. Broader infrastructure isolation tests are documented but require a dedicated staging cluster and tokens supplied via environment variables (\path|tests/security/README.md|).
 
 \section{Testing \& Quality Assurance}
+
 \subsection{Testing Strategy}
-\todo{Summarize the verified unit, integration, end-to-end, and other automated test layers.}
+
+Hopper adopts a layered testing pyramid that keeps the majority of checks fast
+and GPU-independent. The strategy is captured in \texttt{docs/TESTING\_PLAN.md}
+and operationalised through the CI pipeline in
+\texttt{.github/workflows/ci.yml}.
+
+\textbf{Unit tests (Python/pytest)} target the API Gateway in isolation.
+All 411 cases run without any live infrastructure; every service, router, schema,
+and middleware module has dedicated coverage files under
+\texttt{tests/unit/} (47 Python modules).
+Key focus areas include the double-entry credit ledger, billing consumer state
+machine, password-policy enforcement, RBAC dependency checks, and session
+management.
+
+\textbf{Unit tests (Go/testing)} exercise the orchestrator's internal packages
+and billing-contract layer using fake Kubernetes client-go sets and in-process
+stubs. Sixteen tests pass in \texttt{go-test.json} (internal K8s package),
+with a further 27 contract-level passes recorded in
+\texttt{go-contracts.json} (billing pricing, pod lifecycle state transitions,
+and resource-limit enforcement).
+
+\textbf{Integration tests (Python/pytest)} in \texttt{tests/integration/}
+cover 18 modules against live Docker-based PostgreSQL, NATS JetStream, and
+Keycloak services spun up by the \texttt{python-integration} CI job. Modules
+include \texttt{test\_credit\_ledger\_invariants.py},
+\texttt{test\_nats\_event\_flow.py}, \texttt{test\_keycloak\_integration.py},
+\texttt{test\_pods\_api.py}, \texttt{test\_auth\_api.py}, and 13 others.
+
+\textbf{Frontend unit tests (Vitest)} in \texttt{frontend/src/} verify 78 test
+cases across route server loads, API client behaviour, and Svelte component
+logic (including auth redirect rules, session refresh paths, and landing-page
+server guards).
+
+\textbf{End-to-end tests (Playwright)} in \texttt{tests/e2e/specs/} span
+6 specification files and 35 test cases as documented in
+\texttt{tests/e2e/COVERAGE\_MATRIX.md}. Tests run against a mock-backed stack
+(SvelteKit dev server + Python mock API server) under the \texttt{e2e-mock} CI
+job. The final mock-suite run reported \textbf{27 passed (25.9s)}.
+
+\textbf{Load tests (k6)} in \texttt{tests/load/} define five scenarios:
+class-start concurrent pod creation (30\,VUs), steady-state metrics polling
+(100\,VUs), spike to 150\,VUs, class-end mass termination, and billing stress.
+Results are stored in \texttt{test-results/load/}. The scenarios run recorded
+81\,456 passing spike-check iterations; pod creation completed under 2\,s on
+all sampled requests.
+
+\textbf{Helm chart validation} runs on every push: \texttt{helm lint} and
+\texttt{helm template} are executed against \texttt{dev}, \texttt{staging},
+and \texttt{prod} value overlays. Infrastructure chaos and security manifests
+reside under \texttt{tests/chaos/} and \texttt{tests/security/} for manual
+staging runs.
 
 \subsection{Test Coverage Summary}
-\todo{Add measured coverage or coverage-report references after verification.}
+
+Coverage is measured independently per layer and aggregated by the
+\texttt{coverage-report} CI job. Figures are sourced from the artifacts
+recorded on \textbf{2026-07-18}.
+
+\begin{table}[H]
+\centering
+\caption{Automated test results and coverage by layer}
+\label{tab:coverage}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|>{\bfseries\RaggedRight\arraybackslash}p{5.2cm}|r|r|>{\RaggedRight\arraybackslash}X|}
+\hline
+\textbf{Layer} & \textbf{Tests} & \textbf{Coverage} & \textbf{Artifact} \\
+\hline
+API Gateway --- Python unit (pytest) & 411 & 81.68\,\% & \texttt{coverage/python/unit.xml} \\
+\hline
+API Gateway --- Python integration (pytest) & 18 modules & --- & \texttt{tests/integration/} \\
+\hline
+Frontend --- SvelteKit (Vitest) & 78 & 66.08\,\% & \texttt{coverage/frontend/} \texttt{coverage-summary.json} \\
+\hline
+Orchestrator --- Go internal (go test) & 16 & 71.26\,\% & \texttt{coverage/orchestrator/} \texttt{orchestrator.out} \\
+\hline
+Orchestrator --- Go contracts (go test) & 27 & --- & \texttt{test-results/contracts/} \texttt{go-contracts.json} \\
+\hline
+E2E --- Playwright mock suite & 27 passed & --- & \texttt{test-results/e2e/} \texttt{playwright-junit.xml} \\
+\hline
+Load --- k6 spike scenario & 81\,456 checks & --- & \texttt{test-results/load/} \texttt{scenarios-summary.json} \\
+\hline
+\end{tabularx}
+\end{table}
+
+The lowest-covered API Gateway files are
+\texttt{routers/terminal.py} (41.90\,\%) and
+\texttt{routers/pods.py} (58.80\,\%).
+On the frontend, four files have 0\,\% coverage:
+\texttt{stores/notifications.ts}, \texttt{routes/dev-login/+server.ts},
+\texttt{lib/confirm.svelte.ts}, and
+\texttt{routes/pods/queue/+page.server.ts}.
+In the orchestrator, \texttt{internal/k8s/pod.go} is the lowest at
+57.80\,\%; the network-policy module (\texttt{netpol.go}) is at 100\,\%.
+
+\noindent\textbf{Confirmed testing gaps.}
+The following areas currently lack automated coverage:
+\begin{itemize}[leftmargin=1.5em]
+  \item Integration coverage XML (\texttt{coverage/python/integration.xml}) was not
+        generated in the recorded run; Python integration tests exercise live
+        services but no statement-level coverage artifact was produced.
+  \item E2E test cases \texttt{TC-CREDIT-003} (grace-period auto-termination),
+        \texttt{TC-ADMIN-003} (course creation UI), \texttt{TC-EDGE-003}
+        (session-duration expiry), \texttt{TC-TMPL-002} (course template
+        management), \texttt{TC-SCAV-001}, and \texttt{TC-SCAV-002}
+        (scavenger plans) are marked \textit{pending} or \textit{future} in
+        \texttt{tests/e2e/COVERAGE\_MATRIX.md}.
+  \item Cross-browser E2E is not enforced by default; Firefox and WebKit
+        configurations exist but are opt-in via \texttt{E2E\_CROSS\_BROWSER}.
+  \item Chaos experiments in \texttt{tests/chaos/} and security manifests in
+        \texttt{tests/security/} require a live staging cluster and are
+        excluded from the automated CI pipeline.
+\end{itemize}
 
 \subsection{Bug Tracking \& Resolution Log}
-\todo{Summarize verified bug-tracking artifacts such as BUG\_TRACKING\_LOG.md.}
+
+All defects discovered during testing were tracked in
+\texttt{BUG\_TRACKING\_LOG.md}. The log covers the period 2026-07-17 to
+2026-07-18 and records \textbf{20 bugs}, all with status \textit{Resolved}.
+A representative sample is shown in Table~\ref{tab:bugs}.
+
+\begin{table}[H]
+\centering
+\caption{Representative bugs resolved during the testing period}
+\label{tab:bugs}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{|l|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
+\hline
+\textbf{Bug ID} & \textbf{Component} & \textbf{Root cause} & \textbf{Fix} \\
+\hline
+BUG-2026-07-17-01 & Frontend tabs & \texttt{Tabs.Trigger} swallowed extra props so per-page \texttt{onclick} handlers never fired. & Forwarded \texttt{...restProps} in \texttt{tabs-trigger.svelte}; added explicit state updates on admin and pod detail triggers. \\
+\hline
+BUG-2026-07-17-04 & E2E pod lifecycle spec & Tests assumed conditions stricter than the mocked headless flow; assertions on live metrics and history cards failed. & Adjusted specs to wait for stable rendered states and verify termination at the API boundary. \\
+\hline
+BUG-2026-07-18-01 & Frontend auth guards & All unauthenticated SSR loads redirected to \texttt{/login?session\_expired=1}, falsely implying an expired session. & Protected routes redirect to \texttt{/login}; the \texttt{session\_expired} flag is reserved for genuine client-side refresh failures. \\
+\hline
+BUG-2026-07-18-03 & \texttt{scripts/test/run.sh} & \texttt{go tool cover} ran from the repo root, so module-relative resolution failed for orchestrator HTML reports. & Coverage renderer now \texttt{cd}s into \texttt{services/orchestrator} before invoking \texttt{go tool cover -html}. \\
+\hline
+BUG-2026-07-18-12 & E2E terminal clipboard & Test targeted xterm's hidden helper textarea instead of the visible terminal surface. & Added \texttt{?tab=terminal} deep-link support and updated clipboard spec to open the terminal tab directly. \\
+\hline
+BUG-2026-07-18-16 & Frontend pods page & Launch button was interactable before Svelte attached the click handler, causing flaky E2E confirmation-dialog assertions. & Added a \texttt{/pods} hydration marker; E2E helpers wait for hydration before clicking \textit{Launch VM}. \\
+\hline
+BUG-2026-07-18-18 & Landing page navbar & All navbar links pointed to \texttt{\#features} regardless of label. & Each link now carries a distinct in-page anchor; matching section IDs added. \\
+\hline
+BUG-2026-07-18-20 & Dashboard navigation & No loading skeleton during authenticated route transitions caused visible blank states. & Added \texttt{DashboardSkeleton} component; route-specific variants rendered during SvelteKit navigation. \\
+\hline
+\end{tabularx}
+\end{table}
 
 \subsection{Sample Test Cases}
-\todo{Add representative verified test cases from the current suites.}
+
+The six cases below are drawn directly from the repository test suites.
+
+\begin{description}[leftmargin=0pt,labelindent=0pt,style=nextline]
+
+\item[\textbf{TC-1 --- Billing consumer: insufficient-credit grace logic}]
+  \textit{Suite:} \texttt{tests/unit/services/test\_billing\_consumer.py} ---
+  \textit{passed} (pytest-junit 2026-07-18).
+  Verifies that when a \texttt{billing.deducted} NATS message arrives and the
+  credit deduction raises \texttt{Insufficient\-Credits}, the consumer invokes
+  the grace-period logic rather than nakking or crashing.
+  Test: \texttt{test\_handle\_billing\_deducted\_runs\_grace\allowbreak{}\_logic\_on\_insufficient\_credits}.
+
+\item[\textbf{TC-2 --- Credit service: double-entry balance invariant}]
+  \textit{Suite:} \texttt{tests/unit/services/test\_credit\_service.py} ---
+  \textit{passed}.
+  Confirms that \texttt{add\_credits} produces a transfer record plus exactly
+  two balanced ledger entries that sum to zero, preserving double-entry
+  bookkeeping.
+  Test: \texttt{test\_add\_credits\_creates\_transfer\allowbreak{}\_and\_balanced\_entries}.
+
+\item[\textbf{TC-3 --- Orchestrator: pod lifecycle state transitions}]
+  \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
+  \textit{passed}.
+  The Go contract suite exercises two sub-tests:
+  \texttt{TestPodLifecycle\-ValidTransitions} asserts the legal path REQUESTED
+  $\to$ RUNNING $\to$ TERMINATED, and
+  \texttt{TestPodLifecycle\-RejectsInvalidTransition} confirms that
+  TERMINATED $\to$ RUNNING returns an error.
+
+\item[\textbf{TC-4 --- Orchestrator: VM plan billing rates}]
+  \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
+  \textit{passed}.
+  \texttt{TestVMPlanHourlyRates} checks Small=1, Medium=2, Large=4
+  credits/hour. \texttt{TestPartialHour\-BillingUsesPerMinuteRate} verifies
+  per-minute pro-ration at session end.
+
+\item[\textbf{TC-5 --- E2E: professor credit allocation (TC-CREDIT-004)}]
+  \textit{Suite:} \texttt{tests/e2e/specs/credits-and-teaching.spec.ts} ---
+  \textit{covered}; included in the final mock-suite run (27 passed, 25.9\,s).
+  A Playwright test logs in as a professor, navigates to the credits page, and
+  allocates credits to a student account, then asserts the student's displayed
+  balance increases.
+
+\item[\textbf{TC-6 --- E2E: capacity exhaustion routes to queue (TC-EDGE-005)}]
+  \textit{Suite:} \texttt{tests/e2e/specs/pod-lifecycle.spec.ts} ---
+  \textit{covered}; final mock-suite run passed.
+  When all capacity is occupied, a launch request returns a queued response and
+  the frontend redirects the user to \texttt{/pods/queue}.
+  The test asserts the queue page renders the in-queue entry.
+
+\end{description}
 
 \section{CI/CD \& Deployment}
 \subsection{Pipeline Overview}
