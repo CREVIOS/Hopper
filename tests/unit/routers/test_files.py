@@ -5,7 +5,22 @@ from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 from app.models.session import PodSession
-from app.routers.files import _get_user_pod, _safe_path, _ssh_endpoint, download_file, list_directory, upload_file
+from app.routers.files import (
+    DeleteRequest,
+    MkdirRequest,
+    RenameRequest,
+    _get_user_pod,
+    _reject_root_delete,
+    _safe_path,
+    _ssh_endpoint,
+    _ssh_exec,
+    delete_entry,
+    download_file,
+    list_directory,
+    make_directory,
+    rename_entry,
+    upload_file,
+)
 from app.schemas.user import TokenPayload
 
 
@@ -374,3 +389,97 @@ async def test_download_file_success_and_error_mapping(monkeypatch, tmp_path):
         await download_file("pod-1", "/home/missing.bin", _payload(), FakeDB(session))
 
     assert exc_info.value.status_code == 404
+
+
+# --- mkdir / rename / delete (command-style ops via _ssh_exec) ---
+
+
+def _running_session() -> PodSession:
+    return PodSession(
+        id="pod-1", user_id="user-1", plan="small", image="img", cpu="1",
+        memory="2Gi", namespace="hopper", pod_name="vm-pod-1",
+        ssh_password="secret", state="running",
+    )
+
+
+@pytest.mark.parametrize("path", ["/", "//", "/home/.."])
+def test_reject_root_delete_blocks_root(path):
+    with pytest.raises(HTTPException) as exc_info:
+        _reject_root_delete(path)
+    assert exc_info.value.status_code == 400
+
+
+def test_reject_root_delete_allows_normal_path():
+    _reject_root_delete("/home/student/file.txt")  # must not raise
+
+
+def _spy_ssh_exec(monkeypatch, returncode, stderr=b""):
+    async def fake_ssh_exec(session, remote_cmd):
+        fake_ssh_exec.cmd = remote_cmd
+        return (returncode, b"", stderr)
+    monkeypatch.setattr("app.routers.files._ssh_exec", fake_ssh_exec)
+    return fake_ssh_exec
+
+
+def _patch_pod(monkeypatch, session):
+    async def fake_get_user_pod(pod_id, user, db):
+        return session
+    monkeypatch.setattr("app.routers.files._get_user_pod", fake_get_user_pod)
+
+
+async def test_make_directory_success(monkeypatch):
+    session = _running_session()
+    _patch_pod(monkeypatch, session)
+    spy = _spy_ssh_exec(monkeypatch, 0)
+
+    result = await make_directory("pod-1", MkdirRequest(path="/home/newdir"), _payload(), FakeDB(session))
+
+    assert result == {"message": "created", "path": "/home/newdir"}
+    assert spy.cmd.startswith("mkdir") and "/home/newdir" in spy.cmd
+
+
+async def test_make_directory_conflict_on_existing(monkeypatch):
+    session = _running_session()
+    _patch_pod(monkeypatch, session)
+    _spy_ssh_exec(monkeypatch, 1, b"mkdir: cannot create directory '/home/x': File exists")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await make_directory("pod-1", MkdirRequest(path="/home/x"), _payload(), FakeDB(session))
+    assert exc_info.value.status_code == 409
+
+
+async def test_rename_entry_success(monkeypatch):
+    session = _running_session()
+    _patch_pod(monkeypatch, session)
+    spy = _spy_ssh_exec(monkeypatch, 0)
+
+    result = await rename_entry(
+        "pod-1", RenameRequest(path="/home/a", new_path="/home/b"), _payload(), FakeDB(session)
+    )
+
+    assert result == {"message": "renamed", "path": "/home/a", "new_path": "/home/b"}
+    assert spy.cmd.startswith("mv")
+
+
+async def test_delete_entry_success(monkeypatch):
+    session = _running_session()
+    _patch_pod(monkeypatch, session)
+    spy = _spy_ssh_exec(monkeypatch, 0)
+
+    result = await delete_entry("pod-1", DeleteRequest(path="/home/junk"), _payload(), FakeDB(session))
+
+    assert result == {"message": "deleted", "path": "/home/junk"}
+    assert spy.cmd.startswith("rm -r")
+
+
+async def test_delete_entry_rejects_root(monkeypatch):
+    session = _running_session()
+    _patch_pod(monkeypatch, session)
+
+    async def boom(*a, **k):
+        raise AssertionError("_ssh_exec must not run for a root delete")
+    monkeypatch.setattr("app.routers.files._ssh_exec", boom)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await delete_entry("pod-1", DeleteRequest(path="/"), _payload(), FakeDB(session))
+    assert exc_info.value.status_code == 400
