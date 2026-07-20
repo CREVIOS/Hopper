@@ -33,6 +33,9 @@ async def lifespan(app: FastAPI):
     print(">>> Startup: starting metrics consumer...", flush=True)
     from app.services.metrics_consumer import start_metrics_consumer
     await start_metrics_consumer()
+    print(">>> Startup: starting idle monitor...", flush=True)
+    from app.services.idle_monitor import start_idle_monitor
+    await start_idle_monitor()
     from app.services.session_reaper import run_session_reaper, run_orphan_reaper
     reaper_stop = asyncio.Event()
     reaper_task = asyncio.create_task(run_session_reaper(reaper_stop), name="session-reaper")
@@ -44,6 +47,8 @@ async def lifespan(app: FastAPI):
     reaper_stop.set()
     await reaper_task
     await orphan_task
+    from app.services.idle_monitor import stop_idle_monitor
+    await stop_idle_monitor()
     await nats_client.disconnect()
     await orchestrator_client.close()
     await engine.dispose()

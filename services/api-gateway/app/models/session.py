@@ -26,6 +26,10 @@ class PodSession(Base):
     # the VM is only terminated once this passes (cleared if the user tops up
     # and a later tick succeeds). NULL = not in grace.
     grace_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Idle auto-shutdown grace deadline. Set when the VM is first detected idle
+    # (and the user warned); the VM is terminated once this passes unless CPU
+    # activity resumes (which clears it). NULL = not currently flagged idle.
+    idle_shutdown_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     state: Mapped[str] = mapped_column(String, default="pending")
     # Network isolation group (HOP-19 18.3). VMs sharing a group can reach
     # each other over the pod network; NULL = fully isolated (the default).

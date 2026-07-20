@@ -112,6 +112,44 @@ async def notify(
     return row
 
 
+async def create_notification_safely(db: AsyncSession, **kwargs) -> Notification | None:
+    """Best-effort notification adapter for callers with a richer shape
+    (``type``/``severity``/``action_url``/``dedupe_key``/``metadata``). Maps them
+    onto :func:`notify` and the current Notification model: ``severity`` becomes
+    the notification ``type_`` (its level), while the ``type`` category,
+    ``action_url`` and ``dedupe_key`` are folded into ``data``.
+
+    Best-effort by contract — the callers (the idle monitor, bulk funding) run
+    after their real work has already committed, so a notification must never be
+    able to fail or roll them back. Every error is swallowed. Callers are
+    themselves idempotent (idle_shutdown_at gates a single warning per episode),
+    so no extra dedupe is needed here.
+    """
+    try:
+        data = dict(kwargs.get("metadata") or {})
+        if kwargs.get("type"):
+            data.setdefault("category", kwargs["type"])
+        if kwargs.get("action_url"):
+            data.setdefault("action_url", kwargs["action_url"])
+        if kwargs.get("dedupe_key"):
+            data.setdefault("dedupe_key", kwargs["dedupe_key"])
+        return await notify(
+            db,
+            kwargs["user_id"],
+            type_=kwargs.get("severity") or kwargs.get("type") or "info",
+            title=kwargs.get("title", ""),
+            body=kwargs.get("body", ""),
+            data=data or None,
+        )
+    except Exception:
+        logger.exception("Failed to create notification")
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Rollback after failed notification also failed")
+        return None
+
+
 async def resolve_session(db: AsyncSession, pod_ref: str) -> PodSession | None:
     """Find a PodSession by either its API UUID or its K8s pod name.
 
