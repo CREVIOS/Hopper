@@ -124,6 +124,11 @@ class Settings(BaseSettings):
     idle_grace_minutes: float = 10.0
     idle_monitor_interval_seconds: float = 60.0
 
+    # Session time-to-live (FR-HC-27). A VM is reaped this many hours after it
+    # starts; the user can buy 1-hour extensions up to SESSION_MAX_WALLCLOCK_HOURS
+    # (constants in routers/pods.py). Resume starts a fresh TTL window.
+    session_ttl_hours: float = 4.0
+
     # extra="ignore": a shared local .env may carry keys this service doesn't
     # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars
     # for a feature branch. Ignore them instead of refusing to boot.

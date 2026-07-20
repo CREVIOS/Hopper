@@ -16,7 +16,10 @@
     MessageSquareWarning,
     Server,
     Coins,
-    KeyRound
+    KeyRound,
+    Pause,
+    Play,
+    Clock
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { invalidateAll, goto } from '$app/navigation';
@@ -145,6 +148,78 @@
     }
   }
 
+  let stopping = $state(false);
+  let resuming = $state(false);
+  let extending = $state(false);
+
+  async function stopPod() {
+    if (!data.pod || stopping) return;
+    const ok = await confirm({
+      title: `Stop VM ${shortId(data.pod.id)}?`,
+      description:
+        'Billing stops and the VM shuts down. Files in /workspace are kept and come ' +
+        'back when you resume — anything outside /workspace (installed packages, ' +
+        'home-directory files) and any running processes are lost.',
+      confirmLabel: 'Stop VM'
+    });
+    if (!ok) return;
+    stopping = true;
+    const id = toast.loading('Stopping VM…');
+    try {
+      await api.post(`/pods/${data.pod.id}/stop`);
+      toast.success('VM stopped', { id, description: 'Your /workspace is safe.' });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not stop the VM', {
+        id,
+        description: e instanceof ApiError ? e.message : 'Failed to stop VM'
+      });
+    } finally {
+      stopping = false;
+    }
+  }
+
+  async function resumePod() {
+    if (!data.pod || resuming) return;
+    resuming = true;
+    const id = toast.loading('Resuming VM…');
+    try {
+      await api.post(`/pods/${data.pod.id}/resume`);
+      toast.success('VM resumed', { id, description: '/workspace remounted.' });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not resume the VM', {
+        id,
+        description: e instanceof ApiError ? e.message : 'Failed to resume VM'
+      });
+    } finally {
+      resuming = false;
+    }
+  }
+
+  async function extendPod() {
+    if (!data.pod || extending) return;
+    extending = true;
+    const id = toast.loading('Extending session…');
+    try {
+      const r = await api.post<{ extensions_remaining: number }>(
+        `/pods/${data.pod.id}/extend`
+      );
+      toast.success('Session extended by 1 hour', {
+        id,
+        description: `${r.extensions_remaining} extension${r.extensions_remaining === 1 ? '' : 's'} left.`
+      });
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not extend the session', {
+        id,
+        description: e instanceof ApiError ? e.message : 'Failed to extend'
+      });
+    } finally {
+      extending = false;
+    }
+  }
+
   async function terminatePod() {
     if (!data.pod) return;
     const ok = await confirm({
@@ -191,6 +266,7 @@
     pending: { variant: 'warning', label: 'Pending', pulse: true },
     creating: { variant: 'info', label: 'Creating', pulse: true },
     stopping: { variant: 'warning', label: 'Stopping', pulse: true },
+    stopped: { variant: 'muted', label: 'Stopped' },
     terminated: { variant: 'muted', label: 'Terminated' },
     failed: { variant: 'destructive', label: 'Failed' }
   };
@@ -201,6 +277,7 @@
   {@const podState = data.pod.state}
   {@const cfg = stateBadge[podState] ?? stateBadge.terminated}
   {@const isRunning = podState === 'running'}
+  {@const isStopped = podState === 'stopped'}
   {@const canTerminate = !['terminated', 'failed'].includes(podState)}
 
   <div
@@ -247,8 +324,22 @@
             </Button>
           {/if}
           {#if isRunning}
+            <Button variant="outline" onclick={extendPod} disabled={extending}>
+              {#if extending}<Spinner class="size-4" />{:else}<Clock class="size-4" />{/if}
+              Extend
+            </Button>
+            <Button variant="outline" onclick={stopPod} disabled={stopping}>
+              {#if stopping}<Spinner class="size-4" />{:else}<Pause class="size-4" />{/if}
+              Stop
+            </Button>
             <Button variant="outline" onclick={() => (issueOpen = true)}>
               <MessageSquareWarning class="size-4" /> Report issue
+            </Button>
+          {/if}
+          {#if isStopped}
+            <Button onclick={resumePod} disabled={resuming}>
+              {#if resuming}<Spinner class="size-4" />{:else}<Play class="size-4" />{/if}
+              Resume
             </Button>
           {/if}
           {#if canTerminate}
