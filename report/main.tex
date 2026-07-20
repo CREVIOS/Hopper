@@ -681,9 +681,9 @@ and resource-limit enforcement).
 \textbf{Integration tests (Python/pytest)} in \texttt{tests/integration/}
 cover 18 modules against live Docker-based PostgreSQL, NATS JetStream, and
 Keycloak services spun up by the \texttt{python-integration} CI job. Modules
-include \texttt{test\_credit\_ledger\_invariants.py},
-\texttt{test\_nats\_event\_flow.py}, \texttt{test\_keycloak\_integration.py},
-\texttt{test\_pods\_api.py}, \texttt{test\_auth\_api.py}, and 13 others.
+include \texttt{test\_credit\_ledger\_invariants}, \texttt{test\_nats\_event\_flow},
+\texttt{test\_keycloak\_integration}, \texttt{test\_pods\_api},
+\texttt{test\_auth\_api}, and 13 others.
 
 \textbf{Frontend unit tests (Vitest)} in \texttt{frontend/src/} verify 78 test
 cases across route server loads, API client behaviour, and Svelte component
@@ -741,6 +741,7 @@ Load --- k6 spike scenario & 81\,456 checks & --- & \texttt{test-results/load/} 
 \end{tabularx}
 \end{table}
 
+\begin{sloppypar}
 The lowest-covered API Gateway files are
 \texttt{routers/terminal.py} (41.90\,\%) and
 \texttt{routers/pods.py} (58.80\,\%).
@@ -750,6 +751,7 @@ On the frontend, four files have 0\,\% coverage:
 \texttt{routes/pods/queue/+page.server.ts}.
 In the orchestrator, \texttt{internal/k8s/pod.go} is the lowest at
 57.80\,\%; the network-policy module (\texttt{netpol.go}) is at 100\,\%.
+\end{sloppypar}
 
 \noindent\textbf{Confirmed testing gaps.}
 The following areas currently lack automated coverage:
@@ -782,7 +784,7 @@ A representative sample is shown in Table~\ref{tab:bugs}.
 \caption{Representative bugs resolved during the testing period}
 \label{tab:bugs}
 \renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{|l|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{2.8cm}|>{\RaggedRight\arraybackslash}p{2.1cm}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
 \hline
 \textbf{Bug ID} & \textbf{Component} & \textbf{Root cause} & \textbf{Fix} \\
 \hline
@@ -809,15 +811,17 @@ BUG-2026-07-18-20 & Dashboard navigation & No loading skeleton during authentica
 
 The six cases below are drawn directly from the repository test suites.
 
+\begin{sloppypar}
 \begin{description}[leftmargin=0pt,labelindent=0pt,style=nextline]
 
 \item[\textbf{TC-1 --- Billing consumer: insufficient-credit grace logic}]
   \textit{Suite:} \texttt{tests/unit/services/test\_billing\_consumer.py} ---
   \textit{passed} (pytest-junit 2026-07-18).
   Verifies that when a \texttt{billing.deducted} NATS message arrives and the
-  credit deduction raises \texttt{Insufficient\-Credits}, the consumer invokes
+  credit deduction raises \texttt{InsufficientCredits}, the consumer invokes
   the grace-period logic rather than nakking or crashing.
-  Test: \texttt{test\_handle\_billing\_deducted\_runs\_grace\allowbreak{}\_logic\_on\_insufficient\_credits}.
+  Test: \texttt{test\_handle\_billing\_deducted\_runs\_grace\_logic%
+\_on\_insufficient\_credits}.
 
 \item[\textbf{TC-2 --- Credit service: double-entry balance invariant}]
   \textit{Suite:} \texttt{tests/unit/services/test\_credit\_service.py} ---
@@ -825,22 +829,23 @@ The six cases below are drawn directly from the repository test suites.
   Confirms that \texttt{add\_credits} produces a transfer record plus exactly
   two balanced ledger entries that sum to zero, preserving double-entry
   bookkeeping.
-  Test: \texttt{test\_add\_credits\_creates\_transfer\allowbreak{}\_and\_balanced\_entries}.
+  Test: \texttt{test\_add\_credits\_creates\_transfer%
+\_and\_balanced\_entries}.
 
 \item[\textbf{TC-3 --- Orchestrator: pod lifecycle state transitions}]
   \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
   \textit{passed}.
   The Go contract suite exercises two sub-tests:
-  \texttt{TestPodLifecycle\-ValidTransitions} asserts the legal path REQUESTED
+  \texttt{TestPodLifecycleValidTransitions} asserts the legal path REQUESTED
   $\to$ RUNNING $\to$ TERMINATED, and
-  \texttt{TestPodLifecycle\-RejectsInvalidTransition} confirms that
+  \texttt{TestPodLifecycleRejectsInvalidTransition} confirms that
   TERMINATED $\to$ RUNNING returns an error.
 
 \item[\textbf{TC-4 --- Orchestrator: VM plan billing rates}]
   \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
   \textit{passed}.
   \texttt{TestVMPlanHourlyRates} checks Small=1, Medium=2, Large=4
-  credits/hour. \texttt{TestPartialHour\-BillingUsesPerMinuteRate} verifies
+  credits/hour. \texttt{TestPartialHourBillingUsesPerMinuteRate} verifies
   per-minute pro-ration at session end.
 
 \item[\textbf{TC-5 --- E2E: professor credit allocation (TC-CREDIT-004)}]
@@ -858,6 +863,7 @@ The six cases below are drawn directly from the repository test suites.
   The test asserts the queue page renders the in-queue entry.
 
 \end{description}
+\end{sloppypar}
 
 \section{CI/CD \& Deployment}
 \subsection{Pipeline Overview}

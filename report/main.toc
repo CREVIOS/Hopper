@@ -24,8 +24,8 @@
 \contentsline {subsection}{\numberline {5.2}Test Coverage Summary}{25}{subsection.5.2}%
 \contentsline {subsection}{\numberline {5.3}Bug Tracking \& Resolution Log}{26}{subsection.5.3}%
 \contentsline {subsection}{\numberline {5.4}Sample Test Cases}{28}{subsection.5.4}%
-\contentsline {section}{\numberline {6}CI/CD \& Deployment}{28}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{28}{subsection.6.1}%
+\contentsline {section}{\numberline {6}CI/CD \& Deployment}{29}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{29}{subsection.6.1}%
 \contentsline {subsection}{\numberline {6.2}Environments}{29}{subsection.6.2}%
 \contentsline {subsection}{\numberline {6.3}Deployment Steps}{29}{subsection.6.3}%
 \contentsline {subsection}{\numberline {6.4}Hosting Platform \& Live URL}{29}{subsection.6.4}%
@@ -35,10 +35,10 @@
 \contentsline {subsection}{\numberline {7.2}README Completeness Checklist}{29}{subsection.7.2}%
 \contentsline {subsection}{\numberline {7.3}Code Organization / Folder Structure}{29}{subsection.7.3}%
 \contentsline {subsection}{\numberline {7.4}Local Setup Instructions}{29}{subsection.7.4}%
-\contentsline {section}{\numberline {8}Evaluation \& Reflection}{29}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{29}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{29}{subsection.8.2}%
+\contentsline {section}{\numberline {8}Evaluation \& Reflection}{30}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{30}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{30}{subsection.8.2}%
 \contentsline {subsection}{\numberline {8.3}Limitations \& Future Work}{30}{subsection.8.3}%
 \contentsline {subsection}{\numberline {8.4}Lessons Learned}{30}{subsection.8.4}%
 \contentsline {subsection}{\numberline {8.5}Individual Responsibility}{30}{subsection.8.5}%
-\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{30}{appendix.A}%
+\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{31}{appendix.A}%
