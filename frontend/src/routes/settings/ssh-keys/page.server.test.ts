@@ -42,6 +42,8 @@ describe('ssh keys page server load', () => {
       cookies: cookieJar('session-token')
     } as any);
 
+    // The loader fetches SSH keys and API keys in parallel; the mock returns a
+    // distinct fixture per endpoint (/auth/api-keys vs the SSH-keys list).
     expect(result).toEqual({
       keys: [{ id: 'key-1', name: 'laptop' }],
       apiKeys: [{ id: 'ak-1', name: 'ci', prefix: 'hpk_ab', scope: 'read_only' }]

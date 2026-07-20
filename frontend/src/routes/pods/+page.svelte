@@ -24,8 +24,6 @@
   import {
     VM_PLAN_INFO,
     VM_TEMPLATE_INFO,
-    type VmPlan,
-    type VmTemplate,
     type Pod,
     type Availability,
     type CreatePodResult
@@ -53,6 +51,22 @@
   import { confirm } from '$lib/confirm.svelte';
   import { cn, copyToClipboard } from '$lib/utils';
 
+  type PlanOption = {
+    name: string;
+    display_name: string;
+    cpu: string;
+    memory: string;
+    disk: string;
+    credits_per_hour: number;
+    workspace_gb: number;
+  };
+  type TemplateOption = {
+    template: string;
+    display_name: string;
+    description: string;
+    is_default: boolean;
+  };
+
   let {
     data
   }: {
@@ -60,10 +74,50 @@
       pods: Pod[];
       nodeIp: string;
       balance: number;
+      plans: PlanOption[];
+      templates: TemplateOption[];
       availability: Availability | null;
     };
   } = $props();
   let livePods = $state<Pod[]>(data.pods);
+
+  // Plans come from the admin-managed catalogue (/pods/plans). If that returned
+  // nothing (API hiccup), fall back to the static list so launches still work.
+  const planOptions = $derived<PlanOption[]>(
+    data.plans && data.plans.length
+      ? data.plans
+      : Object.entries(VM_PLAN_INFO).map(([name, i]) => ({
+          name,
+          display_name: name,
+          cpu: i.cpu,
+          memory: i.memory,
+          disk: i.disk,
+          credits_per_hour: i.rate,
+          workspace_gb: 0
+        }))
+  );
+  const planMap = $derived(
+    Object.fromEntries(planOptions.map((p) => [p.name, p])) as Record<string, PlanOption>
+  );
+
+  // Visual metadata (icon accent, tagline) lives in the frontend keyed by
+  // template; admin-added templates fall back to neutral styling.
+  const templateVisuals = VM_TEMPLATE_INFO as unknown as Record<
+    string,
+    { accent?: string; tagline?: string }
+  >;
+  // Templates come from the admin-managed catalogue (/pods/templates); fall back
+  // to the static list if it's unreachable so launches still work.
+  const templateOptions = $derived<TemplateOption[]>(
+    data.templates && data.templates.length
+      ? data.templates
+      : Object.entries(VM_TEMPLATE_INFO).map(([template, i]) => ({
+          template,
+          display_name: i.name,
+          description: i.description,
+          is_default: template === 'ubuntu'
+        }))
+  );
   let hydrated = $state(false);
 
   // Live cluster availability readout. Seeded once from SSR (untrack keeps this
@@ -118,9 +172,22 @@
     red: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
   };
 
-  let selectedPlan = $state<VmPlan>('small');
-  let selectedTemplate = $state<VmTemplate>('ubuntu');
+  let selectedPlan = $state<string>('small');
+  let selectedTemplate = $state<string>('ubuntu');
   let creating = $state(false);
+
+  // Keep the selections valid as the catalogues load/change (e.g. 'small' was
+  // retired, or the catalogue is admin-defined and doesn't include it).
+  $effect(() => {
+    if (planOptions.length && !planMap[selectedPlan]) {
+      selectedPlan = planOptions[0].name;
+    }
+  });
+  $effect(() => {
+    if (templateOptions.length && !templateOptions.some((t) => t.template === selectedTemplate)) {
+      selectedTemplate = (templateOptions.find((t) => t.is_default) ?? templateOptions[0]).template;
+    }
+  });
 
   // List filters
   let query = $state('');
@@ -139,7 +206,7 @@
   let sshDialogOpen = $state(false);
   let sshDialogPod = $state<Pod | null>(null);
 
-  const planRate = $derived(VM_PLAN_INFO[selectedPlan].rate);
+  const planRate = $derived(planMap[selectedPlan]?.credits_per_hour ?? 0);
   const canAfford = $derived(data.balance >= planRate);
 
   const filteredPods = $derived.by(() => {
@@ -192,7 +259,7 @@
 
     const ok = await confirm({
       title: 'Launch new VM?',
-      description: `Plan: ${selectedPlan} (${VM_PLAN_INFO[selectedPlan].cpu}, ${VM_PLAN_INFO[selectedPlan].memory}). Billing starts at ${planRate} credit/hour.`,
+      description: `Plan: ${selectedPlan} (${planMap[selectedPlan]?.cpu}, ${planMap[selectedPlan]?.memory}). Billing starts at ${planRate} credit/hour.`,
       confirmLabel: 'Launch',
       variant: 'default'
     });
@@ -364,34 +431,34 @@
       <div>
         <h3 class="mb-3 text-sm font-semibold">1. Resource plan</h3>
         <div class="grid gap-3 sm:grid-cols-3">
-          {#each Object.entries(VM_PLAN_INFO) as [plan, info] (plan)}
+          {#each planOptions as info (info.name)}
             <button
               type="button"
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all',
                 'hover:border-primary/50 hover:shadow-sm',
-                selectedPlan === plan
+                selectedPlan === info.name
                   ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
-              onclick={() => (selectedPlan = plan as VmPlan)}
+              onclick={() => (selectedPlan = info.name)}
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
-                  <div class="text-sm font-semibold capitalize">{plan}</div>
+                  <div class="text-sm font-semibold capitalize">{info.display_name}</div>
                   <p class="mt-0.5 text-xs leading-snug text-muted-foreground">
-                    {info.description}
+                    {info.workspace_gb ? `${info.workspace_gb} GB persistent workspace` : ''}
                   </p>
                 </div>
                 <div
                   class={cn(
                     'flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
-                    selectedPlan === plan
+                    selectedPlan === info.name
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'border-border bg-card group-hover:border-primary/40'
                   )}
                 >
-                  {#if selectedPlan === plan}<Check class="size-3" />{/if}
+                  {#if selectedPlan === info.name}<Check class="size-3" />{/if}
                 </div>
               </div>
 
@@ -416,7 +483,7 @@
                 class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary"
               >
                 <Coins class="size-3.5" />
-                {info.rate} credit{info.rate === 1 ? '' : 's'}<span
+                {info.credits_per_hour} credit{info.credits_per_hour === 1 ? '' : 's'}<span
                   class="font-normal text-muted-foreground">/hr</span
                 >
               </div>
@@ -429,19 +496,19 @@
       <div>
         <h3 class="mb-3 text-sm font-semibold">2. Base image</h3>
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {#each Object.entries(VM_TEMPLATE_INFO) as [key, info] (key)}
+          {#each templateOptions as info (info.template)}
             <button
               type="button"
-              aria-label={info.name}
+              aria-label={info.display_name}
               class={cn(
                 'group relative flex flex-col rounded-xl border p-3.5 text-left transition-all hover:border-primary/50 hover:shadow-sm',
-                selectedTemplate === key
+                selectedTemplate === info.template
                   ? 'border-primary bg-primary/[0.04] ring-2 ring-primary/25'
                   : 'border-border bg-card'
               )}
-              onclick={() => (selectedTemplate = key as VmTemplate)}
+              onclick={() => (selectedTemplate = info.template)}
             >
-              {#if selectedTemplate === key}
+              {#if selectedTemplate === info.template}
                 <div
                   class="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
                 >
@@ -452,15 +519,15 @@
                 <div
                   class={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-lg text-base font-bold uppercase transition-transform group-hover:scale-105',
-                    templateAccent[info.accent] ?? 'bg-muted text-foreground'
+                    templateAccent[templateVisuals[info.template]?.accent ?? ''] ?? 'bg-muted text-foreground'
                   )}
                 >
-                  {info.name.slice(0, 1)}
+                  {info.display_name.slice(0, 1)}
                 </div>
                 <div class="min-w-0 pr-5">
-                  <div class="truncate text-sm font-semibold">{info.name}</div>
+                  <div class="truncate text-sm font-semibold">{info.display_name}</div>
                   <p class="truncate text-[11px] text-muted-foreground">
-                    {info.tagline}
+                    {templateVisuals[info.template]?.tagline ?? info.description}
                   </p>
                 </div>
               </div>

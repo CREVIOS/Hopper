@@ -5,8 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -19,6 +23,12 @@ import (
 // a separate secret store.
 const SshPasswordAnnotation = "hopper.dev/ssh-password"
 
+// CreditsPerHrAnnotation stores the plan's credits-per-hour billing rate on the
+// Pod so reconciliation after an orchestrator restart can resume billing at the
+// gateway-supplied rate — the running pod is the only durable source for it once
+// plan pricing is admin-configurable (the built-in Plans map is just a fallback).
+const CreditsPerHrAnnotation = "hopper.dev/credits-per-hr"
+
 // generateRandomPassword returns a 24-char URL-safe random string (192 bits
 // of entropy). Used for the per-pod SSH root password. (code-server runs with
 // auth disabled — the platform gates VS Code access, so no code-server
@@ -29,6 +39,23 @@ func generateRandomPassword() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// containerStartupArgs is the `/bin/sh -c` script the VM container runs on
+// boot: set the per-pod root password, then — only if the launching user
+// registered SSH keys — materialise them into /root/.ssh/authorized_keys
+// before sshd starts, and finally exec supervisord (sshd + code-server).
+//
+// $AUTHORIZED_KEYS (newline-joined public keys) is quoted everywhere so its
+// contents are never interpreted by the shell. The `[ -z ] ||` guard makes the
+// key step a no-op for password-only VMs, preserving prior behaviour. `exec`
+// replaces the shell so SIGTERM reaches supervisord for graceful shutdown.
+func containerStartupArgs() string {
+	return `echo "root:$ROOT_PASSWORD" | chpasswd && ` +
+		`{ [ -z "$AUTHORIZED_KEYS" ] || { mkdir -p /root/.ssh && ` +
+		`printf '%s\n' "$AUTHORIZED_KEYS" > /root/.ssh/authorized_keys && ` +
+		`chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys; }; } && ` +
+		`exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf`
 }
 
 type PodManager struct {
@@ -62,6 +89,22 @@ type CreatePodOpts struct {
 	// StorageClass is the K8s StorageClassName for the workspace PVC. Empty
 	// uses the cluster default.
 	StorageClass string
+	// AuthorizedKeys are the launching user's OpenSSH public keys. When
+	// non-empty they are written to /root/.ssh/authorized_keys in the VM so
+	// key-based SSH works. Public keys are not secret; they are passed as a
+	// pod env var and materialised by the container's startup command.
+	AuthorizedKeys []string
+	// WorkspacePVCName, when set, is the user's persistent ReadWriteOnce PVC
+	// (ws-user-<id>, FR-HC-28). It is ensured lazily (created if absent, reused
+	// otherwise), mounted read-write at /workspace, and — because its name is
+	// outside DeletePod's ws-<pod> scope — never deleted by the session
+	// lifecycle. Takes precedence over the legacy per-pod DiskGiB path.
+	WorkspacePVCName    string
+	WorkspaceCapacityGB int
+	// CreditsPerHr is the plan's billing rate, supplied by the gateway from its
+	// DB-backed plan catalogue. Stored as a pod annotation so reconcile can
+	// recover it. Zero means "unknown" → the caller falls back to the Plans map.
+	CreditsPerHr float64
 	// NetworkGroup places the VM in a network isolation group (HOP-19 18.3):
 	// the pod gets the group label and a NetworkPolicy allowing same-group
 	// traffic is ensured. Empty = fully isolated (the default).
@@ -118,16 +161,26 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	// inside the VM shows the node's RAM and `nproc` shows all host cores —
 	// a tenant-isolation leak. The lxcfs daemon must be running on every node
 	// (systemd unit `lxcfs.service`).
-	// Per-pod workspace PVC for persistence across pod restarts. We name it
-	// after the pod so deletion can be reconciled by the orchestrator. The
-	// PVC is created BEFORE the Pod so the kubelet doesn't loop on a missing
-	// claim. Failure to create the PVC fails the whole pod create (no silent
-	// "ephemeral fallback" — the user expects their disk to persist).
-	pvcName := fmt.Sprintf("ws-%s", opts.PodName)
-	if opts.DiskGiB > 0 {
+	// Resolve the /workspace-backing PVC (created BEFORE the Pod so the kubelet
+	// doesn't loop on a missing claim):
+	//   - Persistent per-user workspace (FR-HC-28): opts.WorkspacePVCName set →
+	//     ensure a RWO PVC exists (create-if-absent, reuse otherwise). It has no
+	//     pod owner-reference and its ws-user-<id> name is outside DeletePod's
+	//     ws-<pod> scope, so it survives the pod and is reused across sessions.
+	//   - Legacy per-pod disk: opts.DiskGiB>0 → a pod-scoped ws-<pod> PVC that
+	//     DeletePod removes with the pod (unused today; kept for compatibility).
+	workspacePVC := ""
+	workspaceSizeGi := 0
+	switch {
+	case opts.WorkspacePVCName != "":
+		workspacePVC, workspaceSizeGi = opts.WorkspacePVCName, opts.WorkspaceCapacityGB
+	case opts.DiskGiB > 0:
+		workspacePVC, workspaceSizeGi = fmt.Sprintf("ws-%s", opts.PodName), opts.DiskGiB
+	}
+	if workspacePVC != "" {
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
+				Name:      workspacePVC,
 				Namespace: pm.namespace,
 				Labels:    labels,
 			},
@@ -135,7 +188,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", opts.DiskGiB)),
+						corev1.ResourceStorage: resource.MustParse(fmt.Sprintf("%dGi", workspaceSizeGi)),
 					},
 				},
 			},
@@ -143,8 +196,10 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		if opts.StorageClass != "" {
 			pvc.Spec.StorageClassName = &opts.StorageClass
 		}
-		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
-			return PodPorts{}, fmt.Errorf("creating workspace pvc: %w", err)
+		// Idempotent: a returning user already has their workspace PVC, so
+		// AlreadyExists means "reuse it" (keep the data), not an error.
+		if _, err := pm.client.CoreV1().PersistentVolumeClaims(pm.namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return PodPorts{}, fmt.Errorf("ensuring workspace pvc: %w", err)
 		}
 	}
 
@@ -152,22 +207,29 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 	hostPathFile := corev1.HostPathFile
 	var lxcfsVolumes []corev1.Volume
 	var lxcfsMounts []corev1.VolumeMount
-	for _, f := range lxcfsFiles {
-		volName := "lxcfs-" + f
-		lxcfsVolumes = append(lxcfsVolumes, corev1.Volume{
-			Name: volName,
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/var/lib/lxcfs/proc/" + f,
-					Type: &hostPathFile,
+	// lxcfs requires the lxcfs daemon on every node (systemd `lxcfs.service`).
+	// Single-node local dev clusters (OrbStack, kind, minikube) don't have it,
+	// and the hostPath FileOrCreate check then wedges the pod in
+	// ContainerCreating. HOPPER_DISABLE_LXCFS=true skips it for those; the VM
+	// then sees the node's /proc (resource figures inside it are cosmetic).
+	if os.Getenv("HOPPER_DISABLE_LXCFS") != "true" {
+		for _, f := range lxcfsFiles {
+			volName := "lxcfs-" + f
+			lxcfsVolumes = append(lxcfsVolumes, corev1.Volume{
+				Name: volName,
+				VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{
+						Path: "/var/lib/lxcfs/proc/" + f,
+						Type: &hostPathFile,
+					},
 				},
-			},
-		})
-		lxcfsMounts = append(lxcfsMounts, corev1.VolumeMount{
-			Name:      volName,
-			MountPath: "/proc/" + f,
-			ReadOnly:  true,
-		})
+			})
+			lxcfsMounts = append(lxcfsMounts, corev1.VolumeMount{
+				Name:      volName,
+				MountPath: "/proc/" + f,
+				ReadOnly:  true,
+			})
+		}
 	}
 
 	automount := false
@@ -201,9 +263,10 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 			Namespace: pm.namespace,
 			Labels:    labels,
 			// Stored on the Pod so reconciliation after orchestrator restart can
-			// recover the SSH password without an extra Secret.
+			// recover the SSH password + billing rate without an extra Secret.
 			Annotations: map[string]string{
-				SshPasswordAnnotation: sshPassword,
+				SshPasswordAnnotation:  sshPassword,
+				CreditsPerHrAnnotation: strconv.FormatFloat(opts.CreditsPerHr, 'f', -1, 64),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -216,14 +279,14 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
 			Volumes: append(lxcfsVolumes, func() []corev1.Volume {
-				if opts.DiskGiB == 0 {
+				if workspacePVC == "" {
 					return nil
 				}
 				return []corev1.Volume{{
 					Name: "workspace",
 					VolumeSource: corev1.VolumeSource{
 						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvcName,
+							ClaimName: workspacePVC,
 						},
 					},
 				}}
@@ -244,9 +307,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 					// from $ROOT_PASSWORD before sshd comes up. exec replaces the
 					// shell so signals reach supervisord normally.
 					Command: []string{"/bin/sh", "-c"},
-					Args: []string{
-						`echo "root:$ROOT_PASSWORD" | chpasswd && exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf`,
-					},
+					Args:    []string{containerStartupArgs()},
 					Ports: []corev1.ContainerPort{
 						{Name: "ssh", ContainerPort: 22, Protocol: corev1.ProtocolTCP},
 						{Name: "vscode", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
@@ -256,6 +317,8 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						// Path-based routing: /{userId}/code/{podId} (see ingress + frontend iframe).
 						{Name: "CS_BASE_PATH", Value: fmt.Sprintf("/%s/code/%s", opts.UserID, opts.PodID)},
 						{Name: "ROOT_PASSWORD", Value: sshPassword},
+						// Newline-joined OpenSSH public keys (empty ⇒ no key injection).
+						{Name: "AUTHORIZED_KEYS", Value: strings.Join(opts.AuthorizedKeys, "\n")},
 					},
 					Resources: corev1.ResourceRequirements{
 						// CPU request is a fraction of the limit so near-idle VMs
@@ -295,7 +358,7 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 						},
 					},
 					VolumeMounts: append(lxcfsMounts, func() []corev1.VolumeMount {
-						if opts.DiskGiB == 0 {
+						if workspacePVC == "" {
 							return nil
 						}
 						return []corev1.VolumeMount{{

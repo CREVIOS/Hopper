@@ -45,11 +45,32 @@ class FakeDB:
         obj.seq = 7
 
 
-def test_resolve_plan_validates_enum():
-    assert vm_queue._resolve_plan("small").value == "small"
+@pytest.fixture(autouse=True)
+def _stub_plan_catalogue(monkeypatch):
+    """enqueue_vm_request resolves resources from the DB-backed plan catalogue
+    (plan_service). Stub it with the built-in small/medium/large."""
+    from types import SimpleNamespace
+
+    plans = {
+        "small": SimpleNamespace(name="small", cpu="1", memory="2Gi", disk="5Gi", credits_per_hour=1.0, workspace_gb=20),
+        "medium": SimpleNamespace(name="medium", cpu="2", memory="4Gi", disk="10Gi", credits_per_hour=2.0, workspace_gb=50),
+        "large": SimpleNamespace(name="large", cpu="4", memory="8Gi", disk="20Gi", credits_per_hour=4.0, workspace_gb=100),
+    }
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return plans.get(name)
+
+    monkeypatch.setattr("app.services.vm_queue.plan_service.get_plan", fake_get_plan)
+
+
+async def test_enqueue_rejects_unknown_plan(monkeypatch):
+    async def fake_get_balance(db, user_id):
+        return 100.0
+
+    monkeypatch.setattr("app.services.vm_queue.get_balance", fake_get_balance)
 
     with pytest.raises(vm_queue.EnqueueError) as exc_info:
-        vm_queue._resolve_plan("gpu-xl")
+        await vm_queue.enqueue_vm_request(FakeDB(), _payload(), "gpu-xl", "ubuntu")
 
     assert exc_info.value.status_code == 422
 

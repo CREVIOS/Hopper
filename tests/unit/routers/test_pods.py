@@ -15,6 +15,7 @@ from app.routers.pods import (
     list_queue,
     list_plans,
     list_pods,
+    list_templates,
     terminate_pod,
     stream_metrics,
     vscode_proxy,
@@ -40,6 +41,78 @@ def _no_cluster_capacity(monkeypatch):
         return None
 
     monkeypatch.setattr("app.routers.pods.vm_scheduler.fetch_nodes", fake_fetch_nodes)
+
+
+@pytest.fixture(autouse=True)
+def _stub_plan_catalogue(monkeypatch):
+    """create_pod/list_plans resolve resources from the DB-backed plan catalogue
+    (plan_service). Stub it with the built-in small/medium/large so these router
+    unit tests stay hermetic. Tests still stub get_balance + orchestrator."""
+    from types import SimpleNamespace
+
+    plans = {
+        "small": SimpleNamespace(name="small", display_name="Small", cpu="1", memory="2Gi", disk="5Gi", credits_per_hour=1.0, workspace_gb=20),
+        "medium": SimpleNamespace(name="medium", display_name="Medium", cpu="2", memory="4Gi", disk="10Gi", credits_per_hour=2.0, workspace_gb=50),
+        "large": SimpleNamespace(name="large", display_name="Large", cpu="4", memory="8Gi", disk="20Gi", credits_per_hour=4.0, workspace_gb=100),
+    }
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return plans.get(name)
+
+    async def fake_list_plans(db, *, include_inactive=False):
+        return list(plans.values())
+
+    monkeypatch.setattr("app.routers.pods.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.pods.plan_service.list_plans", fake_list_plans)
+
+
+@pytest.fixture(autouse=True)
+def _stub_image_catalogue(monkeypatch):
+    """create_pod/list_templates resolve the container image from the DB-backed
+    image catalogue (image_service). Stub it with the built-in templates so
+    these router unit tests stay hermetic."""
+    from types import SimpleNamespace
+
+    images = {
+        "ubuntu": SimpleNamespace(template="ubuntu", display_name="Ubuntu 22.04", image="hopper/vm-ubuntu:22.04", description="Base Ubuntu with SSH", is_active=True, is_default=True),
+        "python-ml": SimpleNamespace(template="python-ml", display_name="Python / ML", image="hopper/vm-python-ml:22.04", description="Python 3", is_active=True, is_default=False),
+        "cpp": SimpleNamespace(template="cpp", display_name="C / C++", image="hopper/vm-cpp:22.04", description="GCC", is_active=True, is_default=False),
+        "java": SimpleNamespace(template="java", display_name="Java", image="hopper/vm-java:22.04", description="OpenJDK", is_active=True, is_default=False),
+    }
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return images.get(template)
+
+    async def fake_get_default_image(db):
+        return images["ubuntu"]
+
+    async def fake_list_images(db, *, include_inactive=False):
+        return list(images.values())
+
+    monkeypatch.setattr("app.routers.pods.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.pods.image_service.get_default_image", fake_get_default_image)
+    monkeypatch.setattr("app.routers.pods.image_service.list_images", fake_list_images)
+
+
+@pytest.fixture(autouse=True)
+def _stub_workspace(monkeypatch):
+    """create_pod ensures a per-user workspace PVC (workspace_service). Stub it
+    with a fixed row so these router unit tests stay hermetic (no DB)."""
+    from types import SimpleNamespace
+
+    async def fake_get_or_create_workspace(db, user_id, plan, capacity_gb=None):
+        return SimpleNamespace(
+            id="ws-1",
+            user_id=user_id,
+            pvc_name=f"ws-user-{user_id}",
+            capacity_gb=capacity_gb or 20,
+            storage_class="",
+        )
+
+    monkeypatch.setattr(
+        "app.routers.pods.workspace_service.get_or_create_workspace",
+        fake_get_or_create_workspace,
+    )
 
 
 def _payload() -> TokenPayload:
@@ -184,10 +257,18 @@ def test_session_to_response_keeps_connection_details_for_running_pod():
 
 
 async def test_list_plans_returns_all_vm_plans():
-    result = await list_plans()
+    result = await list_plans(db=object())
 
     assert set(result) == {"small", "medium", "large"}
     assert result["small"]["credits_per_hour"] == 1.0
+
+
+async def test_list_templates_returns_all_templates():
+    result = await list_templates(db=object())
+
+    assert set(result) == {"ubuntu", "python-ml", "cpp", "java"}
+    assert result["ubuntu"]["image"] == "hopper/vm-ubuntu:22.04"
+    assert result["ubuntu"]["is_default"] is True
 
 
 async def test_list_pods_returns_sessions_for_current_user():

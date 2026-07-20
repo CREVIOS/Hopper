@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 
@@ -5,6 +7,14 @@ from app.models.session import PodSession
 from app.models.user import User
 from app.routers.admin import (
     _require_admin,
+    admin_create_image,
+    admin_create_plan,
+    admin_delete_image,
+    admin_delete_plan,
+    admin_list_images,
+    admin_list_plans,
+    admin_update_image,
+    admin_update_plan,
     approve_teacher,
     change_user_role,
     get_stats,
@@ -13,6 +23,8 @@ from app.routers.admin import (
     list_nodes,
     reject_teacher,
 )
+from app.schemas.image import ImageCreateRequest, ImageUpdateRequest
+from app.schemas.plan import PlanCreateRequest, PlanUpdateRequest
 from app.schemas.user import TokenPayload
 
 
@@ -249,3 +261,284 @@ async def test_change_user_role_updates_user_role(monkeypatch):
     assert result == {"status": "ok", "user_id": "user-2", "old_role": "student", "new_role": "admin"}
     assert user.role == "admin"
     assert db.committed is True
+
+
+# --- VM plan catalogue (admin CRUD) -----------------------------------------
+
+
+def _plan_row(name="small", **over):
+    base = dict(
+        name=name,
+        display_name=name.title(),
+        cpu="1",
+        memory="2Gi",
+        disk="5Gi",
+        credits_per_hour=1.0,
+        workspace_gb=20,
+        is_active=True,
+    )
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+async def test_admin_list_plans_includes_inactive(monkeypatch):
+    async def fake_list_plans(db, *, include_inactive=False):
+        assert include_inactive is True
+        return [_plan_row("small"), _plan_row("large", is_active=False)]
+
+    monkeypatch.setattr("app.routers.admin.plan_service.list_plans", fake_list_plans)
+
+    result = await admin_list_plans(current_user=_payload("admin"), db=FakeDB())
+
+    assert [p.name for p in result] == ["small", "large"]
+    assert result[1].is_active is False
+
+
+async def test_admin_create_plan_conflicts_when_exists(monkeypatch):
+    async def fake_get_plan(db, name, *, active_only=False):
+        return _plan_row(name)
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+
+    body = PlanCreateRequest(
+        name="small", display_name="Small", cpu="1", memory="2Gi",
+        disk="5Gi", credits_per_hour=1.0, workspace_gb=20,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_create_plan(body, current_user=_payload("admin"), db=FakeDB())
+
+    assert exc_info.value.status_code == 409
+
+
+async def test_admin_create_plan_creates_new(monkeypatch):
+    created = {}
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return None
+
+    async def fake_create_plan(db, **fields):
+        created.update(fields)
+        return _plan_row(**fields)
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.admin.plan_service.create_plan", fake_create_plan)
+
+    body = PlanCreateRequest(
+        name="gpu", display_name="GPU", cpu="8", memory="32Gi",
+        disk="100Gi", credits_per_hour=10.0, workspace_gb=200,
+    )
+    result = await admin_create_plan(body, current_user=_payload("admin"), db=FakeDB())
+
+    assert result.name == "gpu"
+    assert created["credits_per_hour"] == 10.0
+
+
+async def test_admin_update_plan_404_when_missing(monkeypatch):
+    async def fake_get_plan(db, name, *, active_only=False):
+        return None
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_update_plan(
+            "ghost", PlanUpdateRequest(credits_per_hour=2.0),
+            current_user=_payload("admin"), db=FakeDB(),
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_admin_update_plan_applies_only_provided_fields(monkeypatch):
+    plan = _plan_row("small")
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return plan
+
+    async def fake_update_plan(db, existing, fields):
+        # router must pass exclude_unset so untouched fields aren't overwritten
+        assert fields == {"credits_per_hour": 3.0}
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        return existing
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.admin.plan_service.update_plan", fake_update_plan)
+
+    result = await admin_update_plan(
+        "small", PlanUpdateRequest(credits_per_hour=3.0),
+        current_user=_payload("admin"), db=FakeDB(),
+    )
+
+    assert result.credits_per_hour == 3.0
+    assert result.cpu == "1"  # unchanged
+
+
+async def test_admin_delete_plan_404_when_missing(monkeypatch):
+    async def fake_get_plan(db, name, *, active_only=False):
+        return None
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_delete_plan("ghost", current_user=_payload("admin"), db=FakeDB())
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_admin_delete_plan_deactivates(monkeypatch):
+    plan = _plan_row("small")
+    calls = {}
+
+    async def fake_get_plan(db, name, *, active_only=False):
+        return plan
+
+    async def fake_deactivate_plan(db, existing):
+        calls["deactivated"] = existing.name
+        existing.is_active = False
+        return existing
+
+    monkeypatch.setattr("app.routers.admin.plan_service.get_plan", fake_get_plan)
+    monkeypatch.setattr("app.routers.admin.plan_service.deactivate_plan", fake_deactivate_plan)
+
+    result = await admin_delete_plan("small", current_user=_payload("admin"), db=FakeDB())
+
+    assert result == {"message": "deactivated", "name": "small"}
+    assert calls["deactivated"] == "small"
+
+
+# --- VM image / template catalogue (admin CRUD) -----------------------------
+
+
+def _image_row(template="ubuntu", **over):
+    base = dict(
+        template=template,
+        display_name=template.title(),
+        image=f"hopper/vm-{template}:22.04",
+        description="",
+        is_active=True,
+        is_default=template == "ubuntu",
+    )
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+async def test_admin_list_images_includes_inactive(monkeypatch):
+    async def fake_list_images(db, *, include_inactive=False):
+        assert include_inactive is True
+        return [_image_row("ubuntu"), _image_row("rust", is_active=False)]
+
+    monkeypatch.setattr("app.routers.admin.image_service.list_images", fake_list_images)
+
+    result = await admin_list_images(current_user=_payload("admin"), db=FakeDB())
+
+    assert [i.template for i in result] == ["ubuntu", "rust"]
+    assert result[1].is_active is False
+
+
+async def test_admin_create_image_conflicts_when_exists(monkeypatch):
+    async def fake_get_image(db, template, *, active_only=False):
+        return _image_row(template)
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+
+    body = ImageCreateRequest(template="ubuntu", display_name="Ubuntu", image="hopper/vm-ubuntu:22.04")
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_create_image(body, current_user=_payload("admin"), db=FakeDB())
+
+    assert exc_info.value.status_code == 409
+
+
+async def test_admin_create_image_creates_new(monkeypatch):
+    created = {}
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return None
+
+    async def fake_create_image(db, **fields):
+        created.update(fields)
+        return _image_row(**fields)
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.admin.image_service.create_image", fake_create_image)
+
+    body = ImageCreateRequest(
+        template="rust", display_name="Rust", image="hopper/vm-rust:1.0",
+        description="Cargo", is_default=True,
+    )
+    result = await admin_create_image(body, current_user=_payload("admin"), db=FakeDB())
+
+    assert result.template == "rust"
+    assert created["image"] == "hopper/vm-rust:1.0"
+    assert created["is_default"] is True
+
+
+async def test_admin_update_image_404_when_missing(monkeypatch):
+    async def fake_get_image(db, template, *, active_only=False):
+        return None
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_update_image(
+            "ghost", ImageUpdateRequest(image="x/y:1"),
+            current_user=_payload("admin"), db=FakeDB(),
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_admin_update_image_applies_only_provided_fields(monkeypatch):
+    row = _image_row("ubuntu")
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return row
+
+    async def fake_update_image(db, existing, fields):
+        assert fields == {"description": "Now with docs"}
+        for key, value in fields.items():
+            setattr(existing, key, value)
+        return existing
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.admin.image_service.update_image", fake_update_image)
+
+    result = await admin_update_image(
+        "ubuntu", ImageUpdateRequest(description="Now with docs"),
+        current_user=_payload("admin"), db=FakeDB(),
+    )
+
+    assert result.description == "Now with docs"
+    assert result.image == "hopper/vm-ubuntu:22.04"  # unchanged
+
+
+async def test_admin_delete_image_404_when_missing(monkeypatch):
+    async def fake_get_image(db, template, *, active_only=False):
+        return None
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_delete_image("ghost", current_user=_payload("admin"), db=FakeDB())
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_admin_delete_image_deactivates(monkeypatch):
+    row = _image_row("rust")
+    calls = {}
+
+    async def fake_get_image(db, template, *, active_only=False):
+        return row
+
+    async def fake_deactivate_image(db, existing):
+        calls["deactivated"] = existing.template
+        existing.is_active = False
+        return existing
+
+    monkeypatch.setattr("app.routers.admin.image_service.get_image", fake_get_image)
+    monkeypatch.setattr("app.routers.admin.image_service.deactivate_image", fake_deactivate_image)
+
+    result = await admin_delete_image("rust", current_user=_payload("admin"), db=FakeDB())
+
+    assert result == {"message": "deactivated", "template": "rust"}
+    assert calls["deactivated"] == "rust"

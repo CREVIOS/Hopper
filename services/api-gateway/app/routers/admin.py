@@ -9,7 +9,10 @@ from app.dependencies import get_current_user, get_db
 from app.models.audit import AuditLog
 from app.models.session import PodSession
 from app.models.user import User
+from app.schemas.image import ImageCreateRequest, ImageResponse, ImageUpdateRequest
+from app.schemas.plan import PlanCreateRequest, PlanResponse, PlanUpdateRequest
 from app.schemas.user import ChangeRoleRequest, TokenPayload
+from app.services import image_service, plan_service
 from app.services.keycloak_admin import KeycloakAdminError, keycloak_admin
 from app.services.orchestrator_client import orchestrator_client
 
@@ -327,3 +330,123 @@ async def get_audit_logs(
         }
         for log in logs
     ]
+
+
+# --- VM plan catalogue (admin CRUD) -----------------------------------------
+# Mutations here are captured by AuditMiddleware (all POST/PUT/DELETE), so no
+# explicit audit rows are written (avoids the double-logging seen elsewhere).
+
+
+@router.get("/plans", response_model=list[PlanResponse])
+async def admin_list_plans(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List every plan, including inactive ones (admin view)."""
+    _require_admin(current_user)
+    plans = await plan_service.list_plans(db, include_inactive=True)
+    return [PlanResponse.model_validate(p) for p in plans]
+
+
+@router.post("/plans", response_model=PlanResponse, status_code=201)
+async def admin_create_plan(
+    body: PlanCreateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new VM plan."""
+    _require_admin(current_user)
+    if await plan_service.get_plan(db, body.name) is not None:
+        raise HTTPException(status_code=409, detail=f"Plan '{body.name}' already exists")
+    plan = await plan_service.create_plan(db, **body.model_dump())
+    return PlanResponse.model_validate(plan)
+
+
+@router.put("/plans/{name}", response_model=PlanResponse)
+async def admin_update_plan(
+    name: str,
+    body: PlanUpdateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a plan's resources / pricing / active flag (name is immutable)."""
+    _require_admin(current_user)
+    plan = await plan_service.get_plan(db, name)
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"Plan '{name}' not found")
+    updated = await plan_service.update_plan(db, plan, body.model_dump(exclude_unset=True))
+    return PlanResponse.model_validate(updated)
+
+
+@router.delete("/plans/{name}")
+async def admin_delete_plan(
+    name: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete (deactivate) a plan. Existing pods on it keep billing."""
+    _require_admin(current_user)
+    plan = await plan_service.get_plan(db, name)
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"Plan '{name}' not found")
+    await plan_service.deactivate_plan(db, plan)
+    return {"message": "deactivated", "name": name}
+
+
+# --- VM image / template catalogue (admin CRUD) -----------------------------
+
+
+@router.get("/images", response_model=list[ImageResponse])
+async def admin_list_images(
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List every image/template, including inactive ones (admin view)."""
+    _require_admin(current_user)
+    images = await image_service.list_images(db, include_inactive=True)
+    return [ImageResponse.model_validate(i) for i in images]
+
+
+@router.post("/images", response_model=ImageResponse, status_code=201)
+async def admin_create_image(
+    body: ImageCreateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new VM template → image mapping."""
+    _require_admin(current_user)
+    if await image_service.get_image(db, body.template) is not None:
+        raise HTTPException(status_code=409, detail=f"Template '{body.template}' already exists")
+    image = await image_service.create_image(db, **body.model_dump())
+    return ImageResponse.model_validate(image)
+
+
+@router.put("/images/{template}", response_model=ImageResponse)
+async def admin_update_image(
+    template: str,
+    body: ImageUpdateRequest,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a template's image / metadata / active + default flags."""
+    _require_admin(current_user)
+    row = await image_service.get_image(db, template)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Template '{template}' not found")
+    updated = await image_service.update_image(db, row, body.model_dump(exclude_unset=True))
+    return ImageResponse.model_validate(updated)
+
+
+@router.delete("/images/{template}")
+async def admin_delete_image(
+    template: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete (deactivate) a template."""
+    _require_admin(current_user)
+    row = await image_service.get_image(db, template)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Template '{template}' not found")
+    await image_service.deactivate_image(db, row)
+    return {"message": "deactivated", "template": template}

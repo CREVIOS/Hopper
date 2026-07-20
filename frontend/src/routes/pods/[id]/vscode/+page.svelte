@@ -13,6 +13,9 @@
   const codeBase = $derived(
     data.pod ? `/${data.userId}/code/${data.pod.id}/` : ''
   );
+  // Open straight into the persistent per-user workspace (FR-HC-28) so files
+  // from previous sessions are right there instead of an empty editor.
+  const codeUrl = $derived(codeBase ? `${codeBase}?folder=/workspace` : '');
 
   type Phase = 'checking' | 'warming' | 'opening' | 'error' | 'not-running';
   let phase = $state<Phase>('checking');
@@ -46,7 +49,7 @@
           phase = 'opening';
           // Give the paint a beat so "Opening the editor" registers, then swap
           // this tab for VS Code (replace → no launcher in the back stack).
-          setTimeout(() => location.replace(codeBase), 450);
+          setTimeout(() => location.replace(codeUrl), 450);
           return;
         }
         if (res.status === 401 || res.status === 403 || res.status === 404) {
@@ -157,8 +160,7 @@
             stroke="#7c6cf5"
             stroke-width="5"
             stroke-linecap="round"
-            stroke-dasharray="270"
-            stroke-dashoffset="200"
+            stroke-dasharray="70 200"
             class="vsc-ring"
           />
         </svg>
@@ -215,13 +217,12 @@
 
 <style>
   @keyframes vscSpin {
-    from { stroke-dashoffset: 270; }
-    50% { stroke-dashoffset: 120; }
-    to { stroke-dashoffset: 270; }
+    to { transform: rotate(360deg); }
   }
   .vsc-ring {
-    animation: vscSpin 2.2s ease-in-out infinite;
+    animation: vscSpin 0.9s linear infinite;
     transform-origin: center;
+    transform-box: fill-box;
   }
   @media (prefers-reduced-motion: reduce) {
     .vsc-ring { animation: none; }
