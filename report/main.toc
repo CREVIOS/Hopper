@@ -4,41 +4,41 @@
 \contentsline {subsection}{\numberline {1.2}Target Users \& Use Cases}{4}{subsection.1.2}%
 \contentsline {subsection}{\numberline {1.3}Core Features}{4}{subsection.1.3}%
 \contentsline {subsection}{\numberline {1.4}Tech Stack Overview}{5}{subsection.1.4}%
-\contentsline {section}{\numberline {2}System Architecture}{6}{section.2}%
-\contentsline {subsection}{\numberline {2.1}High-Level Architecture Diagram}{6}{subsection.2.1}%
-\contentsline {subsection}{\numberline {2.2}Frontend Architecture}{8}{subsection.2.2}%
-\contentsline {subsection}{\numberline {2.3}Backend Architecture}{9}{subsection.2.3}%
-\contentsline {subsection}{\numberline {2.4}Database Design}{10}{subsection.2.4}%
-\contentsline {section}{\numberline {3}API Documentation}{13}{section.3}%
-\contentsline {subsection}{\numberline {3.1}API Design Overview}{13}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Endpoint Reference}{14}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{17}{subsection.3.3}%
-\contentsline {subsection}{\numberline {3.4}Sample Request \& Response}{17}{subsection.3.4}%
-\contentsline {section}{\numberline {4}Authentication \& Security}{19}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Authentication Strategy}{19}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Authorization \& Role Management}{21}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Security Measures}{21}{subsection.4.3}%
-\contentsline {subsection}{\numberline {4.4}Known Vulnerabilities \& Mitigations}{23}{subsection.4.4}%
-\contentsline {section}{\numberline {5}Testing \& Quality Assurance}{24}{section.5}%
-\contentsline {subsection}{\numberline {5.1}Testing Strategy}{24}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Test Coverage Summary}{25}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}Bug Tracking \& Resolution Log}{26}{subsection.5.3}%
-\contentsline {subsection}{\numberline {5.4}Sample Test Cases}{30}{subsection.5.4}%
-\contentsline {section}{\numberline {6}CI/CD \& Deployment}{31}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{31}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Environments}{33}{subsection.6.2}%
-\contentsline {subsection}{\numberline {6.3}Deployment Steps}{33}{subsection.6.3}%
-\contentsline {subsection}{\numberline {6.4}Hosting Platform \& Live URL}{35}{subsection.6.4}%
-\contentsline {subsection}{\numberline {6.5}Monitoring \& Logging}{35}{subsection.6.5}%
-\contentsline {section}{\numberline {7}Repository \& Documentation Quality}{36}{section.7}%
-\contentsline {subsection}{\numberline {7.1}Branching Strategy \& Commit Conventions}{36}{subsection.7.1}%
-\contentsline {subsection}{\numberline {7.2}README Completeness Checklist}{37}{subsection.7.2}%
-\contentsline {subsection}{\numberline {7.3}Code Organization / Folder Structure}{38}{subsection.7.3}%
-\contentsline {subsection}{\numberline {7.4}Local Setup Instructions}{40}{subsection.7.4}%
-\contentsline {section}{\numberline {8}Evaluation \& Reflection}{41}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{41}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{41}{subsection.8.2}%
-\contentsline {subsection}{\numberline {8.3}Limitations \& Future Work}{41}{subsection.8.3}%
-\contentsline {subsection}{\numberline {8.4}Lessons Learned}{41}{subsection.8.4}%
-\contentsline {subsection}{\numberline {8.5}Individual Responsibility}{41}{subsection.8.5}%
-\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{42}{appendix.A}%
+\contentsline {section}{\numberline {2}System Architecture}{7}{section.2}%
+\contentsline {subsection}{\numberline {2.1}High-Level Architecture Diagram}{7}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Frontend Architecture}{9}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Backend Architecture}{10}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Database Design}{11}{subsection.2.4}%
+\contentsline {section}{\numberline {3}API Documentation}{14}{section.3}%
+\contentsline {subsection}{\numberline {3.1}API Design Overview}{14}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Endpoint Reference}{15}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{18}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Sample Request \& Response}{18}{subsection.3.4}%
+\contentsline {section}{\numberline {4}Authentication \& Security}{20}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Authentication Strategy}{20}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Authorization \& Role Management}{22}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Security Measures}{22}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Known Vulnerabilities \& Mitigations}{24}{subsection.4.4}%
+\contentsline {section}{\numberline {5}Testing \& Quality Assurance}{25}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Testing Strategy}{25}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Test Coverage Summary}{26}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Bug Tracking \& Resolution Log}{27}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Sample Test Cases}{31}{subsection.5.4}%
+\contentsline {section}{\numberline {6}CI/CD \& Deployment}{32}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{32}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Environments}{34}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Deployment Steps}{34}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Hosting Platform \& Live URL}{36}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Monitoring \& Logging}{36}{subsection.6.5}%
+\contentsline {section}{\numberline {7}Repository \& Documentation Quality}{37}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Branching Strategy \& Commit Conventions}{37}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}README Completeness Checklist}{38}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Code Organization / Folder Structure}{39}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Local Setup Instructions}{41}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Evaluation \& Reflection}{42}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{42}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{43}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Limitations \& Future Work}{44}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Lessons Learned}{45}{subsection.8.4}%
+\contentsline {subsection}{\numberline {8.5}Individual Responsibility}{46}{subsection.8.5}%
+\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{47}{appendix.A}%

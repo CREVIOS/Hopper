@@ -25,6 +25,28 @@
 \usepackage{parskip}
 \usepackage{pdflscape}
 \usepackage{amssymb}
+% Add to the preamble
+\usepackage[most]{tcolorbox}
+\usepackage{multicol}
+\usepackage{amssymb}
+
+% Optional reusable feature-box style
+\tcbset{
+    featurebox/.style={
+        enhanced,
+        colback=blue!3,
+        colframe=blue!45!black,
+        boxrule=0.7pt,
+        arc=3mm,
+        left=4mm,
+        right=4mm,
+        top=3mm,
+        bottom=3mm,
+        fonttitle=\bfseries,
+        coltitle=black
+    }
+}
+
 \usetikzlibrary{arrows.meta,positioning,fit,calc}
 
 \graphicspath{{figures/}}
@@ -140,19 +162,112 @@ The verified user model in the repository includes at least three application ro
 Students are the primary runtime users. Confirmed use cases include signing in through the authentication flow, viewing available plans, creating and terminating compute sessions, monitoring CPU and memory usage, opening browser-based development access, using SSH-related settings, and reviewing their credit balance and usage history. Professors and administrators have additional operational and oversight use cases, including allocating credits, inspecting node or platform statistics, reviewing users, and accessing administrative workflows exposed through dedicated backend and frontend routes.
 
 \subsection{Core Features}
-The repository confirms that Hopper provides a multi-service compute management workflow rather than a static informational website. Core platform features include authenticated session management through Keycloak, plan-based runtime creation, automated credit checks before provisioning, orchestration of pod lifecycle events through a Go service, and persistent tracking of sessions and ledger operations in PostgreSQL with TimescaleDB support. These features are reinforced by the documented API routes, backend services, database migrations, and deployment manifests.
+Hopper is a multi-service compute-management platform that combines
+authenticated access, automated resource provisioning, real-time monitoring,
+and cluster-based workload orchestration.
 
-The frontend and backend code also confirm several user-facing capabilities beyond simple provisioning. The platform includes real-time metrics delivery through Server-Sent Events, browser-based terminal and file-management related functionality, administrative dashboards, SSH key management, notifications, and issue-reporting support. The infrastructure and documentation further show support for ingress-based web delivery, TLS termination, Keycloak-backed login and logout, NATS-based event propagation for billing and lifecycle messages, and Kubernetes deployment resources for a full cluster-based installation.
+\begin{table}[htbp]
+\centering
+\caption{Summary of Hopper's core features}
+\label{tab:core-features}
+\renewcommand{\arraystretch}{1.2}
 
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash\bfseries}p{0.24\textwidth}
+    >{\raggedright\arraybackslash}X
+}
+\toprule
+Category & Features \\
+\midrule
+
+Core platform &
+Keycloak-based authentication and session management; plan-based compute-session
+creation; credit validation before provisioning; Kubernetes pod lifecycle
+orchestration through Go and gRPC; persistent session and accounting records;
+double-entry credit tracking; and NATS-based billing and lifecycle events. \\
+
+User-facing capabilities &
+Real-time resource metrics through Server-Sent Events; browser-based terminal and
+editor access; file management; administrative dashboards; SSH key management;
+notifications and unread-count updates; and issue-reporting workflows. \\
+
+Supporting infrastructure &
+SvelteKit frontend, FastAPI gateway, Go orchestration service, Kubernetes workloads,
+PostgreSQL with TimescaleDB, NATS JetStream, Keycloak, Nginx Ingress, and TLS. \\
+
+\bottomrule
+\end{tabularx}
+\end{table}
 \subsection{Tech Stack Overview}
-The frontend is implemented with SvelteKit 2, Svelte 5, TypeScript, and Vite. This choice is suitable because the project needs route-driven server rendering, interactive dashboards, and a structured component model for authenticated application pages. The dependency set and source tree also show use of lightweight Svelte stores and derived state rather than a heavyweight external state library. In practice, state management is handled through Svelte writable stores for concerns such as authentication, pod state, and notifications, together with route-level server load functions and local derived state in components.
+The frontend uses SvelteKit 2, Svelte 5, TypeScript, and Vite to support server-rendered routes, interactive dashboards, and reusable authenticated components. State is managed through Svelte writable stores, derived state, and route-level server load functions.
 
-The backend is implemented as a FastAPI application in Python 3.12, backed by Pydantic settings, SQLAlchemy, Alembic migrations, and supporting libraries for SSE, authentication, rate limiting, and asynchronous I/O. This stack is suitable because it supports typed API development, automatic OpenAPI documentation, asynchronous integration with external services, and relatively clear separation of routers, services, models, and middleware. The repository also contains a Go 1.23 orchestration service that uses gRPC and Kubernetes client libraries, which is appropriate for cluster-facing lifecycle management because the native Kubernetes tooling in Go is mature and directly aligned with the platform's orchestration requirements.
+The backend uses FastAPI with Python 3.12, Pydantic, SQLAlchemy, Alembic, SSE, rate limiting, and asynchronous I/O. This provides typed APIs, automatic OpenAPI documentation, validation, and clear separation of routers, services, models, and middleware. A Go 1.23 orchestration service uses gRPC and Kubernetes libraries for compute-session lifecycle management.
 
-The primary database layer is PostgreSQL with TimescaleDB. This combination is suitable because Hopper needs conventional relational storage for users, sessions, roles, and accounting data, while also benefiting from time-series capabilities for metrics aggregation. Messaging and event distribution are handled through NATS JetStream, which fits the platform's need for lightweight asynchronous communication between the orchestrator and the API gateway, especially for billing and metrics events. Authentication is provided by Keycloak using OIDC flows, which is suitable for institutional single sign-on integration and role-based access control.
+PostgreSQL with TimescaleDB stores relational and time-series data. NATS JetStream handles asynchronous billing, metrics, and lifecycle events, while Keycloak provides OIDC-based authentication and role-based access control.
 
-The deployment and hosting configuration is centered on Kubernetes, Nginx Ingress, and declarative infrastructure artifacts under \texttt{k8s/}, \texttt{charts/}, and \texttt{infrastructure/}. This is suitable because the platform provisions compute sessions as cluster workloads and depends on ingress routing, service discovery, and namespace-level policy enforcement. The repository also confirms supporting infrastructure such as Docker and Docker Compose for local services, cert-manager for TLS certificate automation, and Cilium-enforced network policy definitions for zero-trust traffic control. Optional outbound email support is configured through Brevo or SMTP, but the exact production mail configuration remains environment-dependent.
+Deployment is based on Kubernetes, Nginx Ingress, Helm, and infrastructure files under \texttt{k8s/}, \texttt{charts/}, and \texttt{infrastructure/}. Docker Compose supports local development, cert-manager automates TLS certificates, Cilium enforces network policies, and optional email delivery is configured through Brevo or SMTP.
 
+\begin{table}[H]
+\centering
+\caption{Summary of the Hopper technology stack}
+\label{tab:tech-stack}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash\bfseries}p{0.20\textwidth}
+    >{\raggedright\arraybackslash}p{0.30\textwidth}
+    >{\raggedright\arraybackslash}X
+}
+\toprule
+Category & Technologies & Purpose and suitability \\
+\midrule
+
+Frontend &
+SvelteKit 2, Svelte 5, TypeScript, Vite &
+Provides server-side rendering, route-based application structure, interactive dashboards, reusable components, and type-safe frontend development. \\
+
+State management &
+Svelte writable stores, derived state, server load functions &
+Manages authentication, pod state, notifications, and route-level data without requiring a heavyweight external state-management library. \\
+
+API backend &
+FastAPI, Python 3.12, Pydantic, SQLAlchemy, Alembic &
+Supports typed asynchronous APIs, validation, database access, migrations, middleware, and automatic OpenAPI documentation. \\
+
+Orchestration service &
+Go 1.23, gRPC, Kubernetes client libraries &
+Handles cluster-facing pod lifecycle operations using mature native Kubernetes tooling and efficient service-to-service communication. \\
+
+Database &
+PostgreSQL, TimescaleDB &
+Stores relational application data while providing time-series capabilities for infrastructure and usage metrics. \\
+
+Messaging &
+NATS JetStream &
+Enables asynchronous distribution of lifecycle, billing, notification, and metrics events between services. \\
+
+Authentication &
+Keycloak, OpenID Connect &
+Provides centralized authentication, institutional sign-on support, token validation, and role-based access control. \\
+
+Deployment &
+Kubernetes, Nginx Ingress, Helm, cert-manager &
+Supports workload provisioning, service discovery, ingress routing, declarative deployment, and automated TLS certificate management. \\
+
+Security infrastructure &
+Cilium network policies, environment variables, Kubernetes Secrets &
+Restricts service communication, protects credentials, and provides namespace-level network isolation. \\
+
+Local development &
+Docker, Docker Compose &
+Provides reproducible local instances of PostgreSQL, TimescaleDB, NATS, Keycloak, and supporting services. \\
+
+Email service &
+Brevo or SMTP &
+Supports verification, password-reset, and notification emails, with production configuration supplied through environment variables. \\
+
+\bottomrule
+\end{tabularx}
+\end{table}
 \section{System Architecture}
 \subsection{High-Level Architecture Diagram}
 The deployed system is organized as a browser-facing frontend, a Python API gateway, a Go orchestration service, an identity provider, a relational database layer, and an event bus. The ingress configuration under \texttt{k8s/deploy/03-ingress.yaml} shows that external traffic is split across four path families: \texttt{/} for the frontend, \texttt{/api} for the gateway, Keycloak realm/resource paths for authentication, and a dedicated code-server proxy path for browser-based development access. The API gateway then coordinates synchronous database work, gRPC calls to the orchestrator, and asynchronous event handling over NATS.
@@ -715,33 +830,65 @@ staging runs.
 Coverage is measured independently per layer and aggregated by the
 \texttt{coverage-report} CI job. Figures are sourced from the artifacts
 recorded on \textbf{2026-07-18}.
-
 \begin{table}[H]
 \centering
 \caption{Automated test results and coverage by layer}
 \label{tab:coverage}
-\renewcommand{\arraystretch}{1.25}
-\begin{tabularx}{\textwidth}{|>{\bfseries\RaggedRight\arraybackslash}p{5.2cm}|r|r|>{\RaggedRight\arraybackslash}X|}
-\hline
-\textbf{Layer} & \textbf{Tests} & \textbf{Coverage} & \textbf{Artifact} \\
-\hline
-API Gateway --- Python unit (pytest) & 411 & 81.68\,\% & \texttt{coverage/python/unit.xml} \\
-\hline
-API Gateway --- Python integration (pytest) & 18 modules & --- & \texttt{tests/integration/} \\
-\hline
-Frontend --- SvelteKit (Vitest) & 78 & 66.08\,\% & \texttt{coverage/frontend/} \texttt{coverage-summary.json} \\
-\hline
-Orchestrator --- Go internal (go test) & 16 & 71.26\,\% & \texttt{coverage/orchestrator/} \texttt{orchestrator.out} \\
-\hline
-Orchestrator --- Go contracts (go test) & 27 & --- & \texttt{test-results/contracts/} \texttt{go-contracts.json} \\
-\hline
-E2E --- Playwright mock suite & 27 passed & --- & \texttt{test-results/e2e/} \texttt{playwright-junit.xml} \\
-\hline
-Load --- k6 spike scenario & 81\,456 checks & --- & \texttt{test-results/load/} \texttt{scenarios-summary.json} \\
-\hline
-\end{tabularx}
-\end{table}
 
+\footnotesize
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
+
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash\bfseries}p{0.31\textwidth}
+    >{\centering\arraybackslash}p{0.14\textwidth}
+    >{\centering\arraybackslash}p{0.12\textwidth}
+    >{\raggedright\arraybackslash}X
+}
+\toprule
+Layer & Tests & Coverage & Artifact \\
+\midrule
+
+API Gateway --- Python unit &
+411 &
+81.68\,\% &
+\path{coverage/python/unit.xml} \\
+
+API Gateway --- Python integration &
+18 modules &
+--- &
+\path{tests/integration/} \\
+
+Frontend --- SvelteKit with Vitest &
+78 &
+66.08\,\% &
+\path{coverage/frontend/coverage-summary.json} \\
+
+Orchestrator --- Go internal tests &
+16 &
+71.26\,\% &
+\path{coverage/orchestrator/orchestrator.out} \\
+
+Orchestrator --- Go contract tests &
+27 &
+--- &
+\path{test-results/contracts/go-contracts.json} \\
+
+End-to-end --- Playwright mock suite &
+27 passed &
+--- &
+\path{test-results/e2e/playwright-junit.xml} \\
+
+Load testing --- k6 spike scenario &
+81\,456 checks &
+--- &
+\path{test-results/load/scenarios-summary.json} \\
+
+\bottomrule
+\end{tabularx}
+
+\normalsize
+\end{table}
 \begin{sloppypar}
 The lowest-covered API Gateway files are
 \texttt{routers/terminal.py} (41.90\,\%) and
@@ -1126,36 +1273,57 @@ manual sync.
 
 Three environments are defined via Helm value overlays in \texttt{charts/hopper/}
 and are verified by the \texttt{helm-chart} CI job on every push.
-
-\begin{table}[H]
+\begin{table}[htbp]
 \centering
 \caption{Deployment environments}
 \label{tab:envs}
-\renewcommand{\arraystretch}{1.25}
-\begin{tabularx}{\textwidth}{|>{\bfseries\RaggedRight\arraybackslash}p{2.0cm}|>{\RaggedRight\arraybackslash}p{3.8cm}|>{\RaggedRight\arraybackslash}X|}
-\hline
-\textbf{Env} & \textbf{Host / values file} & \textbf{Key differences} \\
-\hline
+
+\small
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{5pt}
+
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash\bfseries}p{0.15\textwidth}
+    >{\raggedright\arraybackslash}p{0.29\textwidth}
+    >{\raggedright\arraybackslash}X
+}
+\toprule
+Environment & Host and values file & Key differences \\
+\midrule
+
 Development &
-  \texttt{localhost} / \texttt{values-dev.yaml} &
-  Keycloak \texttt{start-dev}, \texttt{secrets.create=true} (in-cluster dev
-  defaults), ingress/TLS/NetworkPolicy/backup all disabled.
-  App services typically run on the host via
-  \texttt{docker compose up} + \texttt{scripts/deploy-local.sh}. \\
-\hline
+\nolinkurl{localhost}
+
+\path{values-dev.yaml} &
+Uses Keycloak \path{start-dev} and in-cluster development secrets.
+Ingress, TLS, network policies, and backups are disabled. Application
+services normally run through Docker Compose and
+\path{scripts/deploy-local.sh}. \\
+
+\addlinespace
+
 Staging &
-  \texttt{staging.hopper.farefin.com} / \texttt{values-staging.yaml} &
-  Single API Gateway replica, Let's Encrypt \textbf{staging} issuer
-  (\texttt{letsencrypt-staging}, untrusted certs), no nightly backup,
-  secrets provisioned out-of-band. \\
-\hline
+\nolinkurl{staging.hopper.farefin.com}
+
+\path{values-staging.yaml} &
+Uses one API Gateway replica and the Let's Encrypt staging issuer.
+Certificates are untrusted for production use, nightly backups are disabled,
+and secrets are provisioned separately. \\
+
+\addlinespace
+
 Production &
-  \texttt{hopper.farefin.com} / \texttt{values-prod.yaml} &
-  Two API Gateway replicas, Let's Encrypt \textbf{prod} issuer, Cilium
-  NetworkPolicies, nightly \texttt{pg\_dump} CronJob (14-day retention,
-  10\,Gi PVC), SMTP relay via socat (port~2525). \\
-\hline
+\nolinkurl{hopper.farefin.com}
+
+\path{values-prod.yaml} &
+Uses two API Gateway replicas, the Let's Encrypt production issuer,
+Cilium network policies, nightly \path{pg_dump} backups with 14-day
+retention and a 10\,Gi PVC, and an SMTP relay on port~2525. \\
+
+\bottomrule
 \end{tabularx}
+
+\normalsize
 \end{table}
 
 \begin{sloppypar}
@@ -1575,43 +1743,247 @@ make test-e2e           # Playwright mock-backed E2E
 \end{enumerate}
 
 \section{Evaluation \& Reflection}
-\subsection{Web Performance \& Core Web Vitals}
-\todo{Add measured Lighthouse or browser-tool performance metrics later.}
 
+\subsection{Web Performance \& Core Web Vitals}
+
+Google PageSpeed Insights, powered by Lighthouse, was used to evaluate the
+deployed Hopper landing page in desktop mode.
+Since Hopper is primarily intended for desktop-based compute management, the desktop
+audit is treated as the main performance evaluation. The desktop test achieved a
+performance score of 99, with strong results across all measured categories.
+
+\begin{table}[H]
+\centering
+\caption{Desktop Lighthouse audit results generated through Google PageSpeed Insights.}
+\label{tab:desktop-pagespeed}
+\renewcommand{\arraystretch}{1.2}
+
+\begin{tabular}{lc}
+\toprule
+\textbf{Category or Metric} & \textbf{Desktop Result} \\
+\midrule
+Performance score & 99/100 \\
+Accessibility & 96/100 \\
+Best Practices & 100/100 \\
+SEO & 100/100 \\
+Agentic Browsing & 2/2 \\
+\midrule
+First Contentful Paint (FCP) & 0.8\,s \\
+Largest Contentful Paint (LCP) & 0.8\,s \\
+Total Blocking Time (TBT) & 0\,ms \\
+Cumulative Layout Shift (CLS) & 0.001 \\
+Speed Index & 1.1\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results indicate that the deployed landing page loads quickly and remains visually
+stable. The 0\,ms Total Blocking Time shows that JavaScript execution caused no
+measurable main-thread blocking during the audit. The CLS value of 0.001 indicates
+almost no unexpected layout movement, while the 0.8\,s FCP and LCP values demonstrate
+fast initial and primary-content rendering.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/pagespeed-results1.png}
+    \caption{Google PageSpeed Insights results for the deployed Hopper landing page.}
+    \label{fig:pagespeed-results}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/pagespeed-results2.png}
+    \caption{Google PageSpeed Insights results for the deployed Hopper landing page.}
+    \label{fig:pagespeed-results}
+\end{figure}
 \subsection{Challenges \& Solutions}
-\todo{Add verified implementation or deployment challenges and how they were addressed.}
+
+Developing Hopper required coordinating several independently deployed components,
+including SvelteKit, FastAPI, Go, PostgreSQL, NATS, Keycloak, and Kubernetes. Differences
+in communication protocols, configuration, startup order, and failure behaviour made
+local development and deployment difficult. This was addressed by defining clear REST,
+gRPC, and event-based communication paths, providing Docker Compose services for local
+infrastructure, and validating the complete system through automated CI workflows.
+
+Authentication was another major challenge because Hopper supports OIDC login, direct
+email-password login, email verification, token refresh, logout, API keys, and three
+application roles. Synchronisation between Keycloak identity data, application cookies,
+frontend route guards, and local user records created several edge cases. The solution was
+to centralise token validation in the API gateway, use JWKS-based JWT verification,
+store tokens in secure HttpOnly cookies, implement silent refresh, and enforce roles and
+resource ownership independently in backend routes.
+
+Resource provisioning also required careful handling of limited CPU and memory. Multiple
+users may request environments simultaneously, while provisioning must respect cluster
+capacity and available credits. Hopper addresses this through a persistent admission
+queue, capacity reservation, scheduler leader election, plan-based resource limits, and
+credit checks before provisioning. Billing operations were made idempotent so that
+repeated NATS events do not deduct credits multiple times, while grace-period handling
+allows sessions to be terminated safely after credit exhaustion.
+
+Real-time monitoring and interactive access introduced additional complexity because the
+platform uses REST requests, Server-Sent Events, WebSockets, SSH forwarding, and
+code-server proxying. These channels were separated by responsibility and routed through
+the API gateway, where authentication and pod ownership are checked before traffic is
+forwarded. Layered unit, integration, end-to-end, load, security, and orchestration tests
+were then added to identify failures across these boundaries.
 
 \subsection{Limitations \& Future Work}
-\todo{Add realistic limitations and future improvements based on verified project scope.}
+
+The current production deployment uses a single-node k3s cluster. Although this is
+sufficient for demonstration and small institutional deployments, it provides limited
+horizontal scalability and creates a single point of failure at the cluster level. Future
+work should restore and stabilise multi-node worker support, distribute workloads across
+multiple hosts, and validate recovery when nodes or control-plane services become
+unavailable.
+
+The admission scheduler currently follows a first-come, first-served head-of-line policy.
+A large request at the front of the queue may therefore delay smaller requests that could
+otherwise be admitted. Future versions could support safe backfilling, priorities, quotas,
+estimated waiting times, and fairness policies based on courses, roles, or historical
+resource consumption.
+
+Several infrastructure and security mechanisms also require further improvement. Rate
+limits are stored in process memory and are not shared consistently across multiple
+gateway replicas. This should be replaced with Redis-backed or ingress-level distributed
+rate limiting. File uploads should enforce explicit size limits, filename validation, and
+content restrictions. Automated SSH connections should use stronger host verification,
+and the full end-to-end suite should eventually run against a real staging deployment
+containing Keycloak, NATS, PostgreSQL, the orchestrator, and Kubernetes rather than
+depending primarily on mocked services.
+
+Some application areas remain incomplete or intentionally lightweight. The settings
+endpoint does not yet provide full persistent configuration, the backend has no dedicated
+repository abstraction, and some chaos and security checks require manual staging
+execution. Future work should improve persistence boundaries, expand automated
+full-stack testing, complete GitOps-based deployment, strengthen backup restoration
+testing, and broaden dashboards and alerting for non-GPU and application-level metrics.
+
+A planned extension is an AI-based user assistance agent integrated into the Hopper
+dashboard. The agent could guide users through selecting plans, creating environments,
+understanding credit usage, resolving common provisioning errors, locating documentation,
+and interpreting resource metrics. The first version should remain advisory and
+read-only. Any later capability to perform actions should use authenticated Hopper APIs,
+require explicit user confirmation, respect role permissions, and produce auditable action
+logs.
 
 \subsection{Lessons Learned}
-\todo{Summarize team-level lessons after the full report content is drafted.}
+
+The project demonstrated that a distributed web platform requires clear service
+boundaries and communication contracts. Separating the browser-facing frontend, API
+gateway, orchestration service, event bus, identity provider, and cluster runtime made the
+system easier to extend, but also showed that every boundary introduces configuration,
+failure-handling, and testing responsibilities.
+
+Another important lesson was that authorization must be enforced by the backend rather
+than relying on hidden frontend pages. Route guards improve user experience, but pod
+ownership, role restrictions, credit allocation, file access, terminal access, and
+administrative operations must all be verified again by the API.
+
+The event-driven parts of Hopper showed the importance of idempotency, reconciliation,
+and persistent state. NATS improves decoupling between billing, metrics, notifications,
+and lifecycle events, but consumers must remain correct when messages are delayed,
+repeated, or processed after a service restart.
+
+Testing proved most valuable when it was introduced across multiple layers. Unit tests
+found logic errors quickly, integration tests exposed database, migration, Keycloak, and
+NATS configuration problems, and end-to-end and load tests revealed issues that were not
+visible from individual modules. CI/CD, infrastructure validation, and documentation
+therefore became part of the implementation rather than activities performed only after
+development.
+
+Finally, the project showed that usability is as important as infrastructure correctness.
+Users should not need detailed knowledge of Kubernetes, ports, proxies, or billing events
+to create and manage a compute environment. Future development, including the planned
+AI assistant, should continue reducing this operational complexity while preserving
+security, transparency, and user control.
 
 \subsection{Individual Responsibility}
-\todo{Replace the placeholder rows with actual team-member responsibilities and contribution evidence.}
 
-\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.17\textwidth}|>{\RaggedRight\arraybackslash}p{0.29\textwidth}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}p{0.13\textwidth}|}
-    \hline
-    \textbf{Member Name} & \textbf{Core Responsibilities \& Feature Ownership} & \textbf{Key PRs / Commit Contributions} & \textbf{Share (\%)} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-    \todo{Add name} & \todo{Add responsibilities} & \todo{Add PRs or commits} & \todo{Add \%} \\
-    \hline
-\end{tabularx}
+Development responsibilities were distributed according to each member's primary
+area of ownership. The estimated contribution percentages are based on the
+documented distribution of 173 commits and are used only as an approximate
+indicator, since commit count alone does not fully measure implementation effort.
+\small
+\renewcommand{\arraystretch}{1.25}
 
+\begin{longtable}{
+    >{\raggedright\arraybackslash}p{0.18\textwidth}
+    >{\raggedright\arraybackslash}p{0.28\textwidth}
+    >{\raggedright\arraybackslash}p{0.48\textwidth}
+}
+\caption{Individual responsibilities and contribution summary}
+\label{tab:individual-responsibility}\\
+
+\toprule
+\textbf{Member Name} &
+\textbf{Core Responsibilities} &
+\textbf{Key Contributions} \\
+\midrule
+\endfirsthead
+
+\toprule
+\textbf{Member Name} &
+\textbf{Core Responsibilities} &
+\textbf{Key Contributions} \\
+\midrule
+\endhead
+
+\bottomrule
+\endfoot
+
+Tazkia Malik &
+Testing and quality assurance &
+Built the unit, integration, end-to-end, frontend, Go orchestrator, load,
+chaos, and security tests; maintained coverage reporting and resolved
+test-related infrastructure and migration issues. \\
+
+Anindya Kundu &
+Authentication, security, operations, notifications, and CI/CD &
+Implemented the web terminal and SSH proxy, authentication and verification
+flows, RBAC, rate limiting, network groups, secrets scanning, reliability
+features, Helm and ArgoCD configuration, and real-time notifications. \\
+
+Muhaiminul Islam Ninad &
+Infrastructure, deployment pipelines, and documentation &
+Added Kubernetes support, improved JWT validation and billing handling,
+created image-publishing and SSH-deployment workflows, integrated Docker
+and Makefile automation, and prepared the SRS and SDD documents. \\
+
+Sadek Hossain Asif &
+Project foundation, backend core, and orchestration &
+Founded and scaffolded the project; developed the initial authentication,
+pod, credit, migration, orchestration, metrics, billing, SSH-key, audit-log,
+file-browser, and deployment functionality. \\
+
+Kabya Mithun Saha &
+VM admission control and capacity management &
+Designed the CPU and memory admission queue, live resource-availability
+calculation, and capacity-accounting model; contributed to terminal
+integration, authentication UX, and the multi-node clustering experiment. \\
+
+Tanzila Khan &
+Frontend and user-interface development &
+Developed the initial cloud-platform interface, reusable component and table
+libraries, pagination, credits and login pages, SSH-key management, file
+browser, charts, administrative dashboards, issue reporting, and general UI
+improvements. \\
+
+Taif Ahmed Turjo &
+Billing, API security, and hardening &
+Implemented durable billing and prorated final charges, ownership enforcement,
+Kubernetes secret handling, API RBAC, admin ingress protection, saved SSH-key
+installation, credit-grace notifications, and CI audit checks. \\
+
+Fayek Ahmed &
+Code-server integration &
+Implemented the code-server integration used to provide browser-accessible
+development environments. \\
+
+\end{longtable}
+
+\normalsize
 \appendix
 \section{Screenshots / UI Walkthrough}
 % -----------------------------------------------------------------------
