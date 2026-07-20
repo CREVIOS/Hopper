@@ -4,6 +4,10 @@
     Download,
     File as FileIcon,
     Folder,
+    FolderPlus,
+    Pencil,
+    Check,
+    X,
     Trash2,
     ChevronRight,
     RefreshCw,
@@ -15,6 +19,7 @@
   import { toast } from 'svelte-sonner';
   import { Button, Card, Input, Label, Table } from '$lib/ui';
   import { api, ApiError } from '$lib/api/client';
+  import { confirm } from '$lib/confirm.svelte';
   import { formatBytes, relTime } from '$lib/utils';
 
   // Human "modified" label from a backend mtime string; tolerant of odd formats.
@@ -45,6 +50,15 @@
   let recent = $state<Recent[]>([]);
   let uploadInput = $state<HTMLInputElement | null>(null);
 
+  // File-management state: create folder, inline rename, delete.
+  let creatingFolder = $state(false);
+  let newFolderName = $state('');
+  let creating = $state(false);
+  let renaming = $state<string | null>(null); // entry.name being edited
+  let renameValue = $state('');
+  let renamingBusy = $state(false);
+  let deletingName = $state<string | null>(null);
+
   // Path validator: must be absolute, no null bytes, no double-slash. The
   // backend also enforces this, but inline feedback is faster than waiting
   // for a 400 round-trip.
@@ -56,6 +70,16 @@
     return null;
   }
   const destErr = $derived(pathError(destPath));
+
+  // Single path-segment validator for new-folder / rename names (no slashes,
+  // no traversal). The backend re-validates via _safe_path + shell-quoting.
+  function nameError(name: string): string | null {
+    if (!name) return 'Name is required';
+    if (name.includes('/')) return 'Name cannot contain "/"';
+    if (name === '.' || name === '..') return 'Invalid name';
+    if (/[\x00\n\r]/.test(name)) return 'Name contains an invalid character';
+    return null;
+  }
 
   async function loadDir(path: string) {
     if (!podRunning) return;
@@ -183,6 +207,92 @@
     }
   }
 
+  async function createFolder() {
+    const name = newFolderName.trim();
+    const err = nameError(name);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    creating = true;
+    try {
+      await api.post(`/files/${podId}/mkdir`, { path: entryPath(name) });
+      toast.success(`Created ${name}`);
+      creatingFolder = false;
+      newFolderName = '';
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not create folder', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      creating = false;
+    }
+  }
+
+  function startRename(entry: Entry) {
+    renaming = entry.name;
+    renameValue = entry.name;
+  }
+
+  function cancelRename() {
+    renaming = null;
+    renameValue = '';
+  }
+
+  async function commitRename(entry: Entry) {
+    const name = renameValue.trim();
+    if (name === entry.name) {
+      cancelRename();
+      return;
+    }
+    const err = nameError(name);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    renamingBusy = true;
+    try {
+      await api.post(`/files/${podId}/rename`, {
+        path: entryPath(entry.name),
+        new_path: entryPath(name)
+      });
+      toast.success(`Renamed to ${name}`);
+      cancelRename();
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not rename', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      renamingBusy = false;
+    }
+  }
+
+  async function removeEntry(entry: Entry) {
+    const ok = await confirm({
+      title: `Delete ${entry.name}?`,
+      description: entry.is_dir
+        ? `The folder "${entry.name}" and everything inside it will be permanently deleted from the VM.`
+        : `The file "${entry.name}" will be permanently deleted from the VM.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive'
+    });
+    if (!ok) return;
+    deletingName = entry.name;
+    try {
+      await api.post(`/files/${podId}/delete`, { path: entryPath(entry.name) });
+      toast.success(`Deleted ${entry.name}`);
+      await loadDir(cwd);
+    } catch (e) {
+      toast.error('Could not delete', {
+        description: e instanceof ApiError ? e.message : undefined
+      });
+    } finally {
+      deletingName = null;
+    }
+  }
+
   function clearRecent(item: Recent) {
     recent = recent.filter((r) => r !== item);
   }
@@ -247,11 +357,41 @@
         >
           <HomeIcon class="size-3.5" />
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => { creatingFolder = !creatingFolder; newFolderName = ''; }}
+          disabled={!podRunning || listing}
+          title="New folder"
+        >
+          <FolderPlus class="size-3.5" /> New folder
+        </Button>
         <Button size="sm" onclick={() => uploadInput?.click()} disabled={!podRunning || uploading || !!destErr}>
           <Upload class="size-3.5" /> Upload
         </Button>
       </div>
     </div>
+
+    {#if creatingFolder && podRunning}
+      <div class="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-4 py-2">
+        <FolderPlus class="size-4 shrink-0 text-muted-foreground" />
+        <Input
+          bind:value={newFolderName}
+          placeholder="Folder name"
+          class="h-8 flex-1 font-mono text-sm"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') createFolder();
+            if (e.key === 'Escape') { creatingFolder = false; newFolderName = ''; }
+          }}
+        />
+        <Button size="sm" onclick={createFolder} disabled={creating || !!nameError(newFolderName.trim())}>
+          {#if creating}<Spinner class="size-3.5" />{:else}Create{/if}
+        </Button>
+        <Button variant="ghost" size="sm" onclick={() => { creatingFolder = false; newFolderName = ''; }}>
+          Cancel
+        </Button>
+      </div>
+    {/if}
 
     {#if !podRunning}
       <p class="px-5 py-14 text-center text-sm text-muted-foreground">
@@ -273,7 +413,7 @@
             <Table.Head>Name</Table.Head>
             <Table.Head class="w-24 text-right">Size</Table.Head>
             <Table.Head class="hidden w-32 text-right sm:table-cell">Modified</Table.Head>
-            <Table.Head class="w-12"><span class="sr-only">Actions</span></Table.Head>
+            <Table.Head class="w-28"><span class="sr-only">Actions</span></Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -300,9 +440,23 @@
                   {:else}
                     <FileIcon class="size-4 shrink-0 text-muted-foreground" />
                   {/if}
-                  <span class="truncate font-mono text-sm {entry.is_dir ? 'font-medium group-hover:text-primary' : ''}">
-                    {entry.name}{entry.is_dir ? '/' : ''}
-                  </span>
+                  {#if renaming === entry.name}
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <Input
+                      bind:value={renameValue}
+                      class="h-7 flex-1 font-mono text-sm"
+                      autofocus
+                      onclick={(e) => e.stopPropagation()}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter') commitRename(entry);
+                        if (e.key === 'Escape') cancelRename();
+                      }}
+                    />
+                  {:else}
+                    <span class="truncate font-mono text-sm {entry.is_dir ? 'font-medium group-hover:text-primary' : ''}">
+                      {entry.name}{entry.is_dir ? '/' : ''}
+                    </span>
+                  {/if}
                 </span>
               </Table.Cell>
               <Table.Cell class="w-24 text-right font-mono text-xs text-muted-foreground">
@@ -311,20 +465,58 @@
               <Table.Cell class="hidden w-32 text-right text-xs text-muted-foreground sm:table-cell">
                 {modLabel(entry.mtime)}
               </Table.Cell>
-              <Table.Cell class="w-12 text-right">
-                {#if !entry.is_dir}
-                  <button
-                    class="rounded-md p-1.5 text-muted-foreground opacity-70 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      downloadFile(entryPath(entry.name));
-                    }}
-                    disabled={downloading}
-                    aria-label={`Download ${entry.name}`}
-                    title="Download"
-                  >
-                    <Download class="size-3.5" />
-                  </button>
+              <Table.Cell class="w-28 text-right">
+                {#if renaming === entry.name}
+                  <div class="flex items-center justify-end gap-1">
+                    <button
+                      class="rounded-md p-1.5 text-success transition-all hover:bg-success/10 disabled:opacity-50"
+                      onclick={(e) => { e.stopPropagation(); commitRename(entry); }}
+                      disabled={renamingBusy}
+                      aria-label="Save name"
+                      title="Save"
+                    >
+                      {#if renamingBusy}<Spinner class="size-3.5" />{:else}<Check class="size-3.5" />{/if}
+                    </button>
+                    <button
+                      class="rounded-md p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
+                      onclick={(e) => { e.stopPropagation(); cancelRename(); }}
+                      aria-label="Cancel rename"
+                      title="Cancel"
+                    >
+                      <X class="size-3.5" />
+                    </button>
+                  </div>
+                {:else}
+                  <div class="flex items-center justify-end gap-0.5 opacity-70 group-hover:opacity-100">
+                    {#if !entry.is_dir}
+                      <button
+                        class="rounded-md p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
+                        onclick={(e) => { e.stopPropagation(); downloadFile(entryPath(entry.name)); }}
+                        disabled={downloading}
+                        aria-label={`Download ${entry.name}`}
+                        title="Download"
+                      >
+                        <Download class="size-3.5" />
+                      </button>
+                    {/if}
+                    <button
+                      class="rounded-md p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground"
+                      onclick={(e) => { e.stopPropagation(); startRename(entry); }}
+                      aria-label={`Rename ${entry.name}`}
+                      title="Rename"
+                    >
+                      <Pencil class="size-3.5" />
+                    </button>
+                    <button
+                      class="rounded-md p-1.5 text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      onclick={(e) => { e.stopPropagation(); removeEntry(entry); }}
+                      disabled={deletingName === entry.name}
+                      aria-label={`Delete ${entry.name}`}
+                      title="Delete"
+                    >
+                      {#if deletingName === entry.name}<Spinner class="size-3.5" />{:else}<Trash2 class="size-3.5" />{/if}
+                    </button>
+                  </div>
                 {/if}
               </Table.Cell>
             </Table.Row>
