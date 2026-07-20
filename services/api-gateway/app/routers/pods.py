@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+from datetime import datetime, timedelta
 
 import httpx
 import websockets
@@ -24,6 +25,7 @@ from app.config import settings
 from app.core.limiter import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.session import PodSession
+from app.models.ssh_key import SSHKey
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import CreatePodRequest, PodResponse
 from app.schemas.user import TokenPayload
@@ -35,6 +37,7 @@ from app.services import (
     image_service,
     plan_service,
     port_forward,
+    quota_service,
     vm_queue,
     vm_scheduler,
     workspace_service,
@@ -49,6 +52,13 @@ _LIVE_VM_STATES = ("pending", "creating", "running")
 # Queue entry states that still hold a slot (mirrors vm_queue._LIVE_QUEUE_STATES).
 _LIVE_QUEUE_STATES = ("queued", "admitting")
 _BYTES_PER_GIB = 1024**3
+
+# Session TTL extension policy (FR-HC-27). A running VM can buy 1-hour
+# extensions, up to SESSION_MAX_EXTENSIONS times and never past
+# SESSION_MAX_WALLCLOCK_HOURS from its start.
+SESSION_EXTENSION_HOURS = 1
+SESSION_MAX_EXTENSIONS = 3
+SESSION_MAX_WALLCLOCK_HOURS = 8
 
 
 def _session_to_response(s: PodSession) -> PodResponse:
@@ -70,6 +80,7 @@ def _session_to_response(s: PodSession) -> PodResponse:
         vscode_port=s.vscode_port if is_live else None,
         ssh_password=s.ssh_password if is_live else None,
         network_group=s.network_group,
+        extension_count=s.extension_count or 0,
         created_at=s.started_at,
         updated_at=s.updated_at,
     )
@@ -122,6 +133,81 @@ async def list_pods(
     return [_session_to_response(s) for s in sessions]
 
 
+async def _provision_pod(
+    db: AsyncSession,
+    session: PodSession,
+    plan_row,
+    image: str,
+    network_group: str | None = None,
+) -> PodSession:
+    """Ask the orchestrator for a real K8s pod backing ``session``, and record it.
+
+    Shared by launch and resume: a resumed VM is a brand-new pod that remounts
+    the same per-user workspace PVC, which is why /workspace survives a stop
+    while anything outside it does not.
+
+    On failure the session is marked ``failed`` rather than raising, matching the
+    original launch behaviour (the caller returns the session either way).
+    """
+    # The user's registered SSH public keys, injected into the VM's
+    # /root/.ssh/authorized_keys so key-based SSH works (the key CRUD previously
+    # stored keys that never reached the VM). Public keys are not secret.
+    keys_result = await db.execute(
+        select(SSHKey.public_key).where(SSHKey.user_id == session.user_id)
+    )
+    authorized_keys = list(keys_result.scalars().all())
+
+    # The per-user workspace (FR-HC-28). get_or_create is idempotent, so a resume
+    # resolves the SAME PVC the stopped VM was using and the files come back.
+    workspace = await workspace_service.get_or_create_workspace(
+        db, session.user_id, session.plan, capacity_gb=plan_row.workspace_gb
+    )
+    try:
+        resp = await orchestrator_client.create_pod(
+            user_id=session.user_id,
+            plan=session.plan,
+            image=image,
+            cpu=plan_row.cpu,
+            memory=plan_row.memory,
+            pod_id=session.id,
+            workspace_pvc_name=workspace.pvc_name,
+            workspace_capacity_gb=workspace.capacity_gb,
+            storage_class=workspace.storage_class or "",
+            authorized_keys=authorized_keys,
+            # Bill at the plan's admin-set rate (FR: pricing changes take effect),
+            # not the orchestrator's built-in fallback map.
+            credits_per_hour=float(plan_row.credits_per_hour),
+            network_group=network_group or "",
+        )
+        session.state = resp.state
+        session.pod_name = resp.id  # the actual K8s pod name from the orchestrator
+        session.ssh_port = resp.ssh_port if resp.ssh_port else None
+        session.vscode_port = resp.vscode_port if resp.vscode_port else None
+        session.ssh_password = resp.ssh_password or None
+        await db.commit()
+        await db.refresh(session)
+    except Exception as e:
+        logger.error("Orchestrator CreatePod failed: %s", e)
+        session.state = "failed"
+        await db.commit()
+        await db.refresh(session)
+        # This path owns the failure notification — the pod.failed NATS consumer
+        # deliberately only repairs state (see notification_service).
+        try:
+            await notify(
+                db,
+                session.user_id,
+                type_="error",
+                title="VM failed to create",
+                body="Something went wrong while provisioning your VM. "
+                     "Try again, or contact an admin if it keeps failing.",
+                data={"pod_id": session.id},
+            )
+        except Exception:
+            logger.exception("failed to record VM-creation-failure notification")
+    return session
+
+
 @router.post("/", response_model=PodResponse, status_code=status.HTTP_201_CREATED)
 # Keyed by verified user (request.state.rate_key from get_current_user), not
 # client IP — see app.core.limiter. Limit configurable via
@@ -157,6 +243,19 @@ async def create_pod(
         )
     credits_per_hour = float(plan_row.credits_per_hour)
 
+    # Resolve the user's quota (their override or the global default).
+    quota = await quota_service.get_effective_quota(db, current_user.sub)
+
+    # Storage quota: refuse a plan whose workspace exceeds the user's cap.
+    if plan_row.workspace_gb > quota["max_workspace_gb"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Plan workspace ({plan_row.workspace_gb} GB) exceeds your storage "
+                f"quota ({quota['max_workspace_gb']} GB)"
+            ),
+        )
+
     # Check credit balance — need at least 1 hour's worth
     balance = await get_balance(db, current_user.sub)
     if balance < credits_per_hour:
@@ -165,7 +264,7 @@ async def create_pod(
             detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
         )
 
-    # Check max concurrent pods per user (limit to 3)
+    # Concurrent-VM quota (per-user override, else the global default).
     active_result = await db.execute(
         select(PodSession).where(
             PodSession.user_id == current_user.sub,
@@ -173,10 +272,11 @@ async def create_pod(
         )
     )
     active_pods = active_result.scalars().all()
-    if len(active_pods) >= 3:
+    max_vms = quota["max_concurrent_vms"]
+    if len(active_pods) >= max_vms:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Maximum 3 concurrent VMs allowed",
+            detail=f"Maximum {max_vms} concurrent VM{'s' if max_vms != 1 else ''} allowed",
         )
 
     # Resolve the container image from the admin-managed catalogue. An explicit
@@ -242,6 +342,9 @@ async def create_pod(
             pod_name=f"vm-{pod_id[:8]}",
             state="pending",
             network_group=body.network_group,
+            # Stamp the session TTL so this fail-open VM is reaped like any other
+            # launch (the reserved/queued paths stamp it in vm_scheduler). FR-HC-27.
+            expires_at=datetime.utcnow() + timedelta(hours=settings.session_ttl_hours),
         )
         db.add(session)
         await db.commit()
@@ -249,54 +352,9 @@ async def create_pod(
     else:
         session = await db.get(PodSession, pod_id)  # the reserved pending row
 
-    # The per-user persistent workspace (FR-HC-28). get_or_create is idempotent,
-    # so a returning user reuses the same PVC (files/venvs survive across
-    # sessions); capacity comes from the plan's DB-backed workspace_gb.
-    workspace = await workspace_service.get_or_create_workspace(
-        db, current_user.sub, body.plan, capacity_gb=plan_row.workspace_gb
-    )
-
-    # Call orchestrator to create the actual K8s pod
-    try:
-        resp = await orchestrator_client.create_pod(
-            user_id=current_user.sub,
-            plan=body.plan,
-            image=image,
-            cpu=plan_row.cpu,
-            memory=plan_row.memory,
-            pod_id=pod_id,
-            workspace_pvc_name=workspace.pvc_name,
-            workspace_capacity_gb=workspace.capacity_gb,
-            storage_class=workspace.storage_class or "",
-            network_group=body.network_group or "",
-        )
-        session.state = resp.state
-        session.pod_name = resp.id  # use the actual K8s pod name from orchestrator
-        session.ssh_port = resp.ssh_port if resp.ssh_port else None
-        session.vscode_port = resp.vscode_port if resp.vscode_port else None
-        session.ssh_password = resp.ssh_password or None
-        await db.commit()
-        await db.refresh(session)
-    except Exception as e:
-        logger.error("Orchestrator CreatePod failed: %s", e)
-        session.state = "failed"
-        await db.commit()
-        await db.refresh(session)
-        # This path owns the failure notification — the pod.failed NATS
-        # consumer deliberately only repairs state (see notification_service).
-        try:
-            await notify(
-                db,
-                current_user.sub,
-                type_="error",
-                title="VM failed to create",
-                body="Something went wrong while provisioning your VM. "
-                     "Try again, or contact an admin if it keeps failing.",
-                data={"pod_id": session.id},
-            )
-        except Exception:
-            logger.exception("failed to record VM-creation-failure notification")
-
+    # Provision the real K8s pod (mounts the per-user workspace; marks the
+    # session 'failed' on error rather than raising). Shared with resume.
+    session = await _provision_pod(db, session, plan_row, image, network_group=body.network_group)
     return _session_to_response(session)
 
 
@@ -479,6 +537,182 @@ async def terminate_pod(
     # deletes from unexpected ones.)
     vm_scheduler.nudge()
     return {"message": "terminated", "pod_id": pod_id}
+
+
+@router.post("/{pod_id}/stop", response_model=PodResponse)
+async def stop_pod(
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stop a VM without losing its workspace.
+
+    The K8s pod is torn down — so billing stops, and the VM stops counting
+    against the concurrent-VM quota — but the session row survives in ``stopped``
+    and the user's /workspace PVC is untouched. ``resume`` builds a fresh pod that
+    remounts it. What survives: everything under /workspace. What does NOT:
+    running processes and anything written outside /workspace, because the
+    resumed VM is a new container from the same image.
+    """
+    session = (
+        await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    ).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "running":
+        raise HTTPException(status_code=400, detail="Only a running VM can be stopped")
+
+    try:
+        await orchestrator_client.terminate_pod(session.pod_name)
+    except Exception as e:
+        logger.error("Orchestrator TerminatePod failed on stop: %s", e)
+        raise HTTPException(status_code=502, detail="Could not stop the VM")
+
+    await port_forward.stop(session.pod_name)
+
+    session.state = "stopped"
+    # The pod is gone: NodePorts are released and may be reassigned, and the root
+    # password belonged to that container. Clear them so nothing stale is served.
+    session.ssh_port = None
+    session.vscode_port = None
+    session.ssh_password = None
+    # Neither countdown applies to a VM that isn't running.
+    session.grace_expires_at = None
+    session.idle_shutdown_at = None
+    await db.commit()
+    await db.refresh(session)
+
+    logger.info("Pod %s stopped by %s (workspace retained)", pod_id, current_user.sub)
+    return _session_to_response(session)
+
+
+@router.post("/{pod_id}/resume", response_model=PodResponse)
+@limiter.limit("10/minute")
+async def resume_pod(
+    request: Request,
+    response: Response,
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bring a stopped VM back, remounting the same /workspace.
+
+    Re-runs the same admission checks as a fresh launch — plan still available,
+    an hour's credits in hand, concurrent-VM quota — because a resumed VM
+    consumes exactly what a new one does. Stopped VMs don't count toward the
+    quota, so resuming is where that limit has to be enforced.
+    """
+    session = (
+        await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    ).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    # Owner only: a resume spends the owner's credits, so an admin can't authorise
+    # it on their behalf (admins can still stop/terminate).
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "stopped":
+        raise HTTPException(status_code=400, detail="Only a stopped VM can be resumed")
+
+    plan_row = await plan_service.get_plan(db, session.plan, active_only=True)
+    if plan_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Plan '{session.plan}' is no longer available — launch a new VM",
+        )
+    credits_per_hour = float(plan_row.credits_per_hour)
+
+    balance = await get_balance(db, current_user.sub)
+    if balance < credits_per_hour:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits. Need {credits_per_hour}, have {balance:.2f}",
+        )
+
+    quota = await quota_service.get_effective_quota(db, current_user.sub)
+    active = (
+        await db.execute(
+            select(PodSession).where(
+                PodSession.user_id == current_user.sub,
+                PodSession.state.in_(["pending", "creating", "running"]),
+            )
+        )
+    ).scalars().all()
+    max_vms = quota["max_concurrent_vms"]
+    if len(active) >= max_vms:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Maximum {max_vms} concurrent VM{'s' if max_vms != 1 else ''} allowed",
+        )
+
+    # A fresh TTL window. Not a loophole: the reaper only counts LIVE states, so a
+    # stopped VM burns no TTL — and without the reset a VM stopped past its old
+    # expiry would be reaped the instant it came back. Extensions reset too.
+    session.state = "pending"
+    session.started_at = datetime.utcnow()
+    session.expires_at = datetime.utcnow() + timedelta(hours=settings.session_ttl_hours)
+    session.extension_count = 0
+    await db.commit()
+
+    await _provision_pod(db, session, plan_row, session.image)
+
+    logger.info("Pod %s resumed by %s (workspace remounted)", pod_id, current_user.sub)
+    return _session_to_response(session)
+
+
+@router.post("/{pod_id}/extend")
+async def extend_pod(
+    pod_id: str,
+    current_user: TokenPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extend a running VM's TTL by 1 hour (FR-HC-27).
+
+    Up to SESSION_MAX_EXTENSIONS per session, never past started_at +
+    SESSION_MAX_WALLCLOCK_HOURS, and only if the user can afford the extra hour
+    at the plan's rate. The wall-clock cap overrides remaining credits (409
+    ttl_cap_reached even if funded).
+    """
+    result = await db.execute(select(PodSession).where(PodSession.id == pod_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if session.user_id != current_user.sub:
+        raise HTTPException(status_code=403, detail="Not your VM")
+    if session.state != "running":
+        raise HTTPException(status_code=400, detail="VM is not running")
+    if (session.extension_count or 0) >= SESSION_MAX_EXTENSIONS:
+        raise HTTPException(status_code=409, detail="extension_limit_reached")
+
+    started = session.started_at or datetime.utcnow()
+    current_expiry = session.expires_at or (started + timedelta(hours=settings.session_ttl_hours))
+    new_expiry = current_expiry + timedelta(hours=SESSION_EXTENSION_HOURS)
+    if new_expiry > started + timedelta(hours=SESSION_MAX_WALLCLOCK_HOURS):
+        raise HTTPException(status_code=409, detail="ttl_cap_reached")
+
+    # Price the extension at the plan's current rate. The plan may have been
+    # deactivated since launch, so look it up regardless of is_active.
+    plan_row = await plan_service.get_plan(db, session.plan)
+    hourly_rate = float(plan_row.credits_per_hour) if plan_row else 0.0
+    cost = hourly_rate * SESSION_EXTENSION_HOURS
+    balance = await get_balance(db, current_user.sub)
+    if balance < cost:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Insufficient credits to extend. Need {cost}, have {balance:.2f}",
+        )
+
+    session.expires_at = new_expiry
+    session.extension_count = (session.extension_count or 0) + 1
+    await db.commit()
+    return {
+        "pod_id": pod_id,
+        "expires_at": new_expiry.isoformat(),
+        "extensions_used": session.extension_count,
+        "extensions_remaining": SESSION_MAX_EXTENSIONS - session.extension_count,
+    }
 
 
 @router.get("/{pod_id}/metrics")

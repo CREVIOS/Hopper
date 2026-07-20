@@ -270,11 +270,15 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
             return ExecuteResult(first_value=("claimed",))
         return ExecuteResult()
 
+    async def fake_get_plan(db, name):
+        return SimpleNamespace(credits_per_hour=1.0)
+
     monkeypatch.setattr(vm_scheduler, "fetch_nodes", fake_fetch_nodes)
     monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
     monkeypatch.setattr(vm_scheduler, "_free_from_nodes", fake_free_from_nodes)
     monkeypatch.setattr(vm_scheduler, "_user_live_count", fake_user_count)
     monkeypatch.setattr(vm_scheduler, "_reserve_pod_session", fake_reserve)
+    monkeypatch.setattr(vm_scheduler.plan_service, "get_plan", fake_get_plan)
     db = FakeDB(
         execute_results=[
             execute_result,
@@ -299,11 +303,15 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
                 raise RuntimeError("boom")
             return SimpleNamespace(state="running", id="vm-real", ssh_port=22, vscode_port=8080, ssh_password="pw")
 
-    summary = await vm_scheduler.reconcile_pass(db, Orch())
+    orch = Orch()
+    summary = await vm_scheduler.reconcile_pass(db, orch)
 
     assert summary["queued"] == 2
     assert summary["admitted"] == 1
     assert db.commits >= 2
+    # The plan's DB rate is forwarded on the queue-admission path too, not just
+    # the synchronous launch — so queued VMs bill at admin-set pricing.
+    assert orch.calls[0]["credits_per_hour"] == 1.0
 
 
 def test_lease_ttl_seconds_has_minimum_buffer():

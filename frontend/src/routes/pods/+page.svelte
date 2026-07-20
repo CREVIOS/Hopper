@@ -213,7 +213,7 @@
     let list = livePods.slice();
     if (stateFilter === 'active') {
       list = list.filter((p) =>
-        ['running', 'pending', 'creating', 'stopping'].includes(p.state)
+        ['running', 'pending', 'creating', 'stopping', 'stopped'].includes(p.state)
       );
     } else if (stateFilter === 'past') {
       list = list.filter((p) =>
@@ -238,7 +238,7 @@
 
   const counts = $derived({
     active: livePods.filter((p) =>
-      ['running', 'pending', 'creating', 'stopping'].includes(p.state)
+      ['running', 'pending', 'creating', 'stopping', 'stopped'].includes(p.state)
     ).length,
     past: livePods.filter((p) => ['terminated', 'failed'].includes(p.state))
       .length,

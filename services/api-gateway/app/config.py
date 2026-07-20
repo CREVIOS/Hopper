@@ -101,12 +101,33 @@ class Settings(BaseSettings):
     # termination happens on the first tick after the deadline.
     credit_grace_minutes: int = 5
 
+    # Default per-user quotas (FR-QUOTA-001/002). Applied to any user without a
+    # user_quotas override row. Admins can override per user.
+    default_max_concurrent_vms: int = 3
+    default_max_workspace_gb: int = 100
     # Registry/prefix for the VM base images (images/hopper-vm-*). The plan→image
     # map is built as "{prefix}vm-<template>:22.04". Default "hopper/" keeps the
     # locally-imported images working on a single node; the deployed cluster sets
     # HOPPER_VM_IMAGE_PREFIX="ghcr.io/<owner>/hopper-" so every node pulls the
     # images from GHCR instead of needing a manual `ctr images import`.
     vm_image_prefix: str = "hopper/"
+
+    # Idle auto-shutdown. A VM whose CPU stays below idle_cpu_percent for
+    # idle_window_minutes is considered idle: the user is warned and the VM is
+    # terminated idle_grace_minutes later unless activity resumes. CPU is the
+    # signal because an in-browser editor left open but untouched still just
+    # looks idle by that measure — hence the warning + grace rather than an
+    # instant kill.
+    idle_shutdown_enabled: bool = True
+    idle_cpu_percent: float = 5.0
+    idle_window_minutes: float = 30.0
+    idle_grace_minutes: float = 10.0
+    idle_monitor_interval_seconds: float = 60.0
+
+    # Session time-to-live (FR-HC-27). A VM is reaped this many hours after it
+    # starts; the user can buy 1-hour extensions up to SESSION_MAX_WALLCLOCK_HOURS
+    # (constants in routers/pods.py). Resume starts a fresh TTL window.
+    session_ttl_hours: float = 4.0
 
     # extra="ignore": a shared local .env may carry keys this service doesn't
     # model — non-HOPPER_ secrets read straight from os.environ by SDKs, or vars

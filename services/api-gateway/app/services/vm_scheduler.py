@@ -23,6 +23,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,7 +32,7 @@ from app.config import settings
 from app.models.session import PodSession
 from app.models.vm_queue_entry import VmQueueEntry
 from app.schemas.pod import VM_PLAN_RESOURCES, VmPlan
-from app.services import vm_capacity
+from app.services import plan_service, vm_capacity
 from app.services.orchestrator_client import OrchestratorClient
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,10 @@ async def _reserve_pod_session(
             id=pod_id, user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
             namespace=_NAMESPACE, pod_name=f"vm-{pod_id[:8]}", state="pending",
             network_group=network_group,
+            # Stamp the session TTL now so both the sync fast-path and queued
+            # (overflow) VMs are reaped like any other launch; a reserved row
+            # would otherwise have no expiry (FR-HC-27).
+            expires_at=datetime.utcnow() + timedelta(hours=settings.session_ttl_hours),
         )
     )
     await db.flush()
@@ -390,9 +395,16 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
     admitted = 0
     for entry_id, pod_id, user_id, plan, image, cpu, memory, network_group in reserved:
         try:
+            # Bill at the plan's current DB rate — same as the synchronous launch
+            # path (pods._provision_pod) — so admin pricing changes reach queued
+            # VMs too. If the plan row has since vanished, 0.0 lets the
+            # orchestrator fall back to its built-in map rather than block admission.
+            plan_row = await plan_service.get_plan(db, plan)
             resp = await orch.create_pod(
                 user_id=user_id, plan=plan, image=image, cpu=cpu, memory=memory,
-                pod_id=pod_id, network_group=network_group or "",
+                pod_id=pod_id,
+                credits_per_hour=float(plan_row.credits_per_hour) if plan_row else 0.0,
+                network_group=network_group or "",
             )
         except Exception as exc:
             logger.error("Admission create_pod failed entry=%s: %s", entry_id, exc)
