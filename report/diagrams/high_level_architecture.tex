@@ -1,35 +1,81 @@
+% Figure 1 — High-level Hopper architecture
+% Five horizontal layers: Client | Edge | Platform services | Data/Messaging | Compute
 \begin{tikzpicture}[
     font=\small,
     >=Latex,
-    node distance=9mm and 10mm,
-    service/.style={draw, rounded corners, align=center, minimum width=29mm, minimum height=9mm, fill=blue!5},
-    infra/.style={draw, rounded corners, align=center, minimum width=29mm, minimum height=9mm, fill=green!6},
-    ext/.style={draw, rounded corners, align=center, minimum width=26mm, minimum height=9mm, fill=orange!10},
-    flow/.style={->, thick}
+    % Node styles
+    client/.style={draw, rounded corners=4pt, align=center,
+                   minimum width=32mm, minimum height=10mm, fill=gray!10},
+    svc/.style   ={draw, rounded corners=4pt, align=center,
+                   minimum width=32mm, minimum height=10mm, fill=blue!7},
+    infra/.style ={draw, rounded corners=4pt, align=center,
+                   minimum width=32mm, minimum height=10mm, fill=green!8},
+    edge/.style  ={draw, rounded corners=4pt, align=center,
+                   minimum width=32mm, minimum height=10mm, fill=orange!8},
+    % Arrow styles
+    arr/.style={->, thick},
+    labl/.style={font=\scriptsize, inner sep=1pt}
 ]
-\node[ext] (browser) {Browser};
-\node[service, below=of browser] (frontend) {Frontend\\SvelteKit};
-\node[service, below left=of frontend] (api) {API Gateway\\FastAPI};
-\node[service, below right=of frontend] (keycloak) {Keycloak\\OIDC};
-\node[service, below=18mm of frontend] (orch) {Orchestrator\\Go + gRPC};
-\node[service, right=of orch] (nats) {NATS\\JetStream};
-\node[infra, left=of orch] (db) {PostgreSQL\\+ TimescaleDB};
-\node[infra, below=of orch] (k8s) {Kubernetes Cluster};
-\node[infra, below left=of k8s] (pods) {VM Pod Sessions\\SSH / code-server};
-\node[infra, below right=of k8s] (ingress) {Nginx Ingress\\+ TLS routing};
 
-\draw[flow] (browser) -- (frontend);
-\draw[flow] (browser.east) to[bend left=16] node[right, font=\scriptsize] {login redirect} (keycloak.north);
-\draw[flow] (frontend) -- node[left, font=\scriptsize] {SSR / API calls} (api);
-\draw[flow] (api) -- node[above, font=\scriptsize] {SQLAlchemy + Alembic schema} (db);
-\draw[flow] (api) -- node[above, font=\scriptsize] {gRPC PodOrchestrator} (orch);
-\draw[flow] (api) -- node[right, font=\scriptsize] {auth callback / JWKS} (keycloak);
-\draw[flow] (orch) -- node[above, font=\scriptsize] {billing / lifecycle / metrics events} (nats);
-\draw[flow] (nats) -- node[right, font=\scriptsize] {consumers + SSE fan-out} (api);
-\draw[flow] (orch) -- node[left, font=\scriptsize] {pod create / terminate / watch} (k8s);
-\draw[flow] (k8s) -- (pods);
-\draw[flow] (ingress.north) -- node[right, font=\scriptsize] {/ , /api , /realms , /code} (browser.south east);
-\draw[flow] (ingress.west) -- (frontend.east);
-\draw[flow] (ingress) -- (api);
-\draw[flow] (ingress) -- (keycloak);
+%% ── Row 0 : client ──────────────────────────────────────────────────────────
+\node[client] (browser) at (0,0) {Browser};
+
+%% ── Row 1 : edge ─────────────────────────────────────────────────────────────
+\node[edge] (ingress) at (0,-2.0) {Nginx Ingress\\+ TLS};
+
+%% ── Row 2 : frontend / keycloak (side by side) ───────────────────────────────
+\node[svc] (frontend)  at (-3.5,-4.2) {Frontend\\SvelteKit :3000};
+\node[svc] (keycloak)  at ( 3.5,-4.2) {Keycloak\\OIDC :8080};
+
+%% ── Row 3 : api gateway (centre) ─────────────────────────────────────────────
+\node[svc] (api) at (0,-6.5) {API Gateway\\FastAPI :8000};
+
+%% ── Row 4 : orchestrator / nats (side by side) ───────────────────────────────
+\node[svc]   (orch) at (-3.5,-9.0) {Orchestrator\\Go/gRPC :50051};
+\node[infra] (nats) at ( 3.5,-9.0) {NATS\\JetStream :4222};
+
+%% ── Row 5 : postgres / k8s (side by side) ────────────────────────────────────
+\node[infra] (db)  at (-3.5,-11.5) {PostgreSQL\\TimescaleDB :5432};
+\node[infra] (k8s) at ( 3.5,-11.5) {Kubernetes\\VM Pods + SSH};
+
+%% ── Arrows (row 0 → 1) ───────────────────────────────────────────────────────
+\draw[arr] (browser) -- node[labl, right] {HTTPS request} (ingress);
+
+%% ── Ingress → services ───────────────────────────────────────────────────────
+\draw[arr] (ingress) -- node[labl, left]  {\texttt{/} } (frontend);
+\draw[arr] (ingress) -- node[labl, right] {\texttt{/realms}} (keycloak);
+\draw[arr] (ingress.south) -- node[labl, right] {\texttt{/api}} (api.north);
+
+%% ── Browser → Keycloak (login redirect) ─────────────────────────────────────
+\draw[arr, dashed] (browser.east) to[out=0, in=90]
+    node[labl, right, pos=0.4] {login redirect} (keycloak.north);
+
+%% ── Frontend → API ───────────────────────────────────────────────────────────
+\draw[arr] (frontend.east) -- node[labl, above] {SSR / REST} (api.west);
+
+%% ── API → Keycloak ───────────────────────────────────────────────────────────
+\draw[arr] (api.east) -- node[labl, above] {JWKS / callback} (keycloak.west);
+
+%% ── API → Orchestrator ───────────────────────────────────────────────────────
+\draw[arr] (api.south west) to[out=240, in=90]
+    node[labl, left, pos=0.4, align=left] {gRPC: CreatePod,\\TerminatePod} (orch.north);
+
+%% ── API → NATS (subscriber) ──────────────────────────────────────────────────
+\draw[arr] (nats.north) to[out=90, in=0]
+    node[labl, right, pos=0.45, align=right] {billing \& metrics\\consumers} (api.east);
+
+%% ── Orchestrator → NATS ──────────────────────────────────────────────────────
+\draw[arr] (orch.east) -- node[labl, above] {publish events} (nats.west);
+
+%% ── API → DB ─────────────────────────────────────────────────────────────────
+\draw[arr] (api.south) to[out=270, in=90]
+    node[labl, left, pos=0.45] {SQLAlchemy} (db.north);
+
+%% ── Orchestrator → DB ────────────────────────────────────────────────────────
+\draw[arr] (orch.south) -- node[labl, right] {session state} (db.north);
+
+%% ── Orchestrator → K8s ───────────────────────────────────────────────────────
+\draw[arr] (orch.east) to[out=0, in=180]
+    node[labl, below, pos=0.5] {pod lifecycle} (k8s.west);
+
 \end{tikzpicture}

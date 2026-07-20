@@ -1,28 +1,89 @@
+% Figure 2 — Main request and data flow
+% Layout: four columns (UI | Frontend | API | Backend) × three rows
+% Legend beneath the diagram explains numbered edge labels.
 \begin{tikzpicture}[
     font=\small,
     >=Latex,
-    node distance=8mm and 8mm,
-    box/.style={draw, rounded corners, align=center, minimum width=24mm, minimum height=8mm, fill=blue!4},
-    data/.style={draw, rounded corners, align=center, minimum width=24mm, minimum height=8mm, fill=green!6},
-    flow/.style={->, thick}
+    box/.style ={draw, rounded corners=4pt, align=center,
+                 minimum width=30mm, minimum height=10mm, fill=blue!6},
+    data/.style={draw, rounded corners=4pt, align=center,
+                 minimum width=30mm, minimum height=10mm, fill=green!8},
+    arr/.style ={->, thick},
+    labl/.style={font=\scriptsize, inner sep=1pt,
+                 fill=white, rounded corners=2pt}
 ]
-\node[box] (ui) {Browser UI};
-\node[box, right=of ui] (fe) {SvelteKit routes\\+\texttt{apiUrl()}};
-\node[box, right=of fe] (api) {FastAPI routers\\+\texttt{Depends()}};
-\node[box, below=of api] (orch) {Go orchestrator\\gRPC};
-\node[data, below=of fe] (db) {PostgreSQL\\pod\_sessions / ledger};
-\node[data, right=of orch] (nats) {NATS subjects\\metrics.*\\billing.*};
-\node[data, below=of orch] (k8s) {Kubernetes pods\\NodePort / port-forward};
 
-\draw[flow] (ui) -- node[above, font=\scriptsize] {page load / actions} (fe);
-\draw[flow] (fe) -- node[above, font=\scriptsize] {/api/* through ingress} (api);
-\draw[flow] (api) -- node[left, font=\scriptsize] {read / write session state} (db);
-\draw[flow] (api) -- node[right, font=\scriptsize] {CreatePod / TerminatePod / ListNodes} (orch);
-\draw[flow] (orch) -- node[right, font=\scriptsize] {create / watch / terminate} (k8s);
-\draw[flow] (orch) -- node[above, font=\scriptsize] {publish lifecycle + metrics} (nats);
-\draw[flow] (nats) -- node[right, font=\scriptsize] {billing + metrics consumers} (api);
-\draw[flow] (api) to[bend right=18] node[left, font=\scriptsize] {202 queue or 201 pod response} (fe);
-\draw[flow] (api) to[bend right=30] node[below, font=\scriptsize] {SSE /notifications + /pods/\{id\}/metrics} (ui);
-\draw[flow] (ui) to[bend left=22] node[below, font=\scriptsize] {terminal / VS Code WebSocket} (api);
-\draw[flow] (api) -- node[left, font=\scriptsize] {SSH bridge / HTTP proxy} (k8s);
+%% ── Column positions ────────────────────────────────────────────────────────
+% col 0  (x=0)    : Browser / UI layer
+% col 1  (x=4.0)  : Frontend (SvelteKit)
+% col 2  (x=8.0)  : API Gateway
+% col 3  (x=12.0) : Backend services
+
+%% ── Nodes ───────────────────────────────────────────────────────────────────
+\node[box]  (ui)    at ( 0,   0) {Browser UI};
+\node[box]  (fe)    at ( 4.0, 0) {SvelteKit\\frontend};
+\node[box]  (api)   at ( 8.0, 0) {API Gateway\\FastAPI};
+
+\node[data] (orch)  at (12.0, 0)  {Orchestrator\\Go/gRPC};
+\node[data] (db)    at ( 8.0,-3.0){PostgreSQL\\pod\_sessions, ledger};
+\node[data] (nats)  at (12.0,-3.0){NATS\\subjects};
+\node[data] (k8s)   at (12.0,-6.0){Kubernetes\\VM Pods};
+
+%% ── Horizontal arrows (UI ↔ FE ↔ API ↔ Orch) ────────────────────────────────
+\draw[arr] (ui)  -- node[labl, above] {\textcircled{1}} (fe);
+\draw[arr] (fe)  -- node[labl, above] {\textcircled{2}} (api);
+\draw[arr] (api) -- node[labl, above] {\textcircled{3}} (orch);
+
+%% ── Response path (right to left, offset below) ─────────────────────────────
+\draw[arr] (fe.south) ++(-0mm,0) -- ++(0,-0.6)
+    -- node[labl, below] {\textcircled{4}} ($(api.south) + (0,-0.6)$)
+    -- (api.south);
+
+%% ── API → DB ─────────────────────────────────────────────────────────────────
+\draw[arr] (api.south) -- node[labl, right] {\textcircled{5}} (db.north);
+
+%% ── Orch → NATS ──────────────────────────────────────────────────────────────
+\draw[arr] (orch.south) -- node[labl, right] {\textcircled{6}} (nats.north);
+
+%% ── NATS → API (consumers) ───────────────────────────────────────────────────
+\draw[arr] (nats.west) -- node[labl, below] {\textcircled{7}} (db.east);
+\draw[arr] (nats.north) to[out=90, in=0]
+    node[labl, right, pos=0.5] {\textcircled{8}} (api.east);
+
+%% ── Orch → K8s ───────────────────────────────────────────────────────────────
+\draw[arr] (orch.south) to[out=270, in=0]
+    node[labl, right, pos=0.6] {\textcircled{9}} (k8s.east);
+
+%% ── API ↔ K8s (SSH / proxy) ──────────────────────────────────────────────────
+\draw[arr] (api.south) to[out=270, in=90]
+    node[labl, left, pos=0.45] {\textcircled{10}} (k8s.north west);
+
+%% ── SSE back to UI ───────────────────────────────────────────────────────────
+\draw[arr, dashed] (api.west) to[out=180, in=270]
+    node[labl, below, pos=0.5] {\textcircled{11}} (ui.south);
+
+%% ── WebSocket UI → API ───────────────────────────────────────────────────────
+\draw[arr, dashed] (ui.south east) to[out=315, in=225]
+    node[labl, below, pos=0.5] {\textcircled{12}} (api.south west);
+
+%% ── Legend ───────────────────────────────────────────────────────────────────
+\node[draw, rounded corners=3pt, fill=gray!5,
+      align=left, font=\scriptsize, inner sep=4pt,
+      text width=125mm]
+  at (6.0, -8.6) {
+  \textbf{Arrow legend:}\\[2pt]
+  \textcircled{1} Page load / user actions \quad
+  \textcircled{2} /api/* through ingress \quad
+  \textcircled{3} gRPC: CreatePod / TerminatePod / ListNodes \\[1pt]
+  \textcircled{4} 201 pod or 202 queued response \quad
+  \textcircled{5} Read / write session \& ledger state \quad
+  \textcircled{6} Publish lifecycle + metrics events \\[1pt]
+  \textcircled{7} Billing consumer writes credit entries \quad
+  \textcircled{8} Billing + metrics consumers fan-out to API \quad
+  \textcircled{9} Pod create / watch / terminate \\[1pt]
+  \textcircled{10} SSH bridge / HTTP proxy \quad
+  \textcircled{11} SSE: /notifications, /pods/\{id\}/metrics (dashed = push) \quad
+  \textcircled{12} Terminal / VS Code WebSocket (dashed = push)
+};
+
 \end{tikzpicture}
