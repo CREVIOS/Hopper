@@ -776,37 +776,173 @@ The following areas currently lack automated coverage:
 \subsection{Bug Tracking \& Resolution Log}
 
 All defects discovered during testing were tracked in
-\texttt{BUG\_TRACKING\_LOG.md}. The log covers the period 2026-07-17 to
-2026-07-18 and records \textbf{20 bugs}, all with status \textit{Resolved}.
-A representative sample is shown in Table~\ref{tab:bugs}.
+\texttt{BUG\_TRACKING\_LOG.md}. The log covers 2026-07-17 to 2026-07-18
+and records \textbf{20 bugs}, all with status \textit{Resolved}.
+Table~\ref{tab:bugs} lists every entry.
 
-\begin{table}[H]
-\centering
-\caption{Representative bugs resolved during the testing period}
-\label{tab:bugs}
-\renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{2.8cm}|>{\RaggedRight\arraybackslash}p{2.1cm}|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{2.5cm}|>{\RaggedRight\arraybackslash}p{2.4cm}|>{\RaggedRight\arraybackslash}p{4.8cm}|>{\RaggedRight\arraybackslash}p{4.5cm}|}
+\caption{All bugs tracked in \texttt{BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}
+\label{tab:bugs}\\
 \hline
-\textbf{Bug ID} & \textbf{Component} & \textbf{Root cause} & \textbf{Fix} \\
+\textbf{Bug ID} & \textbf{Component} & \textbf{Root cause} & \textbf{Fix applied} \\
 \hline
-BUG-2026-07-17-01 & Frontend tabs & \texttt{Tabs.Trigger} swallowed extra props so per-page \texttt{onclick} handlers never fired. & Forwarded \texttt{...restProps} in \texttt{tabs-trigger.svelte}; added explicit state updates on admin and pod detail triggers. \\
+\endfirsthead
+\multicolumn{4}{l}{\footnotesize\textit{Table~\ref{tab:bugs} continued}}\\
 \hline
-BUG-2026-07-17-04 & E2E pod lifecycle spec & Tests assumed conditions stricter than the mocked headless flow; assertions on live metrics and history cards failed. & Adjusted specs to wait for stable rendered states and verify termination at the API boundary. \\
+\textbf{Bug ID} & \textbf{Component} & \textbf{Root cause} & \textbf{Fix applied} \\
 \hline
-BUG-2026-07-18-01 & Frontend auth guards & All unauthenticated SSR loads redirected to \texttt{/login?session\_expired=1}, falsely implying an expired session. & Protected routes redirect to \texttt{/login}; the \texttt{session\_expired} flag is reserved for genuine client-side refresh failures. \\
+\endhead
 \hline
-BUG-2026-07-18-03 & \texttt{scripts/test/run.sh} & \texttt{go tool cover} ran from the repo root, so module-relative resolution failed for orchestrator HTML reports. & Coverage renderer now \texttt{cd}s into \texttt{services/orchestrator} before invoking \texttt{go tool cover -html}. \\
+\endfoot
+
+BUG-2026-07-17-01 &
+  Frontend tabs &
+  \texttt{Tabs.Trigger} did not forward extra props, so per-page \texttt{onclick} handlers were swallowed before reaching \texttt{Bits.Trigger}. &
+  Forwarded \texttt{...restProps} in \texttt{tabs-trigger.svelte}; added explicit \texttt{onclick} state updates on admin and pod-detail tab triggers. \\
 \hline
-BUG-2026-07-18-12 & E2E terminal clipboard & Test targeted xterm's hidden helper textarea instead of the visible terminal surface. & Added \texttt{?tab=terminal} deep-link support and updated clipboard spec to open the terminal tab directly. \\
+
+BUG-2026-07-17-02 &
+  Frontend terminal toolbar &
+  ``New terminal'' control was wrapped in a tooltip snippet, lacking stable button semantics for E2E. &
+  Replaced with a plain \texttt{<button>} carrying \texttt{type="button"}, \texttt{aria-label}, and \texttt{title}. \\
 \hline
-BUG-2026-07-18-16 & Frontend pods page & Launch button was interactable before Svelte attached the click handler, causing flaky E2E confirmation-dialog assertions. & Added a \texttt{/pods} hydration marker; E2E helpers wait for hydration before clicking \textit{Launch VM}. \\
+
+BUG-2026-07-17-03 &
+  E2E admin spec &
+  \texttt{getByText(\ldots).first()} resolved hidden \texttt{md:hidden} fragments, producing false negatives on visible rows. &
+  Added hydration waits; replaced text-only assertions with \texttt{getByRole('row').filter(\ldots)}. \\
 \hline
-BUG-2026-07-18-18 & Landing page navbar & All navbar links pointed to \texttt{\#features} regardless of label. & Each link now carries a distinct in-page anchor; matching section IDs added. \\
+
+BUG-2026-07-17-04 &
+  E2E pod lifecycle spec &
+  Tests assumed stricter conditions than the mock harness guaranteed (live metrics, history-card identity). &
+  Adjusted specs to wait for stable rendered states and verify termination at the API boundary. \\
 \hline
-BUG-2026-07-18-20 & Dashboard navigation & No loading skeleton during authenticated route transitions caused visible blank states. & Added \texttt{DashboardSkeleton} component; route-specific variants rendered during SvelteKit navigation. \\
+
+BUG-2026-07-18-01 &
+  Frontend auth guards &
+  All unauthenticated SSR loads redirected to \texttt{/login?session\_expired=1}, falsely implying an expired session. &
+  Protected routes now redirect to plain \texttt{/login}; \texttt{session\_expired} flag reserved for real client-side refresh failures. \\
 \hline
-\end{tabularx}
-\end{table}
+
+BUG-2026-07-18-02 &
+  CI workflow \texttt{ci.yml} &
+  \texttt{upload-artifact} pointed at fixed paths with \texttt{if-no-files-found: error}, breaking the job when coverage output varied. &
+  Added a staging step that copies only existing artifacts; uploads with \texttt{if-no-files-found: warn}. \\
+\hline
+
+BUG-2026-07-18-03 &
+  \texttt{scripts/test/run.sh} &
+  \texttt{go tool cover -html} ran from the repo root, breaking module-relative resolution for orchestrator reports. &
+  Coverage renderer \texttt{cd}s into \texttt{services/orchestrator} before invoking \texttt{go tool cover}. \\
+\hline
+
+BUG-2026-07-18-04 &
+  Frontend build pipeline &
+  \texttt{build} script called \texttt{vite build} directly without syncing SvelteKit generated files first. &
+  Changed build script to run \texttt{svelte-kit sync \&\& vite build}. \\
+\hline
+
+BUG-2026-07-18-05 &
+  E2E auth smoke &
+  \texttt{TC-AUTH-001} asserted stale copy (\texttt{Welcome back}, \texttt{Sign in as admin}) that no longer matched the login page. &
+  Updated spec to assert the current login page contract (\texttt{Sign in with email}, \texttt{University SSO}). \\
+\hline
+
+BUG-2026-07-18-06 &
+  E2E session refresh &
+  \texttt{TC-AUTH-004} expected \texttt{?session\_expired=1} redirect that the app no longer produces for plain unauthenticated access. &
+  Updated auth spec to expect plain \texttt{/login} for the expired-refresh fallback. \\
+\hline
+
+BUG-2026-07-18-07 &
+  E2E pod launch &
+  \texttt{TC-POD-001} used the hidden terminal control as a readiness signal; page now opens on overview tab. &
+  Rewrote pod-detail readiness to wait for pod heading and selected overview tab. \\
+\hline
+
+BUG-2026-07-18-08 &
+  E2E live metrics &
+  \texttt{TC-POD-003} used the wrong readiness signal and stale text casing for the metrics panel. &
+  Updated spec to use current overview readiness contract and \texttt{Live Metrics} copy. \\
+\hline
+
+BUG-2026-07-18-09 &
+  E2E pod termination &
+  \texttt{TC-POD-004} never reached termination assertions because the shared helper waited on the wrong terminal control. &
+  Reused the corrected pod-detail readiness helper across all pod-lifecycle tests. \\
+\hline
+
+BUG-2026-07-18-10 &
+  E2E queue routing &
+  \texttt{TC-EDGE-005} asserted a \texttt{Position} column that no longer exists; cancel selector matched multiple buttons. &
+  Updated to assert the current queue page contract; scoped cancel control to \texttt{main}. \\
+\hline
+
+BUG-2026-07-18-11 &
+  E2E performance smoke &
+  Spec used old browser-form login path and required \texttt{/pods} navigation under 500\,ms (actual: $\sim$863\,ms). &
+  Switched to direct API login; relaxed pods-navigation threshold to \textless1000\,ms. \\
+\hline
+
+BUG-2026-07-18-12 &
+  E2E terminal clipboard &
+  \texttt{TC-TERM-004} targeted xterm's hidden helper \texttt{<textarea>} instead of the visible terminal surface. &
+  Added \texttt{?tab=terminal} deep-link support; clipboard spec opens the terminal tab directly. \\
+\hline
+
+BUG-2026-07-18-13 &
+  E2E terminal connect &
+  Terminal tests raced hydration on the overview tab; \texttt{TC-TERM-001} intermittently never reached a visible xterm surface. &
+  Added pod-page hydration marker and \texttt{?tab=terminal} direct entry; runtime tests open on terminal tab. \\
+\hline
+
+BUG-2026-07-18-14 &
+  E2E runtime workspace &
+  After deep-linking to \texttt{?tab=terminal}, test still asserted \texttt{Live Metrics} without switching back to overview. &
+  Updated spec to verify terminal controls first, then switch to Overview before asserting metrics. \\
+\hline
+
+BUG-2026-07-18-15 &
+  E2E terminal resize &
+  \texttt{TC-TERM-002}/003 blocked by the same terminal-entry race as \texttt{TC-TERM-001}. &
+  Reused corrected terminal-entry path (\texttt{?tab=terminal} + hydration wait) in the runtime spec. \\
+\hline
+
+BUG-2026-07-18-16 &
+  Frontend pods page &
+  \texttt{TC-EDGE-001} was flaky because the launch button was interactable before Svelte attached the confirmation-dialog handler. &
+  Added \texttt{/pods} hydration marker; E2E helpers wait for hydration before clicking \textit{Launch VM}. \\
+\hline
+
+BUG-2026-07-18-17 &
+  Frontend root route &
+  \texttt{+page.server.ts} redirected anonymous users from \texttt{/} to \texttt{/login}, hiding the landing page. &
+  Removed anonymous redirect from root server load; tightened E2E landing-page assertion to real \texttt{<h1>} text. \\
+\hline
+
+BUG-2026-07-18-18 &
+  Landing page navbar &
+  Every navbar link hard-coded to \texttt{\#features}, so all items navigated to the same section. &
+  Each link now carries a distinct \texttt{href} anchor; matching section IDs added to \texttt{+page.svelte}. \\
+\hline
+
+BUG-2026-07-18-19 &
+  Landing page header &
+  \texttt{ThemeToggle} was only mounted inside the authenticated layout, leaving anonymous visitors without theme control. &
+  Reused the existing \texttt{ThemeToggle} component in the landing-page header. \\
+\hline
+
+BUG-2026-07-18-20 &
+  Dashboard navigation &
+  No loading skeleton during route transitions caused visible blank states between data-heavy pages. &
+  Added shared \texttt{DashboardSkeleton} component; route-specific skeleton variants wired in \texttt{+layout.svelte}. \\
+\hline
+
+\end{longtable}
+\end{center}
 
 \subsection{Sample Test Cases}
 
