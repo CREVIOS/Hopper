@@ -106,11 +106,14 @@ async def approve_teacher(
         resource_type="user", resource_id=user_id, ip_address="-", status_code=200,
     ))
     await db.commit()
-    # Force re-issue of the user's tokens so the new role takes effect promptly.
-    try:
-        await keycloak_admin.logout_user(user_id)
-    except Exception:
-        logger.warning("could not force-logout %s after teacher approval", user_id)
+    # Deliberately NOT force-logging the user out here. This is a pure
+    # elevation (student → professor), so their current token grants strictly
+    # less than the new role — nothing to revoke. Killing the Keycloak session
+    # would also revoke the refresh token, and the session can only pick the
+    # new role up via a refresh, which left an approved-but-signed-in teacher
+    # stuck as a student until they manually logged out and back in.
+    # /auth/me now reports role_stale and the frontend refreshes in place.
+    # (Demotions still force a logout — see change_role below.)
     return {"status": "ok", "user_id": user_id, "role": "professor"}
 
 

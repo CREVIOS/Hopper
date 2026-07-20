@@ -157,7 +157,9 @@ async def test_admin_can_approve_teacher_request(client, db_session, monkeypatch
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "user_id": "teacher-1", "role": "professor"}
     assert assigned_roles == [("teacher-1", "professor")]
-    assert logged_out == ["teacher-1"]
+    # Elevation keeps the session alive so it can be refreshed into the new
+    # role; a forced logout would revoke the refresh token instead.
+    assert logged_out == []
 
 
 @pytest.mark.asyncio

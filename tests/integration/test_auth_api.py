@@ -239,7 +239,35 @@ async def test_auth_me_returns_pending_teacher_flag(client, db_session):
         "name": "Student One",
         "role": "student",
         "pending_teacher": True,
+        "role_stale": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_auth_me_flags_stale_role_after_teacher_approval(client, db_session):
+    """An approved teacher still holds a token minted while they were a student.
+
+    /auth/me keeps reporting the token's role (that is what authorization
+    enforces) but flags the drift so the frontend refreshes the session
+    instead of leaving them on the student view until they log out.
+    """
+    db_session.add(
+        User(
+            id="student-1",
+            email="student1@cs.du.ac.bd",
+            name="Student One",
+            role="professor",
+            pending_teacher=False,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get("/auth/me")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "student"
+    assert body["role_stale"] is True
 
 
 @pytest.mark.asyncio

@@ -609,12 +609,18 @@ async def me(
     # to let the UI reflect the "awaiting approval" state.
     result = await db.execute(select(User).where(User.id == current_user.sub))
     user = result.scalar_one_or_none()
+    # An admin can change the role mid-session (teacher approval), and the
+    # already-issued access token keeps the old one until it is refreshed.
+    # Report the token's role — it is what authorization actually uses — but
+    # flag the drift so the frontend can refresh instead of stranding the user
+    # on their old role until they log out and back in.
     return UserResponse(
         id=current_user.sub,
         email=current_user.email,
         name=current_user.name,
         role=current_user.role,
         pending_teacher=bool(user.pending_teacher) if user else False,
+        role_stale=bool(user and user.role and user.role != current_user.role),
     )
 
 

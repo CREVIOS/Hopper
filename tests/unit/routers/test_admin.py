@@ -192,7 +192,10 @@ async def test_approve_teacher_updates_role_and_pending_flag(monkeypatch):
     assert user.pending_teacher is False
     assert db.committed is True
     assert calls["set_role"] == ("user-2", "professor")
-    assert calls["logout"] == "user-2"
+    # Approval must NOT kill the Keycloak session: revoking the refresh token
+    # is what used to strand an approved teacher on their old student role
+    # until a manual re-login. The session picks the new role up on refresh.
+    assert "logout" not in calls
 
 
 async def test_reject_teacher_clears_pending_flag():

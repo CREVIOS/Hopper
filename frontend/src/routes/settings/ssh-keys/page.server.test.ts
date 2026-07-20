@@ -28,9 +28,12 @@ describe('ssh keys page server load', () => {
 
   it('returns keys for authenticated users', async () => {
     const { load } = await import('./+page.server');
-    const fetchMock = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (url: string) => ({
       ok: true,
-      json: async () => [{ id: 'key-1', name: 'laptop' }]
+      json: async () =>
+        url.endsWith('/auth/api-keys')
+          ? [{ id: 'ak-1', name: 'ci', prefix: 'hpk_ab', scope: 'read_only' }]
+          : [{ id: 'key-1', name: 'laptop' }]
     }));
 
     const result = await load({
@@ -39,11 +42,11 @@ describe('ssh keys page server load', () => {
       cookies: cookieJar('session-token')
     } as any);
 
-    // The loader fetches SSH keys and API keys in parallel; the shared mock
-    // returns the same array for both endpoints.
+    // The loader fetches SSH keys and API keys in parallel; the mock returns a
+    // distinct fixture per endpoint (/auth/api-keys vs the SSH-keys list).
     expect(result).toEqual({
       keys: [{ id: 'key-1', name: 'laptop' }],
-      apiKeys: [{ id: 'key-1', name: 'laptop' }]
+      apiKeys: [{ id: 'ak-1', name: 'ci', prefix: 'hpk_ab', scope: 'read_only' }]
     });
   });
 });
