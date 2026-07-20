@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # ListNodes, so the total is configured; used = sum of live VMs' plan disk.
     cluster_storage_total: str = "150Gi"
     cluster_reserve_storage: str = "10Gi"
+    # StorageClassName stamped on NEW user-workspace PVCs. "" = cluster default
+    # (local-path). Set to "longhorn-workspace" to provision new workspaces on
+    # Longhorn; existing workspaces keep their recorded class (see
+    # user_workspaces.storage_class — the per-user migration ledger). docs/STORAGE.md.
+    workspace_storage_class: str = ""
     # How often the background admission loop re-checks the queue, in seconds.
     scheduler_tick_seconds: int = 5
 

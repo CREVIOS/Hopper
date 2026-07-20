@@ -11,6 +11,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.user_workspace import UserWorkspace
 
 # Per-plan workspace capacity in GiB. SRS_ADDENDUM §2.2 fixes small=20, large=100;
@@ -51,7 +52,10 @@ async def get_or_create_workspace(
         id=str(uuid.uuid4()),
         user_id=user_id,
         pvc_name=pvc_name_for(user_id),
-        storage_class="",
+        # New workspaces adopt the configured class ("" = cluster default). This
+        # is the only place the class is chosen; existing rows keep theirs, which
+        # is how a mixed local-path/Longhorn fleet is tracked during migration.
+        storage_class=settings.workspace_storage_class,
         capacity_gb=capacity_gb,
     )
     db.add(ws)

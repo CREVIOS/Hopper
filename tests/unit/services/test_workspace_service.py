@@ -59,3 +59,35 @@ async def test_get_or_create_workspace_defaults_capacity_for_unknown_plan():
     db = FakeDB()
     ws = await workspace_service.get_or_create_workspace(db, "u2", "mystery")
     assert ws.capacity_gb == workspace_service.DEFAULT_WORKSPACE_GB
+
+
+async def test_create_records_configured_storage_class(monkeypatch):
+    # New workspaces are born on the configured class (Longhorn migration lever).
+    monkeypatch.setattr(workspace_service.settings, "workspace_storage_class", "longhorn-workspace")
+    db = FakeDB()
+    ws = await workspace_service.get_or_create_workspace(db, "u3", "small")
+    assert ws.storage_class == "longhorn-workspace"
+
+
+async def test_create_default_storage_class_is_empty(monkeypatch):
+    # Default "" == cluster default (local-path); byte-identical to pre-Longhorn.
+    monkeypatch.setattr(workspace_service.settings, "workspace_storage_class", "")
+    db = FakeDB()
+    ws = await workspace_service.get_or_create_workspace(db, "u4", "small")
+    assert ws.storage_class == ""
+
+
+async def test_existing_row_keeps_recorded_class(monkeypatch):
+    # An already-provisioned workspace keeps its recorded class even if the
+    # configured default changed — the column is the per-user migration ledger.
+    monkeypatch.setattr(workspace_service.settings, "workspace_storage_class", "longhorn-workspace")
+    db = FakeDB()
+    existing = UserWorkspace(
+        id="w-existing", user_id="u5", pvc_name="ws-user-u5",
+        storage_class="", capacity_gb=20,
+    )
+    db.rows.append(existing)
+    ws = await workspace_service.get_or_create_workspace(db, "u5", "small")
+    assert ws is existing
+    assert ws.storage_class == ""      # unchanged
+    assert db.commits == 0             # no write
