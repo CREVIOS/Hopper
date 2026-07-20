@@ -70,6 +70,81 @@ describe('root layout server load', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes a still-valid session whose role went stale', async () => {
+    const { load } = await import('./+layout.server');
+    const cookies = makeCookies({
+      session_token: 'old-token',
+      refresh_token: 'refresh-token'
+    });
+    const fetchMock = vi.fn(async (url: string, init?: any) => {
+      if (url.endsWith('/auth/refresh')) {
+        return {
+          ok: true,
+          headers: {
+            getSetCookie: () => [
+              'session_token=new-token; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=300'
+            ]
+          }
+        };
+      }
+
+      if (url.endsWith('/auth/me')) {
+        // The pre-approval token still says student; the re-issued one carries
+        // the professor role the admin just granted.
+        const stale = init?.headers?.Cookie?.includes('old-token');
+        return {
+          ok: true,
+          json: async () =>
+            stale
+              ? { id: 'user-3', role: 'student', role_stale: true }
+              : { id: 'user-3', role: 'professor', role_stale: false }
+        };
+      }
+
+      return { ok: true, json: async () => ({ balance: 5 }) };
+    });
+
+    const result = await load({
+      cookies: cookies.jar,
+      fetch: fetchMock
+    } as any);
+
+    expect(result).toEqual({
+      isAuthenticated: true,
+      user: { id: 'user-3', role: 'professor', role_stale: false },
+      balance: 5
+    });
+  });
+
+  it('keeps the existing session when a stale-role refresh fails', async () => {
+    const { load } = await import('./+layout.server');
+    const cookies = makeCookies({
+      session_token: 'old-token',
+      refresh_token: 'refresh-token'
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/refresh')) return { ok: false, headers: {} };
+      if (url.endsWith('/auth/me')) {
+        return {
+          ok: true,
+          json: async () => ({ id: 'user-4', role: 'student', role_stale: true })
+        };
+      }
+      return { ok: true, json: async () => ({ balance: 7 }) };
+    });
+
+    const result = await load({
+      cookies: cookies.jar,
+      fetch: fetchMock
+    } as any);
+
+    expect(result).toEqual({
+      isAuthenticated: true,
+      user: { id: 'user-4', role: 'student', role_stale: true },
+      balance: 7
+    });
+  });
+
   it('refreshes the session and forwards cookies before retrying auth', async () => {
     const { load } = await import('./+layout.server');
     const cookies = makeCookies({ refresh_token: 'refresh-token' });
