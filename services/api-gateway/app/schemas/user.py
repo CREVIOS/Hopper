@@ -59,6 +59,11 @@ class UserResponse(BaseModel):
     # True while a teacher signup is awaiting admin approval (role stays
     # "student" until then). Surfaced so the UI can show the pending state.
     pending_teacher: bool = False
+    # True when the caller's access token carries an older role than the one
+    # now stored for them (an admin changed it mid-session). `role` above stays
+    # the token's role — that is what the API actually enforces — and this flag
+    # tells the frontend to refresh the session so the new role takes effect.
+    role_stale: bool = False
 
 
 class ChangeRoleRequest(BaseModel):
