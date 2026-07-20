@@ -1,0 +1,114 @@
+##############################################################################
+# Storage benchmark — local-path (baseline) vs longhorn-workspace
+#
+# The MANDATORY gate before flipping any student workspace to Longhorn
+# (docs/STORAGE.md §6). Run BOTH jobs, compare, and only proceed if every
+# criterion holds:
+#   - 4k randread  >= 50% of local-path AND >= 800 IOPS
+#   - 4k randwrite >= 50% of local-path AND >= 400 IOPS
+#   - fsync p99    <= 15 ms AND <= 3x local-path
+#   - seq rw       >= 60% of local-path
+#
+# Operator-run, out-of-band (NOT applied by CI):
+#   kubectl apply -f k8s/longhorn/bench/fio-job.yaml
+#   kubectl -n storage-bench logs -f job/fio-bench-localpath
+#   kubectl -n storage-bench logs -f job/fio-bench-longhorn
+#   kubectl delete -f k8s/longhorn/bench/fio-job.yaml   # cleanup (PVCs too)
+#
+# Image: longhornio/kbench bundles fio; pin the digest for repeatable numbers.
+# Runs on the dedicated Longhorn disk vs the current local-path disk, so the
+# baseline reflects the real student UX today.
+##############################################################################
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage-bench
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fio-bench
+  namespace: storage-bench
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+    D=/data
+    COMMON="--directory=$D --size=4G --direct=1 --ioengine=libaio --time_based --runtime=60 --group_reporting --output-format=normal"
+    echo "################ 4k randread (IOPS) ################"
+    fio --name=randread  --rw=randread  --bs=4k --iodepth=16 $COMMON
+    echo "################ 4k randwrite (IOPS) ################"
+    fio --name=randwrite --rw=randwrite --bs=4k --iodepth=16 $COMMON
+    echo "################ 4k sync write (fsync p99 latency) ################"
+    fio --name=syncwrite --rw=randwrite --bs=4k --iodepth=1 --fsync=1 $COMMON
+    echo "################ seq write then read (MB/s) ################"
+    fio --name=seqwrite  --rw=write --bs=1M --iodepth=8 $COMMON
+    fio --name=seqread   --rw=read  --bs=1M --iodepth=8 $COMMON
+    rm -f "$D"/randread.* "$D"/randwrite.* "$D"/syncwrite.* "$D"/seqwrite.* "$D"/seqread.* 2>/dev/null || true
+    echo "DONE"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bench-localpath
+  namespace: storage-bench
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources: { requests: { storage: 5Gi } }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bench-longhorn
+  namespace: storage-bench
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn-workspace
+  resources: { requests: { storage: 5Gi } }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fio-bench-localpath
+  namespace: storage-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: fio
+          image: longhornio/kbench:latest        # pin the digest before relying on numbers
+          command: ["/bin/sh", "/scripts/run.sh"]
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: bench-localpath }
+        - name: script
+          configMap: { name: fio-bench }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fio-bench-longhorn
+  namespace: storage-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: fio
+          image: longhornio/kbench:latest
+          command: ["/bin/sh", "/scripts/run.sh"]
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: script, mountPath: /scripts }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: bench-longhorn }
+        - name: script
+          configMap: { name: fio-bench }

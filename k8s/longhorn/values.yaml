@@ -1,0 +1,88 @@
+# =============================================================================
+# Longhorn v1.12.0 — Helm values (source of truth for Longhorn settings)
+#
+# Longhorn is installed OUT OF BAND (like cert-manager in k8s/deploy/05), not by
+# CI. publish.yml only does `kubectl set image` and never touches this.
+#
+# Install / upgrade (see docs/runbooks/longhorn-install.md for the full flow):
+#   helm repo add longhorn https://charts.longhorn.io && helm repo update
+#   kubectl create namespace longhorn-system   # (or --create-namespace below)
+#   # backup-target secret must exist BEFORE install (referenced under defaultBackupStore):
+#   kubectl -n longhorn-system create secret generic azblob-backup-credentials \
+#     --from-literal=AZBLOB_ACCOUNT_NAME=<acct> --from-literal=AZBLOB_ACCOUNT_KEY=<key>
+#   helm upgrade --install longhorn longhorn/longhorn \
+#     -n longhorn-system --create-namespace --version 1.12.0 \
+#     -f k8s/longhorn/values.yaml
+#
+# UPGRADE POLICY (Longhorn is strict): sequential minor versions only
+# (1.12 -> 1.13, never 1.12 -> 1.14), NO downgrade, each minor EOLs ~1 year.
+# ALWAYS take a Longhorn system backup first, and NEVER upgrade while any
+# volume is Faulted. preUpgradeChecker (below) enforces the version gate.
+#
+# SETTINGS ARE MANAGED HERE, NOT IN THE UI. A `helm upgrade` reverts any change
+# made through the Longhorn UI, so change settings by editing this file + upgrade.
+# =============================================================================
+
+persistence:
+  # local-path stays the cluster DEFAULT StorageClass. Workspaces move to
+  # Longhorn per-user via the app's user_workspaces.storage_class column, not by
+  # flipping the default (which would silently migrate unrelated PVCs).
+  defaultClass: false
+  defaultClassReplicaCount: 1        # Phase 4 (multi-node): raise to 2
+
+# Enforces Longhorn's sequential-minor upgrade rule as a Helm pre-upgrade hook.
+preUpgradeChecker:
+  jobEnabled: true
+
+defaultSettings:
+  # --- Replication / locality ---
+  # Phase 1 is a single node, so 1 replica (a 3-replica volume would sit
+  # Degraded forever with nowhere to place copies). Phase 4 raises this to 2/3.
+  defaultReplicaCount: 1
+  # Keep one replica on the node the VM runs on: local read/write path for the
+  # latency-sensitive workspace I/O, while still replicating once nodes exist.
+  defaultDataLocality: best-effort
+  # Spread replicas onto new nodes automatically as the cluster grows (no-op on 1 node).
+  replicaAutoBalance: best-effort
+
+  # --- Node failure handling ---
+  # Default is do-nothing, which leaves a stuck RWO pod in ContainerCreating on
+  # node loss. Force-delete so the student VM pod migrates to a healthy node.
+  podDeletionPolicyWhenNodeIsDown: delete-both-statefulset-and-deployment-pod
+  # Protect the last healthy replica during node drains / k3s upgrades.
+  nodeDrainPolicy: block-if-contains-last-replica
+  # Auto-recover a volume whose replicas all faulted (e.g. after a hard reboot).
+  automaticSalvage: true
+
+  # --- Disk / scheduling ---
+  # Dedicated Azure managed disk, ext4-mounted here (see longhorn-node-setup.md).
+  defaultDataPath: /var/lib/longhorn
+  # Thin provisioning headroom vs raw disk, and the free-space floor at which
+  # scheduling stops (protects against snapshot-growth disk-full).
+  storageOverProvisioningPercentage: 100
+  storageMinimalAvailablePercentage: 25
+  # Reserve 30% of the root disk on the default disk (harmless: we use a
+  # dedicated disk); left at the chart default intentionally.
+
+  # --- Data integrity (rebuild-corruption mitigation) ---
+  snapshotDataIntegrity: fast-check
+
+  # --- Backups ---
+  backupstorePollInterval: 300       # seconds; how often DR/backup volumes poll the target
+
+# Off-cluster backup target: a dedicated Azure Blob container. The credential
+# secret (azblob-backup-credentials) is created out of band BEFORE install.
+# NOTE: the chart key for the backup target moved to `defaultBackupStore` in
+# recent chart versions. Verify against `helm show values longhorn/longhorn
+# --version 1.12.0` at install time; if this chart still uses the legacy
+# `defaultSettings.backupTarget` / `defaultSettings.backupTargetCredentialSecret`,
+# move these two lines there. Both wire the same BackupTarget CR.
+defaultBackupStore:
+  backupTarget: azblob://longhorn@core.windows.net/
+  backupTargetCredentialSecret: azblob-backup-credentials
+
+# Longhorn UI is NOT exposed publicly (see docs/STORAGE.md D6). Reach it via:
+#   kubectl -n longhorn-system port-forward svc/longhorn-frontend 8081:80
+# so no ingress is configured here.
+ingress:
+  enabled: false

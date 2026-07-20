@@ -1,0 +1,57 @@
+# PVC → PVC cold copy (envsubst template — used by
+# scripts/ops/migrate-workspace-to-longhorn.sh; not applied directly).
+#
+# Copies a source PVC's contents into a destination PVC with `cp -a` (preserves
+# perms/owners/timestamps/symlinks) and verifies file count + byte size match.
+# Makes ZERO network calls, so it needs no NetworkPolicy despite the namespace
+# default-deny (unlike the pg-backup Job, which talks to Postgres). The workload
+# using the source PVC MUST be stopped first (RWO — single attach).
+#
+# Substituted vars: ${NAMESPACE} ${JOB_NAME} ${SRC_PVC} ${DST_PVC} ${COPY_IMAGE}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: workspace-migrate
+spec:
+  backoffLimit: 0                 # a failed copy must not silently retry over a half-copy
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app: workspace-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: copy
+          image: ${COPY_IMAGE}    # pinned busybox/alpine (e.g. busybox:1.36)
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              echo "copying /src -> /dst"
+              cp -a /src/. /dst/
+              sync
+              sc=$(find /src -mindepth 1 | wc -l); dc=$(find /dst -mindepth 1 | wc -l)
+              sb=$(du -sb /src | cut -f1);        db=$(du -sb /dst | cut -f1)
+              echo "src: files=$sc bytes=$sb"
+              echo "dst: files=$dc bytes=$db"
+              if [ "$sc" != "$dc" ] || [ "$sb" != "$db" ]; then
+                echo "MISMATCH — copy incomplete"; exit 1
+              fi
+              echo "COPY VERIFIED"
+          volumeMounts:
+            - { name: src, mountPath: /src, readOnly: true }
+            - { name: dst, mountPath: /dst }
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+      volumes:
+        - name: src
+          persistentVolumeClaim:
+            claimName: ${SRC_PVC}
+            readOnly: true
+        - name: dst
+          persistentVolumeClaim:
+            claimName: ${DST_PVC}

@@ -37,3 +37,8 @@ networkPolicies:
 
 backup:
   enabled: false
+
+# No Longhorn on a laptop k3d/k3s cluster (no longhorn.io CRDs) — keep the
+# storage policy unrendered so the chart installs cleanly on dev.
+longhorn:
+  enabled: false

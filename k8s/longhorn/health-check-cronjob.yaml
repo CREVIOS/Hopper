@@ -1,0 +1,116 @@
+##############################################################################
+# Longhorn interim health check (Phases 1–4, before the Phase 5 metrics stack)
+#
+# There is no Prometheus/Alertmanager deployed yet, so this mirrors the platform's
+# existing "failed Job = signal" mechanism (like pg-backup): a daily CronJob in
+# longhorn-system that EXITS NON-ZERO when something is wrong, so a failed Job
+# shows up in `kubectl get jobs -n longhorn-system` and the weekly operator check.
+#
+# Apply out-of-band (not by CI):  kubectl apply -f k8s/longhorn/health-check-cronjob.yaml
+# Inspect:  kubectl -n longhorn-system get jobs -l app=longhorn-health-check
+#           kubectl -n longhorn-system logs job/<name>
+#
+# Checks (any failure -> exit 1):
+#   1. every volume .status.robustness is "healthy"
+#   2. no backup is in state "Error"
+#   3. every node disk has >= 25% storage available
+#   4. every workspace volume has a backup newer than 26h
+##############################################################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: longhorn-health-check
+  namespace: longhorn-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: longhorn-health-check
+  namespace: longhorn-system
+rules:
+  - apiGroups: ["longhorn.io"]
+    resources: ["volumes", "backups", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: longhorn-health-check
+  namespace: longhorn-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: longhorn-health-check
+subjects:
+  - kind: ServiceAccount
+    name: longhorn-health-check
+    namespace: longhorn-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: longhorn-health-check
+  namespace: longhorn-system
+  labels:
+    app: longhorn-health-check
+spec:
+  schedule: "0 6 * * *"          # 06:00 UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7      # keep a week of failures visible
+  jobTemplate:
+    spec:
+      backoffLimit: 0            # a failed check must stay failed (it's the alert)
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: longhorn-health-check
+        spec:
+          serviceAccountName: longhorn-health-check
+          restartPolicy: Never
+          containers:
+            - name: check
+              image: bitnami/kubectl:1.31
+              command: ["/bin/bash", "-ec"]
+              args:
+                - |
+                  fail=0
+                  echo "== 1. volume robustness =="
+                  bad=$(kubectl -n longhorn-system get volumes.longhorn.io \
+                    -o jsonpath='{range .items[?(@.status.robustness!="healthy")]}{.metadata.name}={.status.robustness}{"\n"}{end}')
+                  if [ -n "$bad" ]; then echo "NOT HEALTHY:"; echo "$bad"; fail=1; else echo "all healthy"; fi
+
+                  echo "== 2. backups in error =="
+                  errb=$(kubectl -n longhorn-system get backups.longhorn.io \
+                    -o jsonpath='{range .items[?(@.status.state=="Error")]}{.metadata.name}{"\n"}{end}' 2>/dev/null)
+                  if [ -n "$errb" ]; then echo "ERRORED BACKUPS:"; echo "$errb"; fail=1; else echo "none"; fi
+
+                  echo "== 3. node disk free >= 25% =="
+                  while read -r node avail max; do
+                    [ -z "$max" ] && continue; [ "$max" = "0" ] && continue
+                    pct=$(( avail * 100 / max ))
+                    if [ "$pct" -lt 25 ]; then echo "LOW DISK: $node ${pct}% free"; fail=1; else echo "$node ${pct}% free"; fi
+                  done <<EOF
+                  $(kubectl -n longhorn-system get nodes.longhorn.io -o go-template='{{range .items}}{{$n := .metadata.name}}{{range $d, $s := .status.diskStatus}}{{$n}} {{$s.storageAvailable}} {{$s.storageMaximum}}{{"\n"}}{{end}}{{end}}')
+                  EOF
+
+                  echo "== 4. workspace backups newer than 26h =="
+                  cutoff=$(date -u -d '26 hours ago' +%s)
+                  # Workspace volumes are those provisioned from PVCs named ws-user-*.
+                  vols=$(kubectl -n longhorn-system get volumes.longhorn.io \
+                    -o jsonpath='{range .items[?(@.status.kubernetesStatus.pvcName)]}{.metadata.name} {.status.kubernetesStatus.pvcName} {.status.lastBackup} {.status.lastBackupAt}{"\n"}{end}')
+                  echo "$vols" | while read -r vol pvc lastb lastat; do
+                    case "$pvc" in ws-user-*) ;; *) continue ;; esac
+                    if [ -z "$lastat" ]; then echo "NO BACKUP: $pvc"; exit 3; fi
+                    ts=$(date -u -d "$lastat" +%s 2>/dev/null || echo 0)
+                    if [ "$ts" -lt "$cutoff" ]; then echo "STALE BACKUP: $pvc ($lastat)"; exit 3; fi
+                    echo "$pvc ok ($lastat)"
+                  done || fail=1
+
+                  echo "== result =="
+                  if [ "$fail" -ne 0 ]; then echo "LONGHORN HEALTH: FAIL"; exit 1; fi
+                  echo "LONGHORN HEALTH: OK"
+              resources:
+                requests: { cpu: "20m", memory: "64Mi" }
+                limits: { cpu: "200m", memory: "128Mi" }

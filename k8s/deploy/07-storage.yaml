@@ -1,0 +1,125 @@
+##############################################################################
+# Longhorn storage policy — StorageClasses + backup RecurringJobs
+#
+# Prereqs: Longhorn v1.12.0 installed (see docs/runbooks/longhorn-install.md)
+# and the azblob-backup-credentials secret created in longhorn-system. Longhorn
+# itself is installed via Helm (k8s/longhorn/values.yaml), NOT from this file —
+# this file holds only Hopper's storage *policy*, the same split cert-manager
+# uses (addon out-of-band in 05; only ClusterIssuers/policy in the numbered file).
+#
+# NOTE: publish.yml only does `kubectl set image` — apply this out-of-band once:
+#   kubectl apply -f k8s/deploy/07-storage.yaml
+#
+# Design + rollout: docs/STORAGE.md. local-path stays the cluster DEFAULT; these
+# classes are opt-in (workspaces move to them per-user via the app's
+# user_workspaces.storage_class column). Both are reclaimPolicy: Retain so
+# student/ledger data survives an accidental PVC delete.
+#
+# numberOfReplicas is "1" for the single-node phase. Phase 4 (multi-node)
+# re-applies this file with "2" (workspace) / "3" (platform) — StorageClass
+# parameters are immutable, so `kubectl delete sc … && kubectl apply` (existing
+# PVs are unaffected), then patch live volumes with scripts/ops/longhorn-set-replicas.sh.
+##############################################################################
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-workspace
+  labels:
+    app.kubernetes.io/part-of: hopper
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true          # online expansion; ext4 auto-grows on plan upgrade (FR-HC-30)
+reclaimPolicy: Retain               # student /workspace data must survive PVC deletion
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "1"             # Phase 4: "2"
+  staleReplicaTimeout: "2880"       # 48h before a stale replica is GC'd
+  dataLocality: "best-effort"       # keep the hot replica on the VM's node (local I/O)
+  fsType: "ext4"
+  # New workspace PVCs auto-enrol into the "workspace" RecurringJob group below.
+  recurringJobSelector: '[{"name":"workspace","isGroup":true}]'
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-platform
+  labels:
+    app.kubernetes.io/part-of: hopper
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain               # postgres/ledger + nats + pg-backups
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "1"             # Phase 4: "3" (DB gets max redundancy)
+  staleReplicaTimeout: "2880"
+  dataLocality: "best-effort"
+  fsType: "ext4"
+  recurringJobSelector: '[{"name":"platform","isGroup":true}]'
+---
+# --- Backup / snapshot RecurringJobs (namespace longhorn-system) --------------
+# Explicit groups only; nothing is put in Longhorn's implicit "default" group,
+# so no unrelated volume is ever silently backed up. Backups are incremental
+# after the first full, and land on the Azure Blob target configured at install.
+# Cadence is staggered after the 21:00 pg_dump (06-backup.yaml) so the 22:00
+# platform block backup captures a filesystem that already holds the fresh dump.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: workspace-backup-nightly
+  namespace: longhorn-system
+spec:
+  cron: "30 21 * * *"               # 03:30 Dhaka
+  task: "backup"
+  groups: ["workspace"]
+  retain: 7
+  concurrency: 2
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: platform-backup-nightly
+  namespace: longhorn-system
+spec:
+  cron: "0 22 * * *"
+  task: "backup"
+  groups: ["platform"]
+  retain: 7
+  concurrency: 1
+---
+# Cap the snapshot chain (read-amplification + replica disk growth): keep the 5
+# most recent, then hard-clean removed ones.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-prune-weekly
+  namespace: longhorn-system
+spec:
+  cron: "0 19 * * 6"                # Saturday
+  task: "snapshot-delete"
+  groups: ["workspace", "platform"]
+  retain: 5
+  concurrency: 2
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-cleanup-weekly
+  namespace: longhorn-system
+spec:
+  cron: "30 19 * * 6"
+  task: "snapshot-cleanup"
+  groups: ["workspace", "platform"]
+  retain: 0
+  concurrency: 2
+---
+# Reclaim space from files students deleted inside /workspace (fstrim).
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: workspace-trim-weekly
+  namespace: longhorn-system
+spec:
+  cron: "0 20 * * 6"
+  task: "filesystem-trim"
+  groups: ["workspace"]
+  retain: 0
+  concurrency: 2

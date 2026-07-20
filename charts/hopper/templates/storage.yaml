@@ -1,0 +1,100 @@
+{{- if .Values.longhorn.enabled }}
+##############################################################################
+# Longhorn storage policy (port of k8s/deploy/07-storage.yaml)
+# Gated by .Values.longhorn.enabled (false on dev — no Longhorn CRDs there).
+# Longhorn itself is installed out-of-band via k8s/longhorn/values.yaml.
+##############################################################################
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-workspace
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: {{ .Values.longhorn.workspace.replicas | quote }}
+  staleReplicaTimeout: "2880"
+  dataLocality: "best-effort"
+  fsType: "ext4"
+  recurringJobSelector: '[{"name":"workspace","isGroup":true}]'
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-platform
+  labels:
+    {{- include "hopper.labels" . | nindent 4 }}
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: {{ .Values.longhorn.platform.replicas | quote }}
+  staleReplicaTimeout: "2880"
+  dataLocality: "best-effort"
+  fsType: "ext4"
+  recurringJobSelector: '[{"name":"platform","isGroup":true}]'
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: workspace-backup-nightly
+  namespace: {{ .Values.longhorn.namespace }}
+spec:
+  cron: {{ .Values.longhorn.workspace.backupCron | quote }}
+  task: "backup"
+  groups: ["workspace"]
+  retain: {{ .Values.longhorn.workspace.backupRetain }}
+  concurrency: 2
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: platform-backup-nightly
+  namespace: {{ .Values.longhorn.namespace }}
+spec:
+  cron: {{ .Values.longhorn.platform.backupCron | quote }}
+  task: "backup"
+  groups: ["platform"]
+  retain: {{ .Values.longhorn.platform.backupRetain }}
+  concurrency: 1
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-prune-weekly
+  namespace: {{ .Values.longhorn.namespace }}
+spec:
+  cron: "0 19 * * 6"
+  task: "snapshot-delete"
+  groups: ["workspace", "platform"]
+  retain: 5
+  concurrency: 2
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-cleanup-weekly
+  namespace: {{ .Values.longhorn.namespace }}
+spec:
+  cron: "30 19 * * 6"
+  task: "snapshot-cleanup"
+  groups: ["workspace", "platform"]
+  retain: 0
+  concurrency: 2
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: workspace-trim-weekly
+  namespace: {{ .Values.longhorn.namespace }}
+spec:
+  cron: "0 20 * * 6"
+  task: "filesystem-trim"
+  groups: ["workspace"]
+  retain: 0
+  concurrency: 2
+{{- end }}

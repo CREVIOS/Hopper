@@ -61,3 +61,13 @@ networkPolicies:
 backup:
   enabled: true
   storageClassName: local-path
+
+# Longhorn storage policy. Enabled on prod, but replica counts stay 1 during the
+# single-node phase (Phase 1); raise workspace→2 / platform→3 at multi-node
+# (Phase 4) — see docs/STORAGE.md. Requires Longhorn installed out-of-band first.
+longhorn:
+  enabled: true
+  workspace:
+    replicas: 1
+  platform:
+    replicas: 1

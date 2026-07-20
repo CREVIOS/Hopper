@@ -150,3 +150,19 @@ backup:
   storageClassName: local-path
   retentionDays: 14
   image: postgres:16-alpine
+
+# Longhorn storage policy (StorageClasses + backup RecurringJobs). Rendered by
+# templates/storage.yaml; port of k8s/deploy/07-storage.yaml. Longhorn itself is
+# installed out-of-band (k8s/longhorn/values.yaml), so this stays disabled by
+# default and on dev clusters (no longhorn.io CRDs there). See docs/STORAGE.md.
+longhorn:
+  enabled: false
+  namespace: longhorn-system
+  workspace:
+    replicas: 1            # multi-node: 2
+    backupCron: "30 21 * * *"
+    backupRetain: 7
+  platform:
+    replicas: 1            # multi-node: 3
+    backupCron: "0 22 * * *"
+    backupRetain: 7
