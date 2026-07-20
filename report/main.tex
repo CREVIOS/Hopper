@@ -510,17 +510,149 @@ curl -X POST "https://hopper.farefin.com/api/pods/" \
 \end{lstlisting}
 
 \section{Authentication \& Security}
+This section documents security mechanisms verified in the Hopper repository as of the inspected tree. It does not assert that the platform is free of vulnerabilities; gaps called out below were confirmed by reading application code, Kubernetes manifests, CI workflows, and automated tests.
+
 \subsection{Authentication Strategy}
-\todo{Describe the verified authentication flow and why it was chosen.}
+Hopper delegates identity to \textbf{Keycloak} (OpenID Connect). The FastAPI gateway in \path|services/api-gateway| is the application entry point: it exchanges credentials with Keycloak, validates Keycloak-issued JWT access tokens, and exposes HTTP APIs to the SvelteKit frontend.
+
+\textbf{Dual sign-in paths.} The repository implements two complementary browser flows:
+\begin{itemize}[noitemsep]
+    \item \textbf{OIDC redirect (SSO).} \path|GET /api/auth/login| generates PKCE (\texttt{S256}), \texttt{state}, and \texttt{nonce}, stores the PKCE verifier and state in short-lived HttpOnly cookies, and redirects the browser to Keycloak. \path|GET /api/auth/callback| verifies \texttt{state}, completes the authorization-code exchange with the PKCE verifier, validates the access token, upserts a local \texttt{users} row, and sets session cookies before redirecting to the dashboard.
+    \item \textbf{Direct email/password login.} \path|POST /api/auth/login| uses Keycloak's resource-owner password grant against the \path|hopper-api| client (documented as requiring Direct Access Grants). On success it issues the same cookie set as the callback path. This supports the themed in-app login form without redirecting to Keycloak's hosted page.
+\end{itemize}
+
+\textbf{Token and session lifecycle.} Successful authentication sets HttpOnly, \texttt{Secure}, \texttt{SameSite=Lax} cookies:
+\begin{itemize}[noitemsep]
+    \item \path|session_token| --- Keycloak access token (JWT); cookie \texttt{max-age} tracks Keycloak's \texttt{expires\_in} (typically on the order of minutes).
+    \item \path|refresh_token| --- used by \path|POST /api/auth/refresh| to mint a new access token; refresh cookie lifetime tracks Keycloak's refresh TTL.
+    \item \path|id_token| --- retained for RP-initiated logout (\texttt{id\_token\_hint}).
+\end{itemize}
+One-time OAuth helper cookies (\path|oauth_state|, \path|oauth_pkce|) are cleared after callback. \path|POST /api/auth/refresh| reads the refresh cookie, calls Keycloak's token endpoint, rotates cookies on success, and clears all session cookies on failure. \path|POST /api/auth/logout| best-effort revokes the refresh token at Keycloak, clears local cookies, and redirects to Keycloak's end-session endpoint.
+
+\textbf{JWT validation.} \path|app/middleware/auth.py| validates every access token with JWKS from Keycloak (\path|/protocol/openid-connect/certs|), checking signature, \texttt{exp}, issuer (external Keycloak URL), and audience (\path|hopper-api|). Realm roles are mapped to application roles \texttt{admin}, \texttt{professor}, or \texttt{student} (defaulting to \texttt{student} if no app role is present). JWKS is cached with periodic refresh and a forced refresh on unknown \texttt{kid} (key rotation).
+
+\textbf{Self-service account lifecycle.} Signup (\path|POST /api/auth/signup|) creates users in Keycloak via the admin service account, stores a local row (teacher signups set \path|pending_teacher|), and emails a numeric verification code---\emph{without} issuing a session until the mailbox is verified when \path|HOPPER_REQUIRE_EMAIL_VERIFIED| is enabled (default \texttt{true}). Verification codes and password-reset codes are stored only as SHA-256 hashes with TTL and attempt limits (\path|app/services/verification.py|). Password rules are mirrored in \path|app/services/password_policy.py| before Keycloak enforces the realm policy.
+
+\textbf{Programmatic access.} Scoped API keys (\path|hop_| prefix) authenticate via \path|X-API-Key| or \path|Authorization: Bearer hop_...|. Only a hash of each key is stored; plaintext is returned once at creation. Key management endpoints require a real cookie session, not an API key.
+
+\textbf{Frontend session handling.} Server-side rendering in \path|frontend/src/routes/+layout.server.ts| loads the user via \path|/auth/me|, forwards \path|Set-Cookie| headers from \path|/auth/refresh| when the access token is stale, and exposes \path|isAuthenticated| to child routes. The browser client (\path|frontend/src/lib/api/client.ts|) sends credentialed requests, retries once after silent refresh on eligible \path|401| responses, and redirects to \path|/login?session_expired=1| when refresh fails. E2E tests (\path|tests/e2e/specs/auth-and-access.spec.ts|) assert HttpOnly session cookies and cross-tenant API denial.
+
+\textbf{Local development exception.} \path|frontend/src/routes/dev-login/+server.ts| performs a password grant and sets cookies only when SvelteKit \texttt{dev} mode is active; production builds return \path|404|. Default usernames in that handler are overridable via private environment variables and are intended for local workflows, not production.
 
 \subsection{Authorization \& Role Management}
-\todo{Document the confirmed application roles and access-control model.}
+\textbf{Role model.} Three application roles are defined consistently in Keycloak realm configuration, JWT parsing, and the \texttt{users} table: \texttt{student}, \texttt{professor}, and \texttt{admin}. Keycloak remains canonical for role assignment; admin actions call \path|app/services/keycloak_admin.py| to promote users (for example, approving a pending teacher to \texttt{professor}).
+
+\textbf{Backend enforcement.} Protected API routes depend on \path|get_current_user()| (\path|app/dependencies.py|), which resolves either a verified session JWT or a valid API key to a \path|TokenPayload|. Representative checks verified in routers include:
+\begin{itemize}[noitemsep]
+    \item \textbf{Admin-only:} \path|/api/admin/*| via \path|_require_admin| (professors are explicitly rejected).
+    \item \textbf{Professor or admin:} credit listing/allocation endpoints in \path|app/routers/credits.py|; \path|network_group| on pod create is limited to professor/admin in \path|app/routers/pods.py|.
+    \item \textbf{Resource ownership:} pod, file, terminal, and VS Code proxy routes compare \path|PodSession.user_id| to the authenticated subject; queue entries and SSH keys are scoped the same way.
+    \item \textbf{API key scope:} \path|read_only| keys are rejected for non-safe HTTP methods; \path|full_access| keys inherit the owner's role but cannot manage API keys.
+\end{itemize}
+
+\textbf{Frontend route guards.} Authenticated pages redirect anonymous users to \path|/login| from \path|+page.server.ts| loaders (dashboard, pods, credits, settings, and others). \path|admin/+page.server.ts| requires \path|user.role === 'admin'|; \path|teacher/+page.server.ts| requires \path|professor|. These guards improve UX but are not a substitute for backend checks; the API enforces authorization independently (confirmed by E2E cross-tenant pod access tests returning \path|403| or \path|404|).
+
+\textbf{Teacher approval workflow.} Users who sign up as ``teacher'' are stored as students with \path|pending_teacher=true| until an admin approves or rejects the request via \path|/api/admin/teacher-requests/*|. Role changes that would remove the last admin are blocked in the admin router.
 
 \subsection{Security Measures}
-\todo{Summarize verified validation, secrets handling, rate limiting, network, and transport protections.}
+\textbf{Transport and edge hardening.} Production ingress (\path|k8s/deploy/03-ingress.yaml|) enforces TLS redirect and sets HSTS, \path|X-Frame-Options|, \path|X-Content-Type-Options|, and \path|Referrer-Policy| on public paths. The API gateway adds \path|X-Content-Type-Options| and \path|Referrer-Policy| on all responses (\path|app/main.py|). The SvelteKit server hook (\path|frontend/src/hooks.server.ts|) adds \path|nosniff|, \path|DENY| framing, and referrer policy on SSR responses where ingress snippets are unavailable.
+
+\textbf{CORS.} \path|CORSMiddleware| allows an explicit origin list from \path|HOPPER_CORS_ORIGINS| with credentials enabled. Startup fails if \path|*| appears in the list alongside credentialed cookies. Production manifests set a single origin (\path|https://hopper.farefin.com|). \path|/auth/refresh| additionally rejects requests whose \path|Origin| header is not in the allowlist.
+
+\textbf{Rate limiting and abuse controls.} SlowAPI decorators cap sensitive unauthenticated routes (login, signup, verification, API-key creation). After authentication, \path|get_current_user| applies per-user (\path|user:<sub>|) or per-key (\path|apikey:<id>|) moving-window limits via in-memory storage (\path|app/core/limiter.py|). Failed password attempts are counted per \texttt{(client IP, email)} tuple before returning \path|429|. Pod creation has a separate per-user limit (\path|HOPPER_RATE_LIMIT_POD_CREATE|).
+
+\textbf{Input validation and sanitization.} Request bodies use Pydantic models with length bounds (\path|app/schemas/user.py|, pod/credit schemas). Email domains can be restricted via \path|HOPPER_ALLOWED_EMAIL_DOMAINS| with exact suffix matching (not substring). File paths reject null bytes and newlines; remote paths are passed through \path|shlex.quote| before SSH (\path|app/routers/files.py|). SSH public keys are validated by prefix and fingerprint; per-user key count is capped with a transactional advisory lock.
+
+\textbf{Audit and error handling.} \path|AuditMiddleware| logs mutating HTTP methods to \path|audit_logs| using user IDs derived from \emph{verified} JWTs only. API errors generally return FastAPI JSON \path|{"detail": "..."}| with conventional status codes (\path|401|, \path|403|, \path|429|, etc.). Forgot-password and resend-code endpoints return uniform success responses to reduce email enumeration.
+
+\textbf{Secrets and configuration.} Runtime settings load from environment variables prefixed with \path|HOPPER_| (\path|app/config.py|, \path|services/api-gateway/.env.example|). Sensitive values intended for production---database URL, Keycloak admin client secret, Brevo API key, SMTP credentials---are documented as Kubernetes \texttt{Secret} references in \path|k8s/deploy/02-apps.yaml| rather than plain manifest env literals. GitHub Actions deploy and staging jobs consume repository secrets (\path|.github/workflows/publish.yml|, \path|staging-validation.yml|) for SSH, tokens, and staging URLs; workflow files reference secret \emph{names} only, not values.
+
+\textbf{Repository inspection for hardcoded credentials.} Application Python/TypeScript sources do not embed production API keys or live passwords. \path|app/config.py| and \path|k8s/deploy/00-secrets.yaml| contain \emph{documented local-dev defaults} (for example \path|hopper_dev| database credentials and \path|REPLACE_ME| placeholders) that must be rotated before non-dev deployment; comments in \path|00-secrets.yaml| warn against applying dev secrets over production. E2E bootstrap scripts read test passwords from environment variables with test-only fallbacks (\path|scripts/test/bootstrap_keycloak.py|). Load-test scripts expect tokens via environment variables, not committed secrets.
+
+\textbf{File upload and interactive access.} Uploads require authentication, pod ownership, and a running pod; content is streamed to a temporary file and copied via SCP over an SSH port-forward. The repository does \emph{not} define a maximum upload size or content-type allowlist on the gateway---a confirmed gap (see Section~4.4). Terminal and VS Code proxies re-verify JWT cookies (and CORS origin on WebSockets) at the gateway before forwarding to user pods.
+
+\textbf{Network isolation (deployment layer).} Multi-tenant \texttt{NetworkPolicy} and \texttt{CiliumNetworkPolicy} manifests under \path|k8s/deploy/04-network-policies.yaml| and \path|k8s/network-policies/| restrict pod-to-pod and egress traffic; infrastructure security tests in \path|tests/security/| document how to run authorization and isolation probes against a staging cluster.
 
 \subsection{Known Vulnerabilities \& Mitigations}
-\todo{Add verified known risks, mitigations, and remaining gaps from the repository or test docs.}
+The table below separates protections already present in code or manifests from limitations observed during inspection and recommended follow-ups. None of these rows imply complete elimination of the listed risk class.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.17\textwidth}|>{\RaggedRight\arraybackslash}p{0.22\textwidth}|>{\RaggedRight\arraybackslash}p{0.22\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|}
+    \hline
+    \textbf{Risk} & \textbf{Existing Protection} & \textbf{Remaining Limitation} & \textbf{Recommended Mitigation} \\
+    \hline
+    \endfirsthead
+    \hline
+    \textbf{Risk} & \textbf{Existing Protection} & \textbf{Remaining Limitation} & \textbf{Recommended Mitigation} \\
+    \hline
+    \endhead
+    Stolen session or refresh token &
+    Short-lived access cookies; HttpOnly+\texttt{Secure} flags; refresh origin check; RP-initiated logout with revoke &
+    No server-side session revocation list beyond Keycloak refresh revoke; XSS in frontend could still exfiltrate cookies if \texttt{Secure} were disabled &
+    Keep access TTLs short; monitor Keycloak sessions; consider tightening CSP; continue HttpOnly-only token storage (verified in E2E) \\
+    \hline
+    Credential stuffing / login brute force &
+    Per-route SlowAPI caps; failed-attempt window per IP+email; generic \path|401| message &
+    In-memory buckets scale with worker×replica count and reset on pod restart &
+    Move rate-limit state to Redis or ingress-level throttling for consistent cluster-wide ceilings \\
+    \hline
+    Cross-user data access (pods, files, metrics) &
+    \path|get_current_user| on routes; \path|user_id| ownership checks; E2E cross-tenant denial tests &
+    Frontend role checks alone would be bypassable without API enforcement (API is enforced, but UI must stay aligned) &
+    Keep adding integration tests for new resources; treat SSR guards as UX-only \\
+    \hline
+    API key leakage &
+    Stored as SHA-256 only; read-only scope; separate rate limit; keys cannot create keys &
+    \path|full_access| keys equal session power for automation; plaintext shown once at create &
+    Prefer read-only keys where possible; rotate/revoke on suspicion; audit \path|api_key.*| actions \\
+    \hline
+    Weak or reused passwords &
+    Keycloak realm policy + gateway mirror; history enforced in Keycloak on reset &
+    Password grant and Direct Access Grants increase exposure if client misconfigured &
+    Prefer authorization-code+PKCE for human login where feasible; disable password grant in production clients if SSO-only \\
+    \hline
+    Email / account enumeration &
+    Forgot-password and resend-code always return \path|200| &
+    Signup returns \path|409| on duplicate email; login returns distinct \path|403| for unverified email &
+    Accept trade-off or unify error copy further; ensure production sets domain allowlists \\
+    \hline
+    CSRF on cookie-authenticated POST &
+    \texttt{SameSite=Lax}; OIDC \texttt{state}; refresh \path|Origin| allowlist &
+    No double-submit CSRF token on all mutating forms; \texttt{Lax} cookies still sent on top-level cross-site GET navigations &
+    Add CSRF tokens for sensitive POSTs if third-party integrations expand \\
+    \hline
+    Large or malicious file upload &
+    AuthZ on pod owner; path sanitization &
+    No max upload size; full file buffered to temp storage; filename not sanitized for path traversal on remote join &
+    Enforce size limits at gateway/ingress; validate filenames; stream with backpressure \\
+    \hline
+    MITM on gateway→VM SSH &
+    Access limited to authenticated owners &
+    \path|StrictHostKeyChecking=no| for automated SCP/SSH from gateway &
+    Use known-hosts pinning or in-cluster exec without password-based SSH where possible \\
+    \hline
+    Default or committed secrets &
+    K8s Secret refs for prod DB/SMTP/Brevo/Keycloak admin; \path|.env.example| documents vars without live values &
+    \path|00-secrets.yaml| ships dev defaults in git; \path|HOPPER_CODE_URL_SIGNING_SECRET| default in code; setting is unused in routers inspected; \path|HOPPER_DEBUG=true| in \path|02-apps.yaml| &
+    Provision secrets out-of-band for prod; wire signing secret via Secret if feature is enabled; set \path|HOPPER_DEBUG=false| in production \\
+    \hline
+    Public API surface disclosure &
+    Auth on sensitive routes &
+    Swagger UI at \path|/api/docs| is publicly reachable per ingress (Section~3) &
+    Restrict docs to authenticated admins or internal networks if required by policy \\
+    \hline
+    Multi-tenant network escape &
+    Cilium/NetworkPolicy manifests; optional \path|tests/security/| suite &
+    Policies require correct cluster CNI deployment; not re-verified in this report compile &
+    Run \path|tests/security/run-security.sh| on staging; keep network policies in sync with orchestrator labels \\
+    \hline
+\end{longtable}
+\endgroup
+
+\textbf{Automated security test coverage.} Unit tests cover password-policy errors, API-key dependency behavior, rate-limiter keying, and pod authorization edge cases (\path|tests/unit/|). E2E specs cover login cookies, role-scoped navigation, silent refresh, and anonymous \path|401| responses. Broader infrastructure isolation tests are documented but require a dedicated staging cluster and tokens supplied via environment variables (\path|tests/security/README.md|).
 
 \section{Testing \& Quality Assurance}
 \subsection{Testing Strategy}
