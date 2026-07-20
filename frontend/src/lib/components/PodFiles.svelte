@@ -441,7 +441,6 @@
                     <FileIcon class="size-4 shrink-0 text-muted-foreground" />
                   {/if}
                   {#if renaming === entry.name}
-                    <!-- svelte-ignore a11y_autofocus -->
                     <Input
                       bind:value={renameValue}
                       class="h-7 flex-1 font-mono text-sm"
