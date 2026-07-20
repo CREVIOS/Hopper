@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -130,10 +131,17 @@ func (w *PodWatcher) Reconcile(ctx context.Context, podMgr *pod.Manager, ticker 
 			podMgr.SetSshPassword(mgdPod.ID, pw)
 		}
 
-		// Restart billing for running pods
+		// Restart billing for running pods. Prefer the rate stamped on the pod
+		// at create time (the DB plan's credits_per_hour) so billing resumes at
+		// the price the VM was launched with — even if the admin has since
+		// changed the plan or it isn't in the built-in map. Fall back to the map
+		// by plan name for pods created before the rate was stamped. Rate 0 (an
+		// unknown, unpriced plan) leaves the pod unbilled rather than guessing.
 		if targetState == pod.StateRunning {
-			if planInfo, ok := billing.Plans[plan]; ok {
-				ticker.Start(mgdPod.ID, planInfo, func(ev billing.TickEvent) {
+			supplied, _ := strconv.ParseFloat(p.Annotations[CreditsPerHrAnnotation], 64)
+			rate := billing.ResolveRate(supplied, plan)
+			if rate > 0 {
+				ticker.Start(mgdPod.ID, billing.VmPlan{Name: plan, CreditsPerHr: rate}, func(ev billing.TickEvent) {
 					_ = w.publish("billing.deducted", map[string]interface{}{
 						"pod_id":  ev.PodID,
 						"amount":  ev.Amount,

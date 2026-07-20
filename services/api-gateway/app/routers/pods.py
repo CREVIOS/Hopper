@@ -174,6 +174,9 @@ async def _provision_pod(
             workspace_capacity_gb=workspace.capacity_gb,
             storage_class=workspace.storage_class or "",
             authorized_keys=authorized_keys,
+            # Bill at the plan's admin-set rate (FR: pricing changes take effect),
+            # not the orchestrator's built-in fallback map.
+            credits_per_hour=float(plan_row.credits_per_hour),
             network_group=network_group or "",
         )
         session.state = resp.state

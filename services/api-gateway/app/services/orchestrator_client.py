@@ -98,7 +98,7 @@ class OrchestratorClient:
         self, user_id: str, plan: str, image: str, cpu: str, memory: str, disk: str = "",
         pod_id: str = "", workspace_pvc_name: str = "", workspace_capacity_gb: int = 0,
         storage_class: str = "", authorized_keys: list[str] | None = None,
-        network_group: str = "",
+        credits_per_hour: float = 0.0, network_group: str = "",
     ) -> PodStatusResponse:
         """Call orchestrator.CreatePod and return the response."""
         # Import generated stubs (available after generate_proto.sh)
@@ -126,6 +126,10 @@ class OrchestratorClient:
             # OpenSSH public keys the user registered — the orchestrator writes
             # them to /root/.ssh/authorized_keys so key-based SSH works.
             authorized_keys=authorized_keys or [],
+            # The plan's billing rate from the admin-managed DB catalogue. The
+            # orchestrator bills at this rate (not its built-in map) and stamps
+            # it on the pod so billing survives an orchestrator restart.
+            credits_per_hour=credits_per_hour,
             labels=labels,
         )
         resp = await stub.CreatePod(req, timeout=30)
