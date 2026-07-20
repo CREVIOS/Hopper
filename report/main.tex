@@ -24,6 +24,7 @@
 \usepackage{ragged2e}
 \usepackage{parskip}
 \usepackage{pdflscape}
+\usepackage{amssymb}
 \usetikzlibrary{arrows.meta,positioning,fit,calc}
 
 \graphicspath{{figures/}}
@@ -866,33 +867,571 @@ The six cases below are drawn directly from the repository test suites.
 \end{sloppypar}
 
 \section{CI/CD \& Deployment}
+
 \subsection{Pipeline Overview}
-\todo{Describe the verified CI and delivery workflow from repository automation and scripts.}
+
+Hopper uses \textbf{GitHub Actions} for all continuous integration and
+delivery. Five workflow files live in \texttt{.github/workflows/}.
+
+\medskip
+\noindent\textbf{\texttt{ci.yml} --- Continuous Integration}
+
+Triggered on every push or pull-request targeting \texttt{main}/\texttt{master}.
+A \texttt{concurrency} group cancels in-progress runs on the same ref.
+The workflow contains \textbf{twelve parallel-capable jobs}:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{frontend} (20\,min timeout) --- installs pnpm 10 / Node 22,
+        runs \texttt{frontend-validate} (TypeScript check + ESLint) and
+        \texttt{test-frontend} (Vitest with V8 coverage), stages and uploads
+        coverage artifacts with \texttt{if-no-files-found: warn}.
+  \item \textbf{api-gateway-smoke} (15\,min) --- installs Poetry 1.8.4 /
+        Python 3.12 and performs an import smoke test
+        (\texttt{from app.main import app}).
+  \item \textbf{python-unit} (20\,min) --- runs the full pytest unit suite
+        (\texttt{test-unit}); uploads \texttt{coverage/python/unit.xml} and
+        JUnit results.
+  \item \textbf{python-migrations} (20\,min) --- spins up deterministic
+        Docker services (\texttt{test-services-up}), runs Alembic migrations
+        (\texttt{test-migrate}), captures logs, tears down.
+  \item \textbf{python-integration} (30\,min) --- runs the full pytest
+        integration suite against live containers; uploads XML artifacts.
+  \item \textbf{go-orchestrator} (20\,min) --- runs orchestrator Go tests
+        (\texttt{test-orchestrator}), Go 1.23; uploads coverprofile and JSON
+        results.
+  \item \textbf{contract-tests} (20\,min) --- runs both Python and Go
+        contract suites (\texttt{test-contract}).
+  \item \textbf{helm-chart} (10\,min) --- runs \texttt{helm lint} and
+        \texttt{helm template} for \texttt{dev}, \texttt{staging}, and
+        \texttt{prod} value overlays; uses Helm v3.19.0.
+  \item \textbf{lint-go} (20\,min) --- generates proto stubs with
+        \texttt{protoc}, then runs \texttt{golangci-lint v2.6.2} over both
+        the orchestrator and the contract-test module.
+  \item \textbf{e2e-mock} (30\,min) --- installs Playwright Chromium, starts
+        the deterministic mock stack, runs the full mock-backed E2E suite,
+        captures logs, uploads the Playwright report (retained 14 days).
+  \item \textbf{coverage-report} --- depends on \texttt{frontend},
+        \texttt{python-unit}, \texttt{python-integration},
+        \texttt{go-orchestrator}, and \texttt{contract-tests}; downloads all
+        coverage artifacts and renders the combined Markdown report.
+  \item \textbf{docker} (30\,min) --- builds all three service images via
+        \texttt{scripts/ci/docker-build.sh} as a smoke check (no push).
+\end{itemize}
+
+\medskip
+\noindent\textbf{\texttt{publish.yml} --- Image Publish \& Rollout (CD)}
+
+Triggered on push to \texttt{main}/\texttt{master}, version tags (\texttt{v*}),
+or manual \texttt{workflow\_dispatch}. Two jobs:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{build-push} --- authenticates to \textbf{GHCR}
+        (\texttt{ghcr.io}) with \texttt{GITHUB\_TOKEN}, builds and pushes
+        the three service images (\texttt{hopper-api-gateway},
+        \texttt{hopper-orchestrator}, \texttt{hopper-frontend}) tagged with
+        the 12-character commit SHA (\texttt{ghcr.io/crevios/<image>:<sha12>}).
+  \item \textbf{deploy} --- conditional on \texttt{build-push} succeeding
+        and either a manual \texttt{deploy=true} input or the repo variable
+        \texttt{AUTO\_DEPLOY\_K8S=true}. SSHes into the VPS using
+        \texttt{VPS\_SSH\_KEY}/\texttt{VPS\allowbreak\_HOST}/\texttt{VPS\allowbreak\_USER}
+        secrets, pipes \texttt{scripts/cd/k8s-rollout.sh} over the SSH
+        connection. The rollout script calls \texttt{kubectl set image} on
+        \texttt{api-gateway}, \texttt{orchestrator}, and \texttt{frontend}
+        deployments and waits for each rollout with a configurable timeout
+        (default 900\,s).
+\end{itemize}
+
+\medskip
+\noindent\textbf{\texttt{test-platform.yml} --- Extended Platform Tests}
+
+Triggered on push to \texttt{main}, nightly schedule (\texttt{17 2 * * *}),
+or manual dispatch. Four jobs: \texttt{integration-auth-events} (Keycloak +
+NATS integration suites), \texttt{real-stack-e2e} (full real-stack Playwright
+run with SvelteKit dev server, FastAPI, and Go orchestrator), \texttt{load-smoke}
+(k6 load smoke against the mock stack), and
+\texttt{cross-browser-real-stack-e2e} (opt-in; Chromium + Firefox + WebKit,
+enabled via \texttt{E2E\_CROSS\_BROWSER=true} or
+\texttt{CROSS\_BROWSER\_E2E} repo variable).
+
+\medskip
+\noindent\textbf{\texttt{staging-validation.yml} --- Staging QA}
+
+Triggered on manual dispatch or weekly Saturday schedule
+(\texttt{30 3 * * 6}).
+Runs three parallel jobs against a live staging cluster:
+\texttt{staging-load} (k6 stress/spike/soak profiles against
+\texttt{STAGING\_BASE\_URL}), \texttt{security} (Python security checks with
+staging KUBECONFIG), and \texttt{chaos} (Chaos Mesh YAML manifests from
+\texttt{tests/chaos/}).
+
+\medskip
+\noindent\textbf{\texttt{lint-python.yml}} runs Ruff on the API Gateway on
+every push.
+
+\medskip
+\noindent\textbf{ArgoCD (GitOps --- partial).}
+An app-of-apps ArgoCD configuration exists at \texttt{k8s/argocd/}.
+The root Application (\texttt{hopper-root}) points at
+\texttt{k8s/argocd/apps/}; the child \texttt{hopper-platform} deploys
+\texttt{charts/hopper} with \texttt{values-prod.yaml}.
+Sync is \textbf{deliberately manual} (no \texttt{automated} sync policy,
+no \texttt{prune}) to avoid self-heal reverting CI image rollouts and
+prune deleting out-of-band Secrets and dynamically-created VM pods.
+The current live CD path remains \texttt{publish.yml}'s SSH-based
+\texttt{kubectl set image}; ArgoCD provides drift visibility and one-click
+manual sync.
 
 \subsection{Environments}
-\todo{Document the confirmed development, test, staging, and production environments if they exist.}
+
+Three environments are defined via Helm value overlays in \texttt{charts/hopper/}
+and are verified by the \texttt{helm-chart} CI job on every push.
+
+\begin{table}[H]
+\centering
+\caption{Deployment environments}
+\label{tab:envs}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{|>{\bfseries\RaggedRight\arraybackslash}p{2.0cm}|>{\RaggedRight\arraybackslash}p{3.8cm}|>{\RaggedRight\arraybackslash}X|}
+\hline
+\textbf{Env} & \textbf{Host / values file} & \textbf{Key differences} \\
+\hline
+Development &
+  \texttt{localhost} / \texttt{values-dev.yaml} &
+  Keycloak \texttt{start-dev}, \texttt{secrets.create=true} (in-cluster dev
+  defaults), ingress/TLS/NetworkPolicy/backup all disabled.
+  App services typically run on the host via
+  \texttt{docker compose up} + \texttt{scripts/deploy-local.sh}. \\
+\hline
+Staging &
+  \texttt{staging.hopper.farefin.com} / \texttt{values-staging.yaml} &
+  Single API Gateway replica, Let's Encrypt \textbf{staging} issuer
+  (\texttt{letsencrypt-staging}, untrusted certs), no nightly backup,
+  secrets provisioned out-of-band. \\
+\hline
+Production &
+  \texttt{hopper.farefin.com} / \texttt{values-prod.yaml} &
+  Two API Gateway replicas, Let's Encrypt \textbf{prod} issuer, Cilium
+  NetworkPolicies, nightly \texttt{pg\_dump} CronJob (14-day retention on
+  10\,Gi PVC), SMTP relay via socat on node (port 2525). \\
+\hline
+\end{tabularx}
+\end{table}
+
+\begin{sloppypar}
+Local infrastructure (PostgreSQL/TimescaleDB, NATS JetStream, Keycloak) is
+managed by \texttt{docker-compose.yml}. Image digests are pinned
+(\texttt{timescale/timescaledb:latest-pg16@sha256:0af03\ldots}) to prevent
+silent major upgrades.
+\end{sloppypar}
 
 \subsection{Deployment Steps}
-\todo{Summarize the verified deployment procedure from current infrastructure files.}
+
+The following procedure is extracted from \texttt{README.md},
+\texttt{scripts/cd/k8s-rollout.sh}, and \texttt{k8s/deploy/}.
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Build images.} From the repository root:
+\begin{lstlisting}
+TAG=$(git rev-parse --short HEAD)
+REGISTRY=ghcr.io/crevios ./scripts/ci/docker-build.sh
+\end{lstlisting}
+        Images produced: \texttt{hopper-api-gateway:\$TAG},
+        \texttt{hopper-orchestrator:\$TAG}, \texttt{hopper-frontend:\$TAG}.
+        The CI \texttt{publish.yml} workflow sets \texttt{DOCKER\_PUSH=1}
+        to push to GHCR automatically.
+
+  \item \textbf{Import VM template images} into the k3s containerd runtime
+        (required once per node, not on every deploy):
+\begin{lstlisting}
+docker save hopper/vm-ubuntu:22.04 | sudo k3s ctr images import -
+\end{lstlisting}
+
+  \item \textbf{Apply Kubernetes manifests.}
+        Initial cluster setup uses raw manifests in order:
+\begin{lstlisting}
+kubectl create namespace hopper
+kubectl apply -f k8s/deploy/01-infra.yaml    # PostgreSQL, NATS, Keycloak
+kubectl apply -f k8s/deploy/02-apps.yaml     # API Gateway, Orchestrator, Frontend
+kubectl apply -f k8s/deploy/03-ingress.yaml  # Nginx Ingress rules
+kubectl apply -f k8s/deploy/04-network-policies.yaml  # Cilium zero-trust
+kubectl apply -f k8s/deploy/06-backup.yaml   # nightly pg_dump CronJob
+\end{lstlisting}
+        Subsequent deploys use \texttt{kubectl set image} via
+        \texttt{scripts/cd/k8s-rollout.sh} (invoked by \texttt{publish.yml}).
+
+  \item \textbf{Run database migrations.}
+\begin{lstlisting}
+docker run --rm --network host \
+  -e HOPPER_DATABASE_URL="postgresql+asyncpg://hopper:..." \
+  -e PYTHONPATH=/app \
+  hopper/api-gateway:latest alembic upgrade head
+\end{lstlisting}
+        Three Alembic migrations exist: initial schema (001), pod-session
+        column fixes (002), plan/CPU/memory/SSH-port columns (003).
+
+  \item \textbf{Bootstrap Keycloak.}
+        Create the \texttt{hopper} realm, disable SSL for POC deployments,
+        add roles (\texttt{admin}, \texttt{professor}, \texttt{student}),
+        create the initial admin user, and configure redirect URIs for the
+        \texttt{hopper-api} public client. Commands use \texttt{kcadm.sh}
+        executed inside the Keycloak pod via \texttt{kubectl exec}.
+
+  \item \textbf{Helm-based upgrade} (post-adoption):
+\begin{lstlisting}
+helm upgrade --install hopper charts/hopper \
+  -n hopper -f charts/hopper/values-prod.yaml
+\end{lstlisting}
+        The chart manages infra, app deployments, ingress, NetworkPolicies,
+        cert-manager ClusterIssuers, and the backup CronJob. Secrets are
+        provisioned out-of-band and must exist before install
+        (\texttt{secrets.create=false}).
+\end{enumerate}
+
+\noindent\textbf{Open Azure NSG ports} (if hosted on Azure):
+port 443 (HTTPS), port 80 (HTTP), and the NodePort range 30000--32767
+(SSH into user VMs) must be open in the Network Security Group.
 
 \subsection{Hosting Platform \& Live URL}
-\todo{Add the actual hosting platform and public live URL after verification.}
+
+\begin{sloppypar}
+The production cluster is a \textbf{k3s} single-node Kubernetes cluster
+hosted on a \textbf{Microsoft Azure} virtual machine. The platform is
+accessible at \texttt{https://hopper.farefin.com}.
+TLS certificates are issued automatically by \textbf{cert-manager} using
+the Let's Encrypt production issuer (\texttt{letsencrypt-prod}), with the
+TLS secret \texttt{hopper-farefin-tls}.
+The Nginx Ingress Controller routes traffic to the frontend (port 3000),
+API Gateway (port 8000), and Keycloak (port 8080).
+Service images are stored in the GitHub Container Registry at
+\texttt{ghcr.io/crevios/} and tagged with the 12-character commit SHA.
+The current bootstrap image tag recorded in \texttt{values-prod.yaml} is
+\texttt{b19bbd699a03}.
+\end{sloppypar}
 
 \subsection{Monitoring \& Logging}
-\todo{Describe the verified monitoring, logging, and observability components.}
+
+Observability configuration lives under \texttt{observability/}.
+
+\medskip
+\noindent\textbf{Prometheus} (\texttt{observability/prometheus/prometheus.yml})
+scrapes the following targets every 15\,s:
+\begin{itemize}[leftmargin=1.5em]
+  \item \texttt{api-gateway:8000/metrics} and \texttt{orchestrator:50051/metrics}
+        (application metrics).
+  \item \texttt{nats:8222/metrics} (NATS JetStream consumer lag and message rates).
+  \item \texttt{dcgm-exporter} (discovered via Kubernetes endpoint SD) for
+        GPU temperature, VRAM utilisation, and GPU utilisation.
+  \item \texttt{node-exporter} (discovered via Kubernetes node SD) for
+        host-level CPU, memory, and disk metrics.
+\end{itemize}
+
+Prometheus is configured with \texttt{remote\_write} to a
+\textbf{TimescaleDB} instance (the same PostgreSQL pod, via port 9201) for
+long-term metrics retention.
+
+\medskip
+\noindent\textbf{Alerting.}
+Alert rules in \texttt{observability/prometheus/alerts/gpu-alerts.yml}
+fire to \texttt{alertmanager:9093}. Defined rules:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{GPUTemperatureCritical} --- \texttt{DCGM\_FI\_DEV\_GPU\_TEMP > 90}
+        for 5\,min (severity: critical).
+  \item \textbf{GPUMemoryNearFull} --- VRAM usage above 95\% for 2\,min
+        (severity: warning).
+  \item \textbf{GPUUtilizationStuck} --- GPU at 100\% for 30\,min
+        (severity: warning).
+  \item \textbf{DCGMExporterDown} --- exporter unreachable for 5\,min
+        (severity: critical).
+  \item \textbf{PodStuckPending} --- pod in \texttt{hopper-*} namespace
+        pending for 10\,min (severity: warning).
+  \item \textbf{NodeUnreachable} --- node not Ready for 5\,min
+        (severity: critical).
+  \item \textbf{NATSJetStreamLag} --- consumer pending messages
+        $>$ 1\,000 for 5\,min (severity: warning).
+\end{itemize}
+
+\medskip
+\noindent\textbf{Grafana} dashboard configuration exists at
+\texttt{observability/grafana/dashboards/gpu-overview.json} (GPU overview).
+Grafana is not managed by the Helm chart and is deployed separately.
+
+\medskip
+\noindent\textbf{Loki} (\texttt{observability/loki/loki-config.yml})
+is configured with filesystem storage (TSDB schema v13), a 30-day log
+retention policy, and an in-memory ring KV store.
+Log ingestion rate is limited to 10\,MB/s (burst 20\,MB/s).
+
+\medskip
+\noindent\textbf{Structured logging} is used throughout the API Gateway
+via \texttt{structlog}. The audit middleware records every mutating
+HTTP request (method, path, user ID, resource ID) as an immutable audit
+entry in PostgreSQL.
+
+\medskip
+\noindent\textbf{Health and readiness probes.}
+The API Gateway exposes \texttt{/healthz} and \texttt{/readyz}.
+The \texttt{/readyz} endpoint checks PostgreSQL connectivity, NATS
+connectivity, and orchestrator reachability, reporting each dependency
+individually; an orchestrator outage is reported but does not gate
+readiness (verified by \texttt{test\_readyz\_orchestrator\_outage\_is\_reported\_but\_not\_gating}
+in the unit suite).
+
+\medskip
+\noindent\textbf{Database backups.}
+A Kubernetes CronJob (\texttt{pg-backup}, manifest
+\texttt{k8s/deploy/06-backup.yaml}) runs \texttt{pg\_dump} nightly at
+21:00\,UTC using custom format (\texttt{-Fc}). Dumps are written to a
+10\,Gi \texttt{local-path} PVC and retained for 14 days.
 
 \section{Repository \& Documentation Quality}
 \subsection{Branching Strategy \& Commit Conventions}
-\todo{Add the actual branching and commit practices only after verifying repository history or team policy.}
+
+\textbf{Repository.}
+The repository is hosted at \texttt{https://github.com/CREVIOS/Hopper}.
+The default integration branch is \textbf{\texttt{main}}. At the time of
+inspection there are 3 local branches (\texttt{main}, \texttt{Test},
+\texttt{report}) and 20 remote branches visible via \texttt{git branch -a}.
+
+\begin{sloppypar}
+\textbf{Branch naming.}
+Feature branches follow a \texttt{feat/<scope>} pattern (e.g.\
+\texttt{feat/HOP-6-web-terminal},
+\texttt{feat/cpu-vm-admission-queue},
+\texttt{feat/external-ssh-fix-and-platform-updates}).
+Fix branches use \texttt{fix/<scope>} or plain descriptive names
+(e.g.\ \texttt{ektu-fix}, \texttt{cicd-again}).
+Documentation branches use \texttt{docs/<scope>}
+(e.g.\ \texttt{docs/vm-queueing}).
+A \texttt{Test} branch is used for iterative CI validation passes.
+\end{sloppypar}
+
+\textbf{Merge model.}
+All changes enter \texttt{main} via \textbf{pull requests}: the log shows
+88 commits, the majority carrying a PR number suffix
+(\texttt{\#66}--\texttt{\#115}). GitHub Actions CI gates merges
+(push/PR trigger on \texttt{main}).
+
+\textbf{Commit conventions.}
+The project uses a subset of \textbf{Conventional Commits}. Verified
+prefixes in the history:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{\texttt{feat}} / \textbf{\texttt{feat(<scope>)}} ---
+        new capability, e.g.\
+        \textit{feat(auth): open signup to any email + email verification \&
+        password reset (\#71)}.
+  \item \textbf{\texttt{fix}} / \textbf{\texttt{fix(<scope>)}} ---
+        bug fix, e.g.\
+        \textit{fix(billing): stop ResourceClosedError on idempotent credit
+        deductions (\#69)}.
+  \item \textbf{\texttt{docs}} / \textbf{\texttt{docs(<scope>)}} ---
+        documentation only, e.g.\
+        \textit{docs(k8s): capture the SMTP relay workaround in the repo (\#74)}.
+  \item \textbf{\texttt{chore}} / \textbf{\texttt{chore(<scope>)}} ---
+        maintenance, e.g.\
+        \textit{chore: stop tracking scratchpad/ (\#73)}.
+  \item \textbf{\texttt{revert}} --- undo a previous commit.
+\end{itemize}
+
+Not every commit is prefixed; iterative CI passes use a plain
+\texttt{Test (\#N)} message. No \texttt{CONTRIBUTING.md} or PR template
+file was found in \texttt{.github/} at the time of inspection.
+
+\textbf{Code style enforcement.}
+An \texttt{.editorconfig} at the repository root enforces: 2-space indent
+for most files; 4-space for Python; tab indent for Go and Makefiles;
+LF line endings; UTF-8; trailing-whitespace trimming; final newline.
+Ruff lints the API Gateway on every push via \texttt{lint-python.yml}.
+ESLint lints the frontend (run inside the \texttt{frontend} CI job).
+\texttt{golangci-lint v2.6.2} lints the orchestrator and contract-test
+modules (\texttt{lint-go} CI job). The \texttt{.gitignore} excludes
+\texttt{.env}/\texttt{.env.*} (with \texttt{!.env.example} kept),
+generated proto stubs, build artefacts, and local IDE directories.
 
 \subsection{README Completeness Checklist}
-\todo{Audit the README against setup, environment, run/test, and usage expectations.}
+
+The root \texttt{README.md} (11\,704 bytes) covers the following topics,
+verified by direct inspection:
+
+\begin{table}[H]
+\centering
+\caption{README completeness audit}
+\label{tab:readme}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}X|c|}
+\hline
+\textbf{Topic} & \textbf{Present} \\
+\hline
+Project description and purpose & \checkmark \\
+Architecture diagram (ASCII art) & \checkmark \\
+Services table (language, port, purpose) & \checkmark \\
+Key flows (VM creation, billing, metrics) & \checkmark \\
+VM plans table (CPU, memory, disk, credits/hour) & \checkmark \\
+Prerequisites list (Docker, kubectl, Go, Node, pnpm) & \checkmark \\
+Quick-start steps (infra, images, migrations, k8s deploy) & \checkmark \\
+Keycloak setup (realm, roles, test user, redirect URIs) & \checkmark \\
+Credit allocation example (curl commands) & \checkmark \\
+Azure NSG port table & \checkmark \\
+Network policies documentation (Cilium, 8 rules) & \checkmark \\
+NATS subject table (publisher, consumer, purpose) & \checkmark \\
+Keycloak OIDC configuration summary & \checkmark \\
+API endpoint reference (auth, pods, credits, admin) & \checkmark \\
+Proto contract paths & \checkmark \\
+Database migration list (3 Alembic versions) & \checkmark \\
+Double-entry ledger design note & \checkmark \\
+SSH-into-VM instructions & \checkmark \\
+Default credentials table (POC) & \checkmark \\
+\hline
+Environment \texttt{.env} variable reference & Partial (\texttt{.env.example} only) \\
+Testing instructions & Not present in README \\
+Contributing / PR workflow guide & Not present \\
+\hline
+\end{tabularx}
+\end{table}
+
+\noindent
+A per-service \texttt{README.md} exists for the frontend
+(\texttt{frontend/README.md}, 9\,571 bytes) covering local dev setup,
+Vite proxy configuration, dev-login flow, WebSocket origin requirements,
+and terminal/VS Code connection notes.
+The \texttt{docs/} directory contains
+\texttt{ARCHITECTURE.md}, \texttt{SDD.md}, \texttt{TESTING\_PLAN.md},
+\texttt{E2E\_TESTING.md}, \texttt{VM\_QUEUEING.md}, \texttt{TECH\_STACK.md},
+\texttt{SRS\_ADDENDUM.md}, and \texttt{TASKS.md}.
 
 \subsection{Code Organization / Folder Structure}
-\todo{Summarize the verified repository structure and service boundaries.}
+
+The repository is organised around service and concern boundaries. The
+top-level layout (verified by directory listing) is:
+
+\begin{table}[H]
+\centering
+\caption{Top-level repository structure}
+\label{tab:structure}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\textwidth}{|>{\ttfamily\RaggedRight\arraybackslash}p{4.2cm}|>{\RaggedRight\arraybackslash}X|}
+\hline
+\textbf{Path} & \textbf{Contents / Purpose} \\
+\hline
+services/api-gateway/ & FastAPI application (\texttt{app/}), Alembic migrations, Poetry config, Dockerfile, \texttt{.env.example} \\
+\hline
+services/orchestrator/ & Go module (\texttt{cmd/}, \texttt{internal/}), Dockerfile, \texttt{.env.example} \\
+\hline
+frontend/ & SvelteKit application (\texttt{src/routes/}, \texttt{src/lib/}), Vitest config, Dockerfile, \texttt{.env.example} \\
+\hline
+proto/ & Protobuf definitions (\texttt{hopper/pod/v1/}, \texttt{hopper/billing/v1/}) and \texttt{buf.yaml} \\
+\hline
+k8s/deploy/ & Seven numbered raw YAML manifests (infra, apps, ingress, network policies, cert-manager, backup) \\
+\hline
+k8s/argocd/ & ArgoCD app-of-apps root and child Application \\
+\hline
+charts/hopper/ & Helm chart with \texttt{values.yaml}, \texttt{values-dev.yaml}, \texttt{values-staging.yaml}, \texttt{values-prod.yaml} \\
+\hline
+tests/ & All test code: \texttt{unit/}, \texttt{integration/}, \texttt{orchestrator/} (Go), \texttt{e2e/} (Playwright), \texttt{load/} (k6), \texttt{security/}, \texttt{chaos/}, \texttt{mocks/}, \texttt{fixtures/}, \texttt{coverage/} \\
+\hline
+images/ & VM container image Dockerfiles (\texttt{hopper-vm}, \texttt{-python}, \texttt{-cpp}, \texttt{-java}) \\
+\hline
+observability/ & Prometheus config + alert rules, Grafana dashboard JSON, Loki config \\
+\hline
+infrastructure/ & Ansible playbooks + inventory, Pulumi IaC skeleton \\
+\hline
+scripts/ & \texttt{ci/} (docker-build), \texttt{cd/} (k8s-rollout), \texttt{test/} (run.sh), \texttt{dev-setup.sh}, \texttt{deploy-local.sh}, \texttt{generate-proto.sh}, \texttt{keycloak-harden.sh} \\
+\hline
+docs/ & Architecture, SDD, SRS, testing plan, E2E guide, tech-stack, tasks \\
+\hline
+.github/workflows/ & Five GitHub Actions workflow files \\
+\hline
+Makefile & Convenience targets mirroring \texttt{scripts/test/run.sh} commands \\
+\hline
+docker-compose.yml & Local infra (PostgreSQL/TimescaleDB, NATS, Keycloak) \\
+\hline
+\end{tabularx}
+\end{table}
+
+\noindent
+Within \texttt{services/api-gateway/app/} the internal layout follows
+FastAPI conventions: \texttt{routers/} (one module per resource group),
+\texttt{services/} (business logic), \texttt{schemas/} (Pydantic models),
+\texttt{core/} (database, NATS, auth middleware), \texttt{middleware/},
+and \texttt{proto/} (generated gRPC stubs).
+Within \texttt{services/orchestrator/internal/} the layout mirrors Go
+package conventions: \texttt{k8s/} (pod and network-policy management),
+\texttt{billing/} (ticker), \texttt{pod/} (manager), \texttt{grpc/}
+(server), and \texttt{config/}.
 
 \subsection{Local Setup Instructions}
-\todo{Condense the verified local setup steps for reproducibility.}
+
+The following steps reproduce the local development environment.
+They are derived from \texttt{README.md}, \texttt{scripts/dev-setup.sh},
+and the per-service \texttt{.env.example} files.
+
+\textbf{Prerequisites:} Docker and Docker Compose, Go 1.23+, Node.js 22+,
+pnpm 10+ (or 9+), Python 3.12+, Poetry, kubectl with a k3s cluster
+(optional for orchestrator development).
+
+\begin{enumerate}[leftmargin=1.5em]
+
+  \item \textbf{Clone and configure environment files.}
+\begin{lstlisting}
+git clone https://github.com/CREVIOS/Hopper.git
+cd Hopper
+cp .env.example .env
+cp services/api-gateway/.env.example services/api-gateway/.env
+cp services/orchestrator/.env.example services/orchestrator/.env
+cp frontend/.env.example frontend/.env
+\end{lstlisting}
+    Edit each \texttt{.env} as needed (defaults work for local dev without changes).
+
+  \item \textbf{Start infrastructure services.}
+\begin{lstlisting}
+docker compose up -d   # PostgreSQL/TimescaleDB :5433, NATS :4222, Keycloak :8080
+\end{lstlisting}
+    Wait for PostgreSQL healthcheck: \texttt{docker compose ps}.
+
+  \item \textbf{Install dependencies and run migrations.}
+\begin{lstlisting}
+# Frontend
+cd frontend && pnpm install && cd ..
+# API Gateway
+cd services/api-gateway && poetry install
+poetry run alembic upgrade head && cd ../..
+# Orchestrator
+cd services/orchestrator && go mod download && cd ../..
+\end{lstlisting}
+    Alternatively, \texttt{./scripts/dev-setup.sh} performs all of the
+    above steps, including waiting for PostgreSQL readiness.
+
+  \item \textbf{Start application services} (three terminals):
+\begin{lstlisting}
+# Terminal 1 — Frontend (http://127.0.0.1:5173)
+cd frontend && pnpm dev
+
+# Terminal 2 — API Gateway (http://127.0.0.1:8000)
+cd services/api-gateway
+poetry run uvicorn app.main:app --reload --port 8000
+
+# Terminal 3 — Orchestrator (gRPC :50051)
+cd services/orchestrator && go run ./cmd/orchestrator/
+\end{lstlisting}
+
+  \item \textbf{Dev login.} Navigate to \texttt{http://127.0.0.1:5173}
+    and use \textit{Dev login (skip SSO)} with the credentials from
+    \texttt{frontend/.env} (\texttt{DEV\_LOGIN\_USER}/\texttt{DEV\_LOGIN\_PASS}).
+    For a full Keycloak SSO login flow, configure Keycloak as described in
+    the \textit{Deployment Steps} section.
+
+  \item \textbf{Run the test suite.}
+\begin{lstlisting}
+make test-unit          # Python unit tests (pytest)
+make test-frontend      # Vitest with coverage
+make test-orchestrator  # Go orchestrator tests
+make test-e2e           # Playwright mock-backed E2E
+\end{lstlisting}
+    The \texttt{make help} target lists all available test commands.
+    All test commands delegate to \texttt{./scripts/test/run.sh}.
+
+\end{enumerate}
 
 \section{Evaluation \& Reflection}
 \subsection{Web Performance \& Core Web Vitals}
