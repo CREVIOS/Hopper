@@ -120,6 +120,9 @@ async def test_list_nodes_formats_orchestrator_nodes(monkeypatch):
             "memory_allocatable": "24Gi",
             "pod_count": 4,
             "ready": True,
+            "storage_capacity_bytes": 256,
+            "storage_available_bytes": 200,
+            "storage_scheduled_bytes": 56,
         },
     )()
 
@@ -139,6 +142,9 @@ async def test_list_nodes_formats_orchestrator_nodes(monkeypatch):
             "memory_allocatable": "24Gi",
             "pod_count": 4,
             "ready": True,
+            "storage_capacity_bytes": 256,
+            "storage_available_bytes": 200,
+            "storage_scheduled_bytes": 56,
         }
     ]
 

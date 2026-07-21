@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -60,6 +61,7 @@ func containerStartupArgs() string {
 type PodManager struct {
 	client    kubernetes.Interface
 	metrics   metricsv.Interface
+	longhorn  *LonghornReader
 	namespace string
 }
 
@@ -72,6 +74,14 @@ func NewPodManager(client kubernetes.Interface, namespace string) *PodManager {
 // (so memory_limit_bytes is correct) but used CPU/memory stay at zero.
 func (pm *PodManager) SetMetricsClient(m metricsv.Interface) {
 	pm.metrics = m
+}
+
+// SetLonghornReader wires in the optional Longhorn storage reader used by
+// ListNodes to report real per-node disk capacity. Without it (Longhorn not
+// installed), node storage fields stay zero and the gateway keeps its
+// configured storage pool authoritative.
+func (pm *PodManager) SetLonghornReader(r *LonghornReader) {
+	pm.longhorn = r
 }
 
 type CreatePodOpts struct {
@@ -477,6 +487,23 @@ func (pm *PodManager) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 			Ready:             ready,
 		})
 	}
+
+	// Enrich with real per-node storage from Longhorn when the reader is wired
+	// and reachable; on any error keep zeros so the gateway falls back to its
+	// configured storage pool.
+	if pm.longhorn != nil {
+		if storage, err := pm.longhorn.NodeStorage(ctx); err != nil {
+			log.Printf("longhorn node storage unavailable (using configured pool): %v", err)
+		} else {
+			for i := range result {
+				if s, ok := storage[result[i].Name]; ok {
+					result[i].StorageCapacityBytes = s.CapacityBytes
+					result[i].StorageAvailableBytes = s.AvailableBytes
+					result[i].StorageScheduledBytes = s.ScheduledBytes
+				}
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -502,6 +529,10 @@ type NodeInfo struct {
 	MemoryAllocatable string
 	PodCount          int
 	Ready             bool
+	// Longhorn-measured storage (bytes); zero when Longhorn is absent.
+	StorageCapacityBytes  int64
+	StorageAvailableBytes int64
+	StorageScheduledBytes int64
 }
 
 // GetPodMetrics fetches resource usage for a specific pod from

@@ -286,13 +286,16 @@ func (s *PodOrchestratorService) ListNodes(ctx context.Context, req *podv1.ListN
 	var protoNodes []*podv1.NodeInfo
 	for _, n := range nodes {
 		protoNodes = append(protoNodes, &podv1.NodeInfo{
-			Name:              n.Name,
-			CpuCapacity:       n.CPUCapacity,
-			MemoryCapacity:    n.MemoryCapacity,
-			CpuAllocatable:    n.CPUAllocatable,
-			MemoryAllocatable: n.MemoryAllocatable,
-			PodCount:          int32(n.PodCount),
-			Ready:             n.Ready,
+			Name:                  n.Name,
+			CpuCapacity:           n.CPUCapacity,
+			MemoryCapacity:        n.MemoryCapacity,
+			CpuAllocatable:        n.CPUAllocatable,
+			MemoryAllocatable:     n.MemoryAllocatable,
+			PodCount:              int32(n.PodCount),
+			Ready:                 n.Ready,
+			StorageCapacityBytes:  n.StorageCapacityBytes,
+			StorageAvailableBytes: n.StorageAvailableBytes,
+			StorageScheduledBytes: n.StorageScheduledBytes,
 		})
 	}
 

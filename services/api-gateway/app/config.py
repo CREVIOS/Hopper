@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     # ListNodes, so the total is configured; used = sum of live VMs' plan disk.
     cluster_storage_total: str = "150Gi"
     cluster_reserve_storage: str = "10Gi"
+    # When node storage is measured from Longhorn, raw capacity is divided by the
+    # replica factor to get the LOGICAL pool (2 replicas ⇒ half the usable space).
+    # 1 = single-replica/Phase-1. Ignored while the pool is the configured total.
+    cluster_storage_replica_factor: int = 1
     # StorageClassName stamped on NEW user-workspace PVCs. "" = cluster default
     # (local-path). Set to "longhorn-workspace" to provision new workspaces on
     # Longhorn; existing workspaces keep their recorded class (see

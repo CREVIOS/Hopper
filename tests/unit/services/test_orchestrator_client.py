@@ -143,6 +143,9 @@ async def test_list_nodes_maps_every_node(monkeypatch):
                         memory_allocatable="24Gi",
                         pod_count=4,
                         ready=True,
+                        storage_capacity_bytes=256,
+                        storage_available_bytes=200,
+                        storage_scheduled_bytes=56,
                     )
                 ]
             )
@@ -157,3 +160,24 @@ async def test_list_nodes_maps_every_node(monkeypatch):
     assert len(nodes) == 1
     assert nodes[0].name == "node-1"
     assert nodes[0].ready is True
+    assert nodes[0].storage_capacity_bytes == 256
+    assert nodes[0].storage_available_bytes == 200
+    assert nodes[0].storage_scheduled_bytes == 56
+
+
+def test_node_info_response_storage_defaults_to_zero():
+    # Longhorn absent (or a pre-storage orchestrator) → proto3 zero-values map
+    # to 0, so downstream capacity math treats the pool as unmeasured.
+    node = orchestrator_module.NodeInfoResponse(
+        name="node-1",
+        cpu_capacity="8",
+        memory_capacity="32Gi",
+        cpu_allocatable="6",
+        memory_allocatable="24Gi",
+        pod_count=0,
+        ready=True,
+    )
+
+    assert node.storage_capacity_bytes == 0
+    assert node.storage_available_bytes == 0
+    assert node.storage_scheduled_bytes == 0

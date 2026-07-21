@@ -86,6 +86,39 @@ def test_storage_reserves_reads_settings(monkeypatch):
     assert reserve == 10 * 1024**3
 
 
+def test_storage_pool_falls_back_to_config_when_unmeasured(monkeypatch):
+    # Longhorn absent → nodes carry no storage_capacity_bytes → configured pool.
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "150Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_replica_factor", 2)
+
+    assert vm_scheduler._storage_pool_b([FakeNode(True), FakeNode(False)]) == 150 * 1024**3
+
+
+def test_storage_pool_prefers_measured_over_config(monkeypatch):
+    # Measured capacity supersedes the config total; replica_factor=1 ⇒ full sum.
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "10Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_replica_factor", 1)
+    nodes = [
+        SimpleNamespace(ready=True, storage_capacity_bytes=100 * 1024**3),
+        SimpleNamespace(ready=True, storage_capacity_bytes=60 * 1024**3),
+        # not-ready node's capacity is excluded from the pool.
+        SimpleNamespace(ready=False, storage_capacity_bytes=999 * 1024**3),
+    ]
+
+    assert vm_scheduler._storage_pool_b(nodes) == 160 * 1024**3
+
+
+def test_storage_pool_divides_measured_by_replica_factor(monkeypatch):
+    # 2 replicas ⇒ half the raw capacity is usable logical space.
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_replica_factor", 2)
+    nodes = [
+        SimpleNamespace(ready=True, storage_capacity_bytes=100 * 1024**3),
+        SimpleNamespace(ready=True, storage_capacity_bytes=60 * 1024**3),
+    ]
+
+    assert vm_scheduler._storage_pool_b(nodes) == (160 * 1024**3) // 2
+
+
 async def test_acquire_and_release_leadership():
     db = FakeDB(execute_results=[ExecuteResult(), ExecuteResult(first_value=("holder",))])
 

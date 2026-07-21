@@ -51,6 +51,15 @@ func main() {
 	} else {
 		logger.Warn("metrics-server unavailable; live CPU/RAM will report 0", zap.Error(err))
 	}
+	// Optional Longhorn reader for real per-node storage in ListNodes. Absent
+	// Longhorn (or the dynamic client failing to build) just leaves node storage
+	// at zero, and the gateway keeps its configured pool.
+	if dyn, err := k8s.NewDynamicClient(cfg.KubeConfig); err == nil {
+		k8sPods.SetLonghornReader(k8s.NewLonghornReader(dyn, cfg.LonghornNamespace))
+		logger.Info("longhorn storage reader initialized", zap.String("namespace", cfg.LonghornNamespace))
+	} else {
+		logger.Warn("dynamic client unavailable; node storage will report 0", zap.Error(err))
+	}
 	logger.Info("k8s client initialized", zap.String("namespace", cfg.KubeNamespace))
 
 	// Start gRPC server

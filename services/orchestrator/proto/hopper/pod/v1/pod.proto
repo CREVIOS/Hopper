@@ -104,6 +104,12 @@ message NodeInfo {
   string memory_allocatable = 5;
   int32 pod_count = 6;
   bool ready = 7;
+  // Longhorn-measured node storage in bytes, summed across the node's
+  // schedulable Longhorn disks (nodes.longhorn.io status.diskStatus). Zero when
+  // Longhorn is absent, so the gateway keeps its configured pool authoritative.
+  int64 storage_capacity_bytes = 8;
+  int64 storage_available_bytes = 9;
+  int64 storage_scheduled_bytes = 10;
 }
 
 message ListNodesResponse {

@@ -36,6 +36,10 @@ class NodeInfoResponse:
     memory_allocatable: str
     pod_count: int
     ready: bool
+    # Longhorn-measured node storage (bytes); 0 when Longhorn is absent.
+    storage_capacity_bytes: int = 0
+    storage_available_bytes: int = 0
+    storage_scheduled_bytes: int = 0
 
 
 # Proto state enum value → string
@@ -180,6 +184,9 @@ class OrchestratorClient:
                 memory_allocatable=n.memory_allocatable,
                 pod_count=n.pod_count,
                 ready=n.ready,
+                storage_capacity_bytes=n.storage_capacity_bytes,
+                storage_available_bytes=n.storage_available_bytes,
+                storage_scheduled_bytes=n.storage_scheduled_bytes,
             )
             for n in resp.nodes
         ]

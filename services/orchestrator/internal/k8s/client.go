@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -37,6 +38,16 @@ func NewClientset(kubeconfigPath string) (*kubernetes.Clientset, error) {
 		return nil, err
 	}
 	return kubernetes.NewForConfig(cfg)
+}
+
+// NewDynamicClient creates a dynamic client, used to read Longhorn CRs without
+// a typed dependency.
+func NewDynamicClient(kubeconfigPath string) (dynamic.Interface, error) {
+	cfg, err := restConfig(kubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+	return dynamic.NewForConfig(cfg)
 }
 
 // NewMetricsClientset creates a metrics-server clientset for querying pod CPU/memory.

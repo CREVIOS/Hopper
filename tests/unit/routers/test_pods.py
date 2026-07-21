@@ -996,6 +996,8 @@ async def test_get_availability_returns_null_capacity_when_orchestrator_fails(mo
     assert result["queue_length"] == 4
     assert result["nodes_ready"] is None
     assert result["cpu"]["total_cores"] is None
+    # ListNodes failed → no measured storage → pool source stays "configured".
+    assert result["storage"]["source"] == "configured"
 
 
 async def test_get_availability_returns_reconciled_capacity(monkeypatch):
@@ -1040,6 +1042,48 @@ async def test_get_availability_returns_reconciled_capacity(monkeypatch):
     assert result["cpu"]["total_cores"] == 4.0
     assert result["cpu"]["free_cores"] == 2.5
     assert result["storage"]["free_gib"] == 70.0
+    # Nodes report no Longhorn storage → source is the configured pool.
+    assert result["storage"]["source"] == "configured"
+
+
+async def test_get_availability_reports_measured_storage_source(monkeypatch):
+    class FakeNode:
+        def __init__(self, name, ready, storage_capacity_bytes=0):
+            self.name = name
+            self.ready = ready
+            self.storage_capacity_bytes = storage_capacity_bytes
+
+    class FakeCapacity:
+        total_cpu_m = 4000
+        total_mem_b = 8 * 1024**3
+        total_storage_b = 256 * 1024**3
+
+        def free_cpu_m(self):
+            return 2000
+
+        def free_mem_b(self):
+            return 4 * 1024**3
+
+        def free_storage_b(self):
+            return 200 * 1024**3
+
+    async def fake_live_queue_count(db):
+        return 0
+
+    async def fake_list_nodes():
+        # A Ready node reporting Longhorn capacity flips the source to measured.
+        return [FakeNode("node-a", True, 256 * 1024**3)]
+
+    async def fake_current_capacity(db, orch):
+        return FakeCapacity()
+
+    monkeypatch.setattr("app.routers.pods.vm_queue.live_queue_count", fake_live_queue_count)
+    monkeypatch.setattr("app.routers.pods.orchestrator_client.list_nodes", fake_list_nodes)
+    monkeypatch.setattr("app.routers.pods.vm_scheduler.current_capacity", fake_current_capacity)
+
+    result = await get_availability(current_user=_payload(), db=FakeDB())
+
+    assert result["storage"]["source"] == "measured"
 
 
 async def test_list_queue_returns_positions_for_live_entries(monkeypatch):

@@ -171,6 +171,9 @@ async def list_nodes(current_user: TokenPayload = Depends(get_current_user)):
                 "memory_allocatable": n.memory_allocatable,
                 "pod_count": n.pod_count,
                 "ready": n.ready,
+                "storage_capacity_bytes": n.storage_capacity_bytes,
+                "storage_available_bytes": n.storage_available_bytes,
+                "storage_scheduled_bytes": n.storage_scheduled_bytes,
             }
             for n in nodes
         ]

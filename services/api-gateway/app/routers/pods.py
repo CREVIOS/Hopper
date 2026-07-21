@@ -379,9 +379,14 @@ async def get_availability(
     """
     queue_length = await vm_queue.live_queue_count(db)
 
+    storage_source = "configured"
     try:
         nodes = await orchestrator_client.list_nodes()
         nodes_ready = sum(1 for n in nodes if n.ready)
+        # "measured" once any Ready node reports Longhorn storage; else the
+        # configured pool is authoritative (Longhorn absent).
+        if any(getattr(n, "storage_capacity_bytes", 0) for n in nodes if n.ready):
+            storage_source = "measured"
     except Exception as exc:
         logger.warning("Availability: ListNodes failed: %s", exc)
         nodes_ready = None
@@ -391,7 +396,7 @@ async def get_availability(
         return {
             "cpu": {"total_cores": None, "used_cores": None, "free_cores": None},
             "memory": {"total_gib": None, "used_gib": None, "free_gib": None},
-            "storage": {"total_gib": None, "used_gib": None, "free_gib": None},
+            "storage": {"total_gib": None, "used_gib": None, "free_gib": None, "source": storage_source},
             "nodes_ready": nodes_ready,
             "queue_length": queue_length,
         }
@@ -417,6 +422,7 @@ async def get_availability(
             "total_gib": round(cap.total_storage_b / _BYTES_PER_GIB, 2),
             "used_gib": round((cap.total_storage_b - free_storage_b) / _BYTES_PER_GIB, 2),
             "free_gib": round(free_storage_b / _BYTES_PER_GIB, 2),
+            "source": storage_source,
         },
         "nodes_ready": nodes_ready,
         "queue_length": queue_length,

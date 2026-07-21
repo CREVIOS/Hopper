@@ -91,6 +91,21 @@ def _storage_reserves() -> tuple[int, int]:
     return total, reserve
 
 
+def _storage_pool_b(nodes) -> int:
+    """Total logical workspace-storage pool in bytes. Prefer Longhorn-measured
+    node capacity (summed over Ready nodes ÷ replica factor); fall back to the
+    configured pool when no node reports storage (Longhorn absent → all zeros)."""
+    measured = sum(
+        getattr(n, "storage_capacity_bytes", 0) or 0
+        for n in nodes
+        if getattr(n, "ready", False)
+    )
+    if measured > 0:
+        return measured // max(1, settings.cluster_storage_replica_factor)
+    total, _ = _storage_reserves()
+    return total
+
+
 async def _plan_workspace_gb(db: AsyncSession) -> dict[str, int]:
     """plan name -> workspace_gb, from the DB plan catalogue (the real PVC size,
     not the legacy VM_PLAN_RESOURCES 'disk' hint)."""
@@ -193,7 +208,8 @@ async def _free_from_nodes(db: AsyncSession, nodes) -> vm_capacity.Capacity:
 
     reserve_cpu_m = vm_capacity.parse_cpu_millis(settings.cluster_reserve_cpu)
     reserve_mem_b = vm_capacity.parse_mem_bytes(settings.cluster_reserve_memory)
-    total_storage_b, reserve_storage_b = _storage_reserves()
+    total_storage_b = _storage_pool_b(nodes)
+    _, reserve_storage_b = _storage_reserves()
     return vm_capacity.compute_capacity(
         nodes, live_vms, reserve_cpu_m, reserve_mem_b,
         total_storage_b=total_storage_b, reserve_storage_b=reserve_storage_b,
