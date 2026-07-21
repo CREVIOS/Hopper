@@ -140,6 +140,43 @@ class Capacity:
         return max(0, self.total_storage_b - self.used_storage_b - self.reserve_storage_b)
 
 
+_GIB = 1024 ** 3
+
+
+def aggregate_workspace_demand_b(
+    workspace_rows: Iterable[tuple[str, int]],
+    live_user_plan_gb: Iterable[tuple[str, int]],
+) -> int:
+    """Real cluster workspace-storage demand, in bytes.
+
+    Every user_workspaces row is a provisioned PVC that consumes disk even when
+    the VM is stopped, so the base is the sum of all row capacities. On top of
+    that, a LIVE user whose current plan is larger than their row (a pending
+    grow) — or who has no row yet (about to be provisioned) — adds the marginal
+    difference, counted once per user via their largest live plan. This closes
+    the reserve-before-provision window without double-counting a plain relaunch.
+    """
+    rows = {uid: gb for uid, gb in workspace_rows}
+    base_gb = sum(rows.values())
+
+    live_max: dict[str, int] = {}
+    for uid, plan_gb in live_user_plan_gb:
+        if plan_gb:
+            live_max[uid] = max(live_max.get(uid, 0), plan_gb)
+    delta_gb = sum(max(0, plan_gb - rows.get(uid, 0)) for uid, plan_gb in live_max.items())
+
+    return (base_gb + delta_gb) * _GIB
+
+
+def marginal_workspace_demand_b(plan_gb: int, existing_capacity_gb: int | None) -> int:
+    """Extra workspace storage a new launch needs, in bytes: the full plan size
+    when the user has no PVC yet, else only the grow delta (0 for a same-plan
+    relaunch, since the PVC already exists and is already counted in the pool)."""
+    if existing_capacity_gb is None:
+        return max(0, plan_gb) * _GIB
+    return max(0, plan_gb - existing_capacity_gb) * _GIB
+
+
 def compute_capacity(
     nodes: Iterable[_NodeLike],
     live_vms: Iterable[_VmLike],
@@ -148,14 +185,15 @@ def compute_capacity(
     *,
     total_storage_b: int = _STORAGE_UNLIMITED,
     reserve_storage_b: int = 0,
+    used_storage_b: int | None = None,
 ) -> Capacity:
     """Sum Ready nodes' allocatable and subtract live-VM requests + reserve.
 
     Totals for CPU/memory come only from Ready nodes. Storage is a configured
-    pool (node ephemeral-storage is not reported by ListNodes): total_storage_b
-    is supplied, and each live VM with a ``disk`` attribute consumes it. VMs
-    without a ``disk`` attribute contribute 0 storage, so pure cpu/mem callers
-    are unaffected.
+    pool (node ephemeral-storage is not reported by ListNodes). Pass
+    ``used_storage_b`` to supply the real workspace demand (see
+    ``aggregate_workspace_demand_b``); when omitted, storage falls back to the
+    legacy per-live-VM ``disk`` fold so pure cpu/mem callers are unaffected.
     """
     total_cpu_m = 0
     total_mem_b = 0
@@ -167,13 +205,14 @@ def compute_capacity(
 
     used_cpu_m = 0
     used_mem_b = 0
-    used_storage_b = 0
+    legacy_storage_b = 0
     for vm in live_vms:
         used_cpu_m += cpu_request_millis(vm.cpu)
         used_mem_b += mem_request_bytes(vm.memory)
         disk = getattr(vm, "disk", None)
         if disk:
-            used_storage_b += parse_mem_bytes(disk)
+            legacy_storage_b += parse_mem_bytes(disk)
+    resolved_storage_b = used_storage_b if used_storage_b is not None else legacy_storage_b
 
     return Capacity(
         total_cpu_m=total_cpu_m,
@@ -183,7 +222,7 @@ def compute_capacity(
         reserve_cpu_m=reserve_cpu_m,
         reserve_mem_b=reserve_mem_b,
         total_storage_b=total_storage_b,
-        used_storage_b=used_storage_b,
+        used_storage_b=resolved_storage_b,
         reserve_storage_b=reserve_storage_b,
     )
 

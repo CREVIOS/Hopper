@@ -76,11 +76,6 @@ class FakeNode:
         self.name = name
 
 
-def test_plan_disk_falls_back_for_unknown_plan():
-    assert vm_scheduler._plan_disk("small") == "5Gi"
-    assert vm_scheduler._plan_disk("unknown") == "0"
-
-
 def test_storage_reserves_reads_settings(monkeypatch):
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "100Gi")
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_storage", "10Gi")
@@ -111,18 +106,26 @@ async def test_fetch_nodes_returns_none_on_failure():
 
 
 async def test_free_from_nodes_and_current_capacity(monkeypatch):
-    rows = [("1", "2Gi", "small"), ("2", "4Gi", "medium")]
-    db = FakeDB(execute_results=[ExecuteResult(rows=rows)])
+    # _free_from_nodes issues, in order: (1) live sessions (user_id,cpu,mem,plan),
+    # (2) plan catalogue (name,workspace_gb), (3) all workspace rows (user_id,cap).
+    live = [("u1", "1", "2Gi", "small"), ("u2", "2", "4Gi", "medium")]
+    plans = [("small", 20), ("medium", 50), ("large", 100)]
+    ws_rows = [("u1", 20), ("u3", 100)]  # u1 live+has PVC; u3 stopped but PVC persists
+    db = FakeDB(execute_results=[
+        ExecuteResult(rows=live), ExecuteResult(rows=plans), ExecuteResult(rows=ws_rows),
+    ])
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_cpu", "500m")
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_memory", "1Gi")
-    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "50Gi")
+    monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_storage_total", "500Gi")
     monkeypatch.setattr("app.services.vm_scheduler.settings.cluster_reserve_storage", "5Gi")
 
     capacity = await vm_scheduler._free_from_nodes(db, [FakeNode(True, "8", "16Gi"), FakeNode(False)])
 
     assert capacity.total_cpu_m == 8000
     assert capacity.used_cpu_m > 0
-    assert capacity.used_storage_b == 15 * 1024**3
+    # base = u1(20)+u3(100)=120; live deltas: u1 small(20)-20=0, u2 medium(50)-none=50
+    # → 170 GiB. Counts u3's stopped PVC and u2's not-yet-provisioned workspace.
+    assert capacity.used_storage_b == 170 * 1024**3
 
     async def fake_fetch_nodes(orch):
         return ["nodes"]
@@ -155,10 +158,18 @@ async def test_reserve_sync_slot_branches(monkeypatch):
 
     monkeypatch.setattr(vm_scheduler, "_lock_admission", fake_lock)
     async def fake_free_from_nodes(db, nodes):
-        return SimpleNamespace()
+        return SimpleNamespace(free_storage_b=lambda: 1 << 60)  # storage never the blocker here
+
+    async def fake_plan_gb(db):
+        return {"small": 20}
+
+    async def fake_ws_cap(db, user_id):
+        return None
 
     monkeypatch.setattr(vm_scheduler, "_free_from_nodes", fake_free_from_nodes)
-    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
+    monkeypatch.setattr(vm_scheduler, "_plan_workspace_gb", fake_plan_gb)
+    monkeypatch.setattr(vm_scheduler, "_workspace_capacity_gb", fake_ws_cap)
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem: True)
 
     async def fake_user_live_count_zero(db, user_id):
         return 0
@@ -174,12 +185,12 @@ async def test_reserve_sync_slot_branches(monkeypatch):
     assert db.rollbacks == 1
 
     db = FakeDB(scalar_results=[0])
-    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: False)
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem: False)
     assert await vm_scheduler.reserve_sync_slot(db, [FakeNode()], "user-1", "small", "img", "1", "2Gi") is None
     assert db.rollbacks == 1
 
     db = FakeDB(scalar_results=[0])
-    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem, disk: True)
+    monkeypatch.setattr("app.services.vm_scheduler.vm_capacity.plan_fits", lambda cap, cpu, mem: True)
     async def fake_user_at_cap(db, user_id):
         return vm_scheduler.MAX_CONCURRENT_VMS_PER_USER
 
@@ -270,6 +281,10 @@ async def test_reconcile_pass_handles_capacity_failures_and_materialization(monk
             return ExecuteResult(first_value=("claimed",))
         if "ssh_keys" in sql:
             return ExecuteResult(rows=[])       # queue-admit fetches the user's SSH keys
+        if "vm_plans" in sql:
+            return ExecuteResult(rows=[("small", 20)])   # plan workspace sizes
+        if "user_workspaces" in sql:
+            return ExecuteResult(rows=[])                 # no existing PVCs
         return ExecuteResult()
 
     async def fake_get_plan(db, name):

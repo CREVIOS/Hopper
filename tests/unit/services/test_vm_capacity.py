@@ -100,3 +100,40 @@ def test_plan_fits_checks_cpu_memory_and_optional_disk():
     assert vm_capacity.plan_fits(capacity, "20", "2Gi", "5Gi") is False
     assert vm_capacity.plan_fits(capacity, "2", "20Gi", "5Gi") is False
     assert vm_capacity.plan_fits(capacity, "2", "2Gi", "99Gi") is False
+
+
+# --- App-3a: workspace-storage demand accounting ---
+
+def test_aggregate_workspace_demand_counts_all_rows_plus_live_marginal():
+    from app.services.vm_capacity import aggregate_workspace_demand_b
+    gib = 1024 ** 3
+    # rows u1=20, u3=100 (u3 stopped but PVC persists); live u1 small=20 (delta 0),
+    # u2 medium=50 with no row (+50). Total 170 GiB.
+    got = aggregate_workspace_demand_b([("u1", 20), ("u3", 100)], [("u1", 20), ("u2", 50)])
+    assert got == 170 * gib
+
+
+def test_aggregate_workspace_demand_counts_grow_delta_once_per_user():
+    from app.services.vm_capacity import aggregate_workspace_demand_b
+    gib = 1024 ** 3
+    # u1 has a 20Gi PVC but is live on a 50 plan (a pending grow) across two
+    # sessions → the +30 delta is counted once, not twice.
+    got = aggregate_workspace_demand_b([("u1", 20)], [("u1", 50), ("u1", 50)])
+    assert got == (20 + 30) * gib
+
+
+def test_marginal_workspace_demand():
+    from app.services.vm_capacity import marginal_workspace_demand_b
+    gib = 1024 ** 3
+    assert marginal_workspace_demand_b(20, None) == 20 * gib   # no PVC → full size
+    assert marginal_workspace_demand_b(20, 20) == 0            # relaunch → free
+    assert marginal_workspace_demand_b(50, 20) == 30 * gib     # grow → delta only
+    assert marginal_workspace_demand_b(20, 50) == 0            # never negative
+
+
+def test_compute_capacity_used_storage_override_wins_over_disk_fold():
+    from app.services.vm_capacity import compute_capacity
+    from types import SimpleNamespace
+    vm = SimpleNamespace(cpu="1", memory="1Gi", disk="99Gi")  # legacy fold would use this
+    cap = compute_capacity([], [vm], 0, 0, total_storage_b=10 ** 12, used_storage_b=42)
+    assert cap.used_storage_b == 42  # override supersedes the disk fold

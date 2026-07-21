@@ -31,21 +31,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
+from app.models.user_workspace import UserWorkspace
+from app.models.vm_plan import VmPlanRow
 from app.models.vm_queue_entry import VmQueueEntry
-from app.schemas.pod import VM_PLAN_RESOURCES, VmPlan
 from app.services import plan_service, quota_service, vm_capacity, workspace_service
 from app.services.orchestrator_client import OrchestratorClient
 
 logger = logging.getLogger(__name__)
 
-
-def _plan_disk(plan: str) -> str:
-    """The workspace-disk size (K8s quantity) a plan reserves, or '0' if unknown.
-    Disk is not a PodSession column, so it is resolved from the plan."""
-    try:
-        return VM_PLAN_RESOURCES[VmPlan(plan)].get("disk", "0")
-    except (ValueError, KeyError):
-        return "0"
 
 # Primary key of the single lease row seeded by the migration.
 _LEADER_ID = "vm-scheduler"
@@ -96,6 +89,21 @@ def _storage_reserves() -> tuple[int, int]:
     total = vm_capacity.parse_mem_bytes(settings.cluster_storage_total)
     reserve = vm_capacity.parse_mem_bytes(settings.cluster_reserve_storage)
     return total, reserve
+
+
+async def _plan_workspace_gb(db: AsyncSession) -> dict[str, int]:
+    """plan name -> workspace_gb, from the DB plan catalogue (the real PVC size,
+    not the legacy VM_PLAN_RESOURCES 'disk' hint)."""
+    rows = await db.execute(select(VmPlanRow.name, VmPlanRow.workspace_gb))
+    return {name: gb for name, gb in rows.all()}
+
+
+async def _workspace_capacity_gb(db: AsyncSession, user_id: str) -> int | None:
+    """The user's current workspace capacity in GiB, or None if they have no
+    workspace PVC yet (so a first launch is charged the full plan size)."""
+    return await db.scalar(
+        select(UserWorkspace.capacity_gb).where(UserWorkspace.user_id == user_id)
+    )
 
 
 async def acquire_or_renew_leadership(
@@ -163,20 +171,33 @@ async def _free_from_nodes(db: AsyncSession, nodes) -> vm_capacity.Capacity:
     of every live PodSession minus the configured reserve. Call while holding the
     admission lock so the live-VM sum is consistent with the reservation about to
     be written."""
-    rows = await db.execute(
-        select(PodSession.cpu, PodSession.memory, PodSession.plan).where(
-            PodSession.state.in_(_LIVE_VM_STATES)
+    live = (
+        await db.execute(
+            select(PodSession.user_id, PodSession.cpu, PodSession.memory, PodSession.plan).where(
+                PodSession.state.in_(_LIVE_VM_STATES)
+            )
         )
-    )
-    live_vms = [
-        _LiveVm(cpu=cpu, memory=memory, disk=_plan_disk(plan)) for cpu, memory, plan in rows.all()
-    ]
+    ).all()
+    live_vms = [_LiveVm(cpu=cpu, memory=memory) for _uid, cpu, memory, _plan in live]
+
+    # Real workspace-storage demand: every provisioned PVC (survives a stop) plus
+    # the marginal size for live users whose plan outgrew — or who don't yet have
+    # — a PVC. This replaces the old "live VMs × legacy plan disk", which ignored
+    # stopped VMs' PVCs and undercounted the true size.
+    plan_gb = await _plan_workspace_gb(db)
+    ws_rows = (
+        await db.execute(select(UserWorkspace.user_id, UserWorkspace.capacity_gb))
+    ).all()
+    live_user_plan_gb = [(uid, plan_gb.get(plan, 0)) for uid, _cpu, _mem, plan in live]
+    used_storage_b = vm_capacity.aggregate_workspace_demand_b(ws_rows, live_user_plan_gb)
+
     reserve_cpu_m = vm_capacity.parse_cpu_millis(settings.cluster_reserve_cpu)
     reserve_mem_b = vm_capacity.parse_mem_bytes(settings.cluster_reserve_memory)
     total_storage_b, reserve_storage_b = _storage_reserves()
     return vm_capacity.compute_capacity(
         nodes, live_vms, reserve_cpu_m, reserve_mem_b,
         total_storage_b=total_storage_b, reserve_storage_b=reserve_storage_b,
+        used_storage_b=used_storage_b,
     )
 
 
@@ -251,7 +272,11 @@ async def reserve_sync_slot(
         await db.rollback()
         return None
     cap = await _free_from_nodes(db, nodes)
-    if not vm_capacity.plan_fits(cap, cpu, memory, _plan_disk(plan)):
+    plan_gb = (await _plan_workspace_gb(db)).get(plan, 0)
+    req_storage_b = vm_capacity.marginal_workspace_demand_b(
+        plan_gb, await _workspace_capacity_gb(db, user_id)
+    )
+    if not vm_capacity.plan_fits(cap, cpu, memory) or req_storage_b > cap.free_storage_b():
         await db.rollback()
         return None
     if await _user_live_count(db, user_id) >= MAX_CONCURRENT_VMS_PER_USER:
@@ -347,6 +372,17 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
         )
     ).scalars().all()
 
+    # Plan sizes + each queued user's existing PVC capacity, fetched once so the
+    # per-entry storage demand is the MARGINAL size (0 for a relaunch whose PVC
+    # already exists), consistent with _free_from_nodes' aggregate accounting.
+    plan_gb = await _plan_workspace_gb(db)
+    ws_caps = {
+        uid: cap
+        for uid, cap in (
+            await db.execute(select(UserWorkspace.user_id, UserWorkspace.capacity_gb))
+        ).all()
+    }
+
     # (entry_id, pod_id, user_id, plan, image, cpu, memory, network_group)
     # captured BEFORE commit so Phase 2 never touches a possibly-expired ORM object.
     reserved: list[tuple] = []
@@ -354,7 +390,9 @@ async def reconcile_pass(db: AsyncSession, orch: OrchestratorClient) -> dict:
     for entry in entries:
         req_cpu_m = vm_capacity.cpu_request_millis(entry.cpu)
         req_mem_b = vm_capacity.mem_request_bytes(entry.memory)
-        req_storage_b = vm_capacity.parse_mem_bytes(_plan_disk(entry.plan))
+        req_storage_b = vm_capacity.marginal_workspace_demand_b(
+            plan_gb.get(entry.plan, 0), ws_caps.get(entry.user_id)
+        )
         if req_cpu_m > free_cpu_m or req_mem_b > free_mem_b or req_storage_b > free_storage_b:
             break  # head-of-line: a too-big front entry stops the pass
         count = user_counts.get(entry.user_id)
