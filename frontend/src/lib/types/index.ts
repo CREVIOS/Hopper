@@ -99,6 +99,9 @@ export interface Availability {
     total_gib: number | null;
     used_gib: number | null;
     free_gib: number | null;
+    // Whether the pool total is measured from Longhorn node capacity or the
+    // configured fallback. Absent on older backends → treat as configured.
+    source?: 'measured' | 'configured';
   };
   nodes_ready: number | null;
   queue_length: number;

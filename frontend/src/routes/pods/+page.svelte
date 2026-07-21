@@ -381,7 +381,7 @@
         compact
         label="Free storage"
         value="{fmtCapacity(availability?.storage.free_gib)} / {fmtCapacity(availability?.storage.total_gib)}"
-        sub="GiB workspace quota"
+        sub={availability?.storage.source === 'measured' ? 'GiB · Longhorn-measured' : 'GiB workspace quota'}
         icon={HardDrive}
         tone={storageTone}
       />
@@ -403,8 +403,10 @@
       <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
         A VM reserves a <strong class="font-medium text-foreground">quarter</strong> of its plan's
         CPU and bursts up to the full limit whenever cores are idle — so a 1 CPU VM takes 0.25 from
-        free CPU. Memory and storage are reserved in full. Free storage is a workspace quota, not
-        measured disk.
+        free CPU. Memory and storage are reserved in full.
+        {availability?.storage.source === 'measured'
+          ? 'Free storage reflects real Longhorn disk capacity.'
+          : 'Free storage is a workspace quota, not measured disk.'}
       </p>
     {/if}
   </section>

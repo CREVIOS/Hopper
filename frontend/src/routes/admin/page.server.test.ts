@@ -66,6 +66,9 @@ describe('admin page server load', () => {
       if (url.endsWith('/admin/images')) {
         return { ok: true, json: async () => [{ template: 'ubuntu' }] };
       }
+      if (url.endsWith('/admin/workspaces')) {
+        return { ok: true, json: async () => [{ user_id: 'user-1', capacity_gb: 20 }] };
+      }
       return { ok: true, json: async () => [{ id: 'req-1' }] };
     });
 
@@ -86,7 +89,8 @@ describe('admin page server load', () => {
       teacherRequests: [{ id: 'req-1' }],
       issues: [{ id: 'issue-1' }],
       plans: [{ name: 'small' }],
-      images: [{ template: 'ubuntu' }]
+      images: [{ template: 'ubuntu' }],
+      workspaces: [{ user_id: 'user-1', capacity_gb: 20 }]
     });
   });
 });

@@ -23,7 +23,8 @@
     Plus,
     Pencil,
     Power,
-    Gauge
+    Gauge,
+    Boxes
   } from 'lucide-svelte';
   import Spinner from '$lib/icons/Spinner.svelte';
   import { onMount, type SvelteComponent } from 'svelte';
@@ -51,7 +52,7 @@
   import Avatar from '$lib/ui/avatar.svelte';
   import { api, ApiError } from '$lib/api/client';
   import { confirm } from '$lib/confirm.svelte';
-  import { relTime, shortId } from '$lib/utils';
+  import { relTime, shortId, formatBytes } from '$lib/utils';
 
   type ActiveVm = {
     id: string;
@@ -82,6 +83,10 @@
     memory_allocatable: string;
     pod_count: number;
     ready: boolean;
+    // Longhorn-measured node storage (bytes); 0 when Longhorn is absent.
+    storage_capacity_bytes: number;
+    storage_available_bytes: number;
+    storage_scheduled_bytes: number;
   };
   type AdminUser = {
     id: string;
@@ -117,6 +122,17 @@
     is_active: boolean;
     is_default: boolean;
   };
+  type Workspace = {
+    user_id: string;
+    user_email: string | null;
+    user_name: string | null;
+    pvc_name: string;
+    storage_class: string;
+    capacity_gb: number;
+    used_gb: number | null;
+    created_at: string | null;
+    last_mounted_at: string | null;
+  };
 
   let {
     data
@@ -137,6 +153,7 @@
       issues: Issue[];
       plans: Plan[];
       images: Image[];
+      workspaces: Workspace[];
     };
   } = $props();
 
@@ -332,6 +349,43 @@
       toast.error('Could not reset quota', { id: tid, description: e instanceof ApiError ? e.message : '' });
     } finally {
       quotaSaving = false;
+    }
+  }
+
+  // Workspace resize (FR-HC-30). Up-only; the new size is written to the DB and
+  // the PVC expands the next time the user's VM starts. The backend rejects a
+  // shrink (400) or an over-quota target (409) — surfaced via toast.
+  let resizeOpen = $state(false);
+  let resizeWs = $state<Workspace | null>(null);
+  let resizeGb = $state<number | string>(0);
+  let resizeSaving = $state(false);
+
+  function openResize(w: Workspace) {
+    resizeWs = w;
+    resizeGb = w.capacity_gb;
+    resizeOpen = true;
+  }
+  async function saveResize() {
+    if (!resizeWs) return;
+    resizeSaving = true;
+    const tid = toast.loading('Resizing workspace…');
+    try {
+      await api.post(`/admin/workspaces/${resizeWs.user_id}/resize`, {
+        capacity_gb: Number(resizeGb)
+      });
+      toast.success('Workspace resized', {
+        id: tid,
+        description: 'Applies the next time the user starts a VM.'
+      });
+      resizeOpen = false;
+      await invalidateAll();
+    } catch (e) {
+      toast.error('Could not resize workspace', {
+        id: tid,
+        description: e instanceof ApiError ? e.message : ''
+      });
+    } finally {
+      resizeSaving = false;
     }
   }
 
@@ -593,6 +647,7 @@
   let vmsPage = $state(1);
   let nodesPage = $state(1);
   let auditPage = $state(1);
+  let workspacesPage = $state(1);
 
   // Reset to page 1 whenever a search narrows the result set.
   $effect(() => {
@@ -635,6 +690,9 @@
   );
   const pagedAudit = $derived(
     data.auditLogs.slice((auditPage - 1) * ADMIN_PER_PAGE, auditPage * ADMIN_PER_PAGE)
+  );
+  const pagedWorkspaces = $derived(
+    data.workspaces.slice((workspacesPage - 1) * ADMIN_PER_PAGE, workspacesPage * ADMIN_PER_PAGE)
   );
 
   // Latest events for the Overview timeline.
@@ -793,6 +851,7 @@
       <Tabs.Trigger value="plans"><Coins /> Plans</Tabs.Trigger>
       <Tabs.Trigger value="images"><Database /> Templates</Tabs.Trigger>
       <Tabs.Trigger value="nodes"><HardDrive /> Nodes</Tabs.Trigger>
+      <Tabs.Trigger value="storage"><Boxes /> Storage</Tabs.Trigger>
       <Tabs.Trigger value="audit"><ScrollText /> Audit log</Tabs.Trigger>
     </Tabs.List>
 
@@ -886,6 +945,9 @@
               {@const allocMem = data.nodes.reduce((a, n) => a + (memoryToGb(n.memory_allocatable) || 0), 0)}
               {@const cpuUsedPct = totalCpu ? ((totalCpu - allocCpu) / totalCpu) * 100 : 0}
               {@const memUsedPct = totalMem ? ((totalMem - allocMem) / totalMem) * 100 : 0}
+              {@const totalStorageB = data.nodes.reduce((a, n) => a + (n.storage_capacity_bytes || 0), 0)}
+              {@const availStorageB = data.nodes.reduce((a, n) => a + (n.storage_available_bytes || 0), 0)}
+              {@const storageUsedPct = totalStorageB ? ((totalStorageB - availStorageB) / totalStorageB) * 100 : 0}
 
               {#snippet gauge(g: {
                 id: string;
@@ -957,6 +1019,36 @@
                   from: '[stop-color:hsl(var(--info))]',
                   to: '[stop-color:hsl(var(--primary))]'
                 })}
+              </div>
+
+              <!-- Longhorn-measured storage. Em-dash when no node reports it
+                   (Longhorn absent → the gateway uses its configured pool). -->
+              <div class="rounded-xl border border-border/60 bg-muted/20 px-3.5 py-2.5">
+                <div class="flex items-center justify-between text-sm">
+                  <span class="flex items-center gap-2 font-medium">
+                    <Database class="size-3.5 text-primary" /> Storage
+                  </span>
+                  {#if totalStorageB > 0}
+                    <span class="font-semibold tabular-nums">{storageUsedPct.toFixed(0)}%</span>
+                  {:else}
+                    <span class="text-muted-foreground">—</span>
+                  {/if}
+                </div>
+                {#if totalStorageB > 0}
+                  <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      class="h-full rounded-full bg-gradient-to-r from-primary to-info transition-[width] duration-500"
+                      style="width: {storageUsedPct}%"
+                    ></div>
+                  </div>
+                  <div class="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                    {formatBytes(totalStorageB - availStorageB)} used of {formatBytes(totalStorageB)}
+                  </div>
+                {:else}
+                  <p class="mt-1 text-[11px] text-muted-foreground">
+                    Not measured — using the configured pool.
+                  </p>
+                {/if}
               </div>
 
               <div class="rounded-xl border border-border/60 bg-muted/20 px-3.5 py-2.5">
@@ -1591,6 +1683,7 @@
                 <Table.Head class="w-32">Status</Table.Head>
                 <Table.Head class="hidden w-40 sm:table-cell">CPU</Table.Head>
                 <Table.Head class="hidden w-44 sm:table-cell">Memory</Table.Head>
+                <Table.Head class="hidden w-44 lg:table-cell">Storage</Table.Head>
                 <Table.Head class="w-20 text-right">Pods</Table.Head>
               </Table.Row>
             </Table.Header>
@@ -1647,6 +1740,25 @@
                       </div>
                     </div>
                   </Table.Cell>
+                  <Table.Cell class="hidden w-44 lg:table-cell">
+                    {#if n.storage_capacity_bytes > 0}
+                      {@const stPct = reservedPct(n.storage_capacity_bytes, n.storage_available_bytes)}
+                      <div class="space-y-1">
+                        <div class="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
+                          <span>{formatBytes(n.storage_available_bytes)} / {formatBytes(n.storage_capacity_bytes)}</span>
+                          <span class="font-medium">{stPct.toFixed(0)}%</span>
+                        </div>
+                        <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            class="h-full rounded-full bg-gradient-to-r from-primary to-info transition-[width] duration-500"
+                            style="width: {stPct}%"
+                          ></div>
+                        </div>
+                      </div>
+                    {:else}
+                      <span class="text-[11px] text-muted-foreground">—</span>
+                    {/if}
+                  </Table.Cell>
                   <Table.Cell class="w-20 text-right">
                     <span
                       class="inline-flex items-center justify-center rounded-md bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums"
@@ -1658,7 +1770,7 @@
               {/each}
               {#if filteredNodes.length === 0}
                 <Table.Row class="hover:bg-transparent">
-                  <Table.Cell colspan={5} class="py-12 text-center text-sm text-muted-foreground">
+                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
                     <HardDrive class="mx-auto mb-2 size-5 opacity-50" />
                     {data.nodes.length === 0
                       ? 'No nodes are reporting yet.'
@@ -1677,6 +1789,102 @@
             />
           </div>
         </Card>
+      </div>
+    </Tabs.Content>
+
+    <!-- Storage / workspaces -->
+    <Tabs.Content value="storage" class="mt-5">
+      <div class="animate-fade-up space-y-3">
+        <SectionHeader title="Workspaces" icon={Boxes}>
+          {#snippet action()}
+            <span class="text-xs text-muted-foreground">
+              {data.workspaces.length} persistent volume{data.workspaces.length === 1 ? '' : 's'}
+            </span>
+          {/snippet}
+        </SectionHeader>
+        <Card class="overflow-hidden">
+          <Table.Root class="table-fixed" containerClass="[scrollbar-gutter:stable]">
+            <Table.Header class="bg-muted/40">
+              <Table.Row class="hover:bg-transparent">
+                <Table.Head>User</Table.Head>
+                <Table.Head class="hidden w-44 md:table-cell">Class</Table.Head>
+                <Table.Head class="w-28 text-right">Capacity</Table.Head>
+                <Table.Head class="hidden w-28 text-right sm:table-cell">Used</Table.Head>
+                <Table.Head class="hidden w-36 lg:table-cell">Last mounted</Table.Head>
+                <Table.Head class="w-28 text-right">Actions</Table.Head>
+              </Table.Row>
+            </Table.Header>
+          </Table.Root>
+          <Table.Root class="table-fixed" containerClass="max-h-[34rem] [scrollbar-gutter:stable]">
+            <Table.Body>
+              {#each pagedWorkspaces as w (w.user_id)}
+                <Table.Row class="group">
+                  <Table.Cell>
+                    <div class="flex items-center gap-2.5">
+                      <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform group-hover:scale-105"
+                      >
+                        <Boxes class="size-4" />
+                      </span>
+                      <div class="min-w-0">
+                        <div class="truncate text-sm font-medium">
+                          {w.user_name || w.user_email || w.user_id}
+                        </div>
+                        {#if w.user_name && w.user_email}
+                          <div class="truncate text-xs text-muted-foreground">{w.user_email}</div>
+                        {/if}
+                      </div>
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell class="hidden w-44 md:table-cell">
+                    {#if w.storage_class}
+                      <Badge variant="info">{w.storage_class}</Badge>
+                    {:else}
+                      <Badge variant="muted">default</Badge>
+                    {/if}
+                  </Table.Cell>
+                  <Table.Cell class="w-28 text-right font-mono text-xs tabular-nums">
+                    {w.capacity_gb} GB
+                  </Table.Cell>
+                  <Table.Cell
+                    class="hidden w-28 text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell"
+                  >
+                    {w.used_gb != null ? `${w.used_gb.toFixed(1)} GB` : '—'}
+                  </Table.Cell>
+                  <Table.Cell class="hidden w-36 text-xs text-muted-foreground lg:table-cell">
+                    {relTime(w.last_mounted_at)}
+                  </Table.Cell>
+                  <Table.Cell class="w-28 text-right">
+                    <Button size="sm" variant="outline" onclick={() => openResize(w)}>
+                      <Pencil class="size-3.5" /> Resize
+                    </Button>
+                  </Table.Cell>
+                </Table.Row>
+              {/each}
+              {#if data.workspaces.length === 0}
+                <Table.Row class="hover:bg-transparent">
+                  <Table.Cell colspan={6} class="py-12 text-center text-sm text-muted-foreground">
+                    <Boxes class="mx-auto mb-2 size-5 opacity-50" />
+                    No workspaces provisioned yet.
+                  </Table.Cell>
+                </Table.Row>
+              {/if}
+            </Table.Body>
+          </Table.Root>
+          <div class="border-t border-border bg-muted/20 px-4 py-3">
+            <Pagination
+              count={data.workspaces.length}
+              perPage={ADMIN_PER_PAGE}
+              bind:page={workspacesPage}
+              itemLabel="workspace"
+            />
+          </div>
+        </Card>
+        <p class="px-1 text-xs text-muted-foreground">
+          Workspaces are per-user persistent volumes that survive VM stop/restart. Resizing is
+          up-only and applies the next time the user starts a VM; the used column reads “—” until
+          Longhorn reports actual usage. Snapshots and backups live in the Longhorn UI.
+        </p>
       </div>
     </Tabs.Content>
 
@@ -1855,6 +2063,42 @@
         <Spinner class="size-4" /> Saving…
       {:else}
         <Check class="size-4" /> Save quota
+      {/if}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<!-- Workspace resize (FR-HC-30) -->
+<Dialog
+  bind:open={resizeOpen}
+  title="Resize workspace"
+  description={resizeWs ? (resizeWs.user_name || resizeWs.user_email || resizeWs.user_id) : ''}
+>
+  <div class="space-y-4">
+    <p class="text-xs text-muted-foreground">
+      Grow this user's persistent workspace. Storage can only be increased and must stay within the
+      user's storage quota — raise the quota first if the new size is rejected. The change applies
+      the next time the user starts a VM.
+    </p>
+    <div>
+      <Label for="ws-gb">Capacity (GB)</Label>
+      <Input id="ws-gb" type="number" min="1" step="1" bind:value={resizeGb} class="mt-1 font-mono" />
+      {#if resizeWs}
+        <p class="mt-1 text-[11px] text-muted-foreground">Current: {resizeWs.capacity_gb} GB</p>
+      {/if}
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <Button variant="outline" onclick={() => (resizeOpen = false)}>Cancel</Button>
+    <Button
+      onclick={saveResize}
+      disabled={resizeSaving || !resizeWs || Number(resizeGb) <= (resizeWs?.capacity_gb ?? 0)}
+    >
+      {#if resizeSaving}
+        <Spinner class="size-4" /> Resizing…
+      {:else}
+        <Check class="size-4" /> Resize
       {/if}
     </Button>
   {/snippet}
