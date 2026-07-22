@@ -12,12 +12,12 @@
 \contentsline {section}{\numberline {3}API Documentation}{16}{section.3}%
 \contentsline {subsection}{\numberline {3.1}API Design Overview}{16}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}Endpoint Reference}{17}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{20}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{21}{subsection.3.3}%
 \contentsline {subsection}{\numberline {3.4}Sample Request \& Response}{21}{subsection.3.4}%
 \contentsline {section}{\numberline {4}Authentication \& Security}{22}{section.4}%
 \contentsline {subsection}{\numberline {4.1}Authentication Strategy}{22}{subsection.4.1}%
 \contentsline {subsection}{\numberline {4.2}Authorization \& Role Management}{24}{subsection.4.2}%
-\contentsline {subsection}{\numberline {4.3}Security Measures}{24}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.3}Security Measures}{25}{subsection.4.3}%
 \contentsline {subsection}{\numberline {4.4}Known Vulnerabilities \& Mitigations}{26}{subsection.4.4}%
 \contentsline {section}{\numberline {5}Testing \& Quality Assurance}{27}{section.5}%
 \contentsline {subsection}{\numberline {5.1}Testing Strategy}{27}{subsection.5.1}%

@@ -1,125 +1,192 @@
 \begin{tikzpicture}[
     font=\footnotesize,
     >=Latex,
-    box/.style={
+    client/.style={
         draw,
         rounded corners=3pt,
         align=center,
-        minimum height=10mm,
-        text width=34mm,
-        inner sep=2.5mm,
-        fill=cyan!6
+        text width=46mm,
+        minimum height=12mm,
+        inner sep=2mm,
+        fill=gray!10
     },
-    store/.style={
+    backend/.style={
         draw,
         rounded corners=3pt,
         align=center,
-        minimum height=10mm,
-        text width=38mm,
-        inner sep=2.5mm,
-        fill=purple!6
+        text width=36mm,
+        minimum height=12mm,
+        inner sep=2mm,
+        fill=green!8
     },
-    flow/.style={
+    gateway/.style={
+        draw,
+        rounded corners=4pt,
+        align=center,
+        text width=26mm,
+        minimum width=30mm,
+        minimum height=110mm,
+        inner sep=2mm,
+        fill=blue!8
+    },
+    req/.style={
+        ->,
+        thick
+    },
+    push/.style={
         ->,
         thick,
-        rounded corners=4pt
+        dashed
+    },
+    both/.style={
+        <->,
+        thick
     },
     lab/.style={
         font=\scriptsize,
         fill=white,
-        inner sep=1.2pt,
+        inner sep=1.5pt,
         align=center
     }
 ]
 
-% Nodes
-\node[store] (layout) at (0,0) {+\texttt{layout.server.ts}\\SSR auth + balance};
-\node[store] (client) at (5.7,0) {\texttt{api/client.ts}\\401 refresh retry};
-\node[box]   (gateway) at (11.6,0) {API Gateway};
+% Middle spine: the single API gateway shared by every sync mechanism
+\node[gateway] (gw) at (9.6,-4.6)
+    {API Gateway\\FastAPI\\[2pt]\scriptsize cookie auth\\\scriptsize + ownership checks};
 
-\node[store] (notifstore) at (0,-3.6) {\texttt{notifications.ts}\\Svelte writable stores};
-\node[box]   (notifstream) at (5.7,-3.6) {GET /notifications/stream\\EventSource};
 
-\node[box]   (podpage) at (0,-7.2) {pod detail page\\EventSource + WebSocket};
-\node[box]   (podstream) at (5.7,-7.2) {GET /pods/\{id\}/metrics\\WS /pods/\{id\}/terminal};
+% Lane 1 --- server-rendered refresh of auth state and balance
+\node[client]  (c1) at (0,0)
+    {\textbf{SSR refresh}\\\texttt{+layout.server.ts}};
+\node[backend] (b1) at (16.4,0)
+    {PostgreSQL\\\texttt{users} + credit ledger};
 
-\node[box]   (k8s) at (17.4,2.0) {port-forward / SSH\\code-server proxy};
-\node[box]   (nats) at (17.4,-3.6) {NATS + metrics consumer};
+\draw[req]
+    ($(c1.east)+(0,0.45)$)
+    --
+    node[lab, above] {\texttt{/auth/me} + \texttt{/credits/balance}\\session cookie forwarded}
+    ($(gw.west |- c1.east)+(0,0.45)$);
 
-% Top request lane: layout -> gateway
-\coordinate (L1a) at ($(layout.north)+(0,0.9)$);
-\coordinate (L1b) at ($(gateway.north)+(0,0.9)$);
-\draw[flow]
-    (layout.north) -- (L1a)
-    -- node[lab, above] {server fetch +\\cookie forward}
-    (L1b) -- (gateway.north);
+\draw[req]
+    ($(gw.west |- c1.east)-(0,0.45)$)
+    --
+    node[lab, below] {user + balance, cookies re-set}
+    ($(c1.east)-(0,0.45)$);
 
-% Direct browser client -> gateway
-\draw[flow]
-    (client.east) -- node[lab, above] {browser fetch /\\auth/refresh} (gateway.west);
+\draw[both]
+    (gw.east |- b1.west)
+    --
+    node[lab, above] {user row + balance}
+    (b1.west);
 
-% Notification store -> stream endpoint
-\draw[flow]
-    (notifstore.east) -- node[lab, above] {open stream} (notifstream.west);
 
-% Notification store -> gateway (initial list)
-\coordinate (N1a) at ($(notifstore.north)+(0,0.9)$);
-\coordinate (N1b) at ($(gateway.west)+(-1.0,-1.3)$);
-\draw[flow]
-    (notifstore.north) -- (N1a)
-    -- node[lab, above] {initial list +\\unread count}
-    (N1b) -- (gateway.west);
+% Lane 2 --- browser-side silent token refresh and replay
+\node[client]  (c2) at (0,-2.3)
+    {\textbf{Silent re-auth}\\\texttt{lib/api/client.ts}};
+\node[backend] (b2) at (16.4,-2.3)
+    {Keycloak\\OIDC token endpoint};
 
-% Stream endpoint -> gateway
-\coordinate (N2a) at ($(notifstream.east)+(0.8,0)$);
-\coordinate (N2b) at ($(gateway.south)+(0,-1.0)$);
-\draw[flow]
-    (notifstream.east) -- (N2a)
-    -- node[lab, right] {SSE endpoint}
-    (N2b) -- (gateway.south);
+\draw[req]
+    ($(c2.east)+(0,0.45)$)
+    --
+    node[lab, above] {after \texttt{401}: POST \texttt{/auth/refresh}}
+    ($(gw.west |- c2.east)+(0,0.45)$);
 
-% Pod page -> pod stream endpoint
-\draw[flow]
-    (podpage.east) -- node[lab, above] {open stream /\\terminal session} (podstream.west);
+\draw[req]
+    ($(gw.west |- c2.east)-(0,0.45)$)
+    --
+    node[lab, below] {new cookie, request replayed}
+    ($(c2.east)-(0,0.45)$);
 
-% Pod stream endpoint -> gateway
-\coordinate (P1a) at ($(podstream.east)+(0.8,0)$);
-\coordinate (P1b) at ($(gateway.south)+(0,-2.4)$);
-\draw[flow]
-    (podstream.east) -- (P1a)
-    -- node[lab, right] {metrics + terminal\\proxy requests}
-    (P1b) -- (gateway.south);
+\draw[both]
+    (gw.east |- b2.west)
+    --
+    node[lab, above] {\texttt{refresh\_token} grant}
+    (b2.west);
 
-% NATS -> gateway
-\coordinate (R1a) at ($(nats.west)+(-1.2,0)$);
-\coordinate (R1b) at ($(gateway.east)+(1.0,-1.0)$);
-\draw[flow]
-    (nats.west) -- (R1a)
-    -- node[lab, above] {metrics.* +\\notify.user.*}
-    (R1b) -- (gateway.east);
 
-% Gateway -> k8s proxy
-\coordinate (K1a) at ($(gateway.east)+(1.0,0.9)$);
-\coordinate (K1b) at ($(k8s.west)+(-1.0,0)$);
-\draw[flow]
-    (gateway.east) -- (K1a)
-    -- node[lab, above] {proxy / bridge}
-    (K1b) -- (k8s.west);
+% Lane 3 --- notification fan-out over SSE
+\node[client]  (c3) at (0,-4.6)
+    {\textbf{Notification push}\\\texttt{notifications.ts} store};
+\node[backend] (b3) at (16.4,-4.6)
+    {NATS\\notification service\\publishes};
 
-% Gateway -> notifstore (SSE updates)
-\coordinate (S1a) at ($(gateway.south)+(0,-1.7)$);
-\coordinate (S1b) at ($(notifstore.east)+(1.0,0)$);
-\draw[flow]
-    (gateway.south) -- (S1a)
-    -- node[lab, below] {SSE updates}
-    ($(S1b |- S1a)$) -- (S1b) -- (notifstore.east);
+\draw[req]
+    ($(c3.east)+(0,0.45)$)
+    --
+    node[lab, above] {\texttt{EventSource}: \texttt{/notifications/stream}}
+    ($(gw.west |- c3.east)+(0,0.45)$);
 
-% Gateway -> podpage (live data back to UI)
-\coordinate (P2a) at ($(gateway.south)+(0,-4.6)$);
-\coordinate (P2b) at ($(podpage.east)+(1.0,0)$);
-\draw[flow]
-    (gateway.south) -- (P2a)
-    -- node[lab, below] {live metrics /\\terminal bytes}
-    ($(P2b |- P2a)$) -- (P2b) -- (podpage.east);
+\draw[push]
+    ($(gw.west |- c3.east)-(0,0.45)$)
+    --
+    node[lab, below] {SSE events update the store}
+    ($(c3.east)-(0,0.45)$);
+
+\draw[push]
+    (b3.west)
+    --
+    node[lab, above] {\texttt{notify.user.<id>}}
+    (gw.east |- b3.west);
+
+
+% Lane 4 --- live pod metrics over a separate SSE stream
+\node[client]  (c4) at (0,-6.9)
+    {\textbf{Live metrics}\\VM detail \texttt{+page.svelte}};
+\node[backend] (b4) at (16.4,-6.9)
+    {NATS\\orchestrator publishes};
+
+\draw[req]
+    ($(c4.east)+(0,0.45)$)
+    --
+    node[lab, above] {\texttt{EventSource}: \texttt{/pods/\{id\}/metrics}}
+    ($(gw.west |- c4.east)+(0,0.45)$);
+
+\draw[push]
+    ($(gw.west |- c4.east)-(0,0.45)$)
+    --
+    node[lab, below] {SSE \texttt{metrics} events (CPU, RAM)}
+    ($(c4.east)-(0,0.45)$);
+
+\draw[push]
+    (b4.west)
+    --
+    node[lab, above] {\texttt{metrics.<pod\_name>}}
+    (gw.east |- b4.west);
+
+
+% Lane 5 --- interactive sessions bridged through the gateway
+\node[client]  (c5) at (0,-9.2)
+    {\textbf{Interactive session}\\terminal + editor panes};
+\node[backend] (b5) at (16.4,-9.2)
+    {VM pod\\\texttt{sshd} + code-server};
+
+\draw[req]
+    ($(c5.east)+(0,0.45)$)
+    --
+    node[lab, above] {\texttt{WS /pods/\{id\}/\{terminal,vscode\}}}
+    ($(gw.west |- c5.east)+(0,0.45)$);
+
+\draw[push]
+    ($(gw.west |- c5.east)-(0,0.45)$)
+    --
+    node[lab, below] {terminal output and\\editor RPC frames}
+    ($(c5.east)-(0,0.45)$);
+
+\draw[both]
+    (gw.east |- b5.west)
+    --
+    node[lab, above] {\texttt{port-forward} :22}
+    (b5.west);
+
+
+% Legend
+\draw[req] (-2.5,-10.9) -- (-1.3,-10.9);
+\node[font=\scriptsize, anchor=west] at (-1.2,-10.9)
+    {client-initiated request or response};
+
+\draw[push] (7.3,-10.9) -- (8.5,-10.9);
+\node[font=\scriptsize, anchor=west] at (8.6,-10.9)
+    {server-initiated push (SSE / WebSocket)};
 
 \end{tikzpicture}
