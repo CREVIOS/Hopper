@@ -55,11 +55,15 @@
     linkcolor=blue,
     urlcolor=blue,
     pdftitle={Hopper Project Report},
-    pdfauthor={Four-Eyed Raven}
+    pdfauthor={Four-Eyed Raven \& Byte Me}
 }
 
 \definecolor{todored}{RGB}{180,0,0}
 \newcommand{\todo}[1]{\textcolor{todored}{TODO: #1}}
+
+% Heading colour. Deliberately deeper than hyperref's link blue so that
+% headings and inline links stay visually distinguishable.
+\definecolor{headingblue}{RGB}{20,60,120}
 
 \lstdefinestyle{hoppercode}{
     basicstyle=\ttfamily\small,
@@ -78,40 +82,48 @@
 \setlength{\headheight}{14.5pt}
 \setstretch{1.15}
 
-\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
-\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\titleformat{\section}{\large\bfseries\color{headingblue}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{headingblue}}{\thesubsection}{0.5em}{}
 
 \begin{document}
 \pagenumbering{gobble}
 
 \begin{titlepage}
     \centering
-    \vspace*{1.5cm}
+    \vspace*{0.8cm}
 
     {\Large \textbf{CSE 4113 -- Internet Programming Lab}\par}
-    \vspace{1cm}
+    \vspace{0.6cm}
     {\LARGE \textbf{Project Report}\par}
-    \vspace{1.25cm}
+    \vspace{0.7cm}
     {\Huge \textbf{Hopper}\par}
-    \vspace{0.5cm}
-    {\Large \textbf{Team: Four-Eyed Raven}\par}
-    \vspace{1.25cm}
+    \vspace{0.35cm}
+    {\Large \textbf{Teams: Four-Eyed Raven \& Byte Me}\par}
+    \vspace{0.7cm}
 
     {\large \textbf{Submitted By}\par}
-    \vspace{0.5cm}
+    \vspace{0.35cm}
 
-    \renewcommand{\arraystretch}{1.35}
+    \renewcommand{\arraystretch}{1.15}
     \begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}X|>{\RaggedRight\arraybackslash}X|}
         \hline
         \textbf{Team Member} & \textbf{Student ID} \\
         \hline
-        \todo{Add member 1 name} & \todo{Add student ID} \\
+        Taif Ahmed Turjo & 2021-811-221 \\
         \hline
-        \todo{Add member 2 name} & \todo{Add student ID} \\
+        Fayek Ahmed & 2021-511-233 \\
         \hline
-        \todo{Add member 3 name} & \todo{Add student ID} \\
+        Tanzila Khan & 2021-011-201 \\
         \hline
-        \todo{Add member 4 name} & \todo{Add student ID} \\
+        Md. Muhaiminul Islam Ninad & 2021-111-219 \\
+        \hline
+        Anindya Kundu & 2021-911-185 \\
+        \hline
+        Kabya Mithun Saha & 2021-111-192 \\
+        \hline
+        Tazkia Malik & 2021-111-183 \\
+        \hline
+        Md. Sadek Hossain Asif & 2021-211-191 \\
         \hline
     \end{tabularx}
 
@@ -131,8 +143,9 @@
 \tableofcontents
 \newpage
 
-\section*{Project Links}
+\phantomsection
 \addcontentsline{toc}{section}{Project Links}
+\section*{Project Links}
 
 \begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{0.34\textwidth}|>{\RaggedRight\arraybackslash}X|}
     \hline
@@ -157,47 +170,118 @@ Hopper is a self-hosted compute provisioning platform intended for university en
 The codebase shows that the project addresses several operational problems at once. First, shared academic compute infrastructure requires stronger isolation than ad hoc account sharing or manually provisioned hosts. Second, institutions need a practical way to manage fair usage, including per-session billing and automatic shutdown when credits are exhausted. Third, a university deployment must integrate with centralized identity management rather than maintaining a separate manual authentication system. Hopper therefore combines a browser-based control plane, an API layer, an orchestration service, a relational ledger-backed data model, and Keycloak-based authentication in one deployable platform.
 
 \subsection{Target Users \& Use Cases}
-The verified user model in the repository includes at least three application roles: student, professor, and admin. These roles appear in the documented Keycloak realm configuration and are reflected in frontend routes and backend authorization logic. The system therefore serves both end users who consume compute sessions and privileged users who supervise access, credits, and platform status.
+The system defines three application roles: student, professor, and admin. These roles are declared in the Keycloak realm configuration, carried on the access token, and enforced in both frontend route guards and backend authorization logic. The system therefore serves both end users who consume compute sessions and privileged users who supervise access, credits, and platform status.
 
 Students are the primary runtime users. Confirmed use cases include signing in through the authentication flow, viewing available plans, creating and terminating compute sessions, monitoring CPU and memory usage, opening browser-based development access, using SSH-related settings, and reviewing their credit balance and usage history. Professors and administrators have additional operational and oversight use cases, including allocating credits, inspecting node or platform statistics, reviewing users, and accessing administrative workflows exposed through dedicated backend and frontend routes.
 
 \subsection{Core Features}
-Hopper is a multi-service compute-management platform that combines
-authenticated access, automated resource provisioning, real-time monitoring,
-and cluster-based workload orchestration.
+Hopper is a multi-service compute-management platform that combines federated
+authentication, admission-controlled resource provisioning, metered billing
+against a double-entry ledger, real-time monitoring, and cluster-based workload
+orchestration. The features summarised below were confirmed against the
+implementation rather than against planning documents; where a capability is
+only partially implemented, the limitation is stated explicitly.
 
-\begin{table}[htbp]
-\centering
-\caption{Summary of Hopper's core features}
-\label{tab:core-features}
-\renewcommand{\arraystretch}{1.2}
+Two properties distinguish the system from a thin wrapper over the Kubernetes
+API. First, provisioning is admission-controlled: a request is accepted only
+after both a credit-balance check and a cluster-capacity check succeed, and a
+request that passes the former but fails the latter is queued rather than
+rejected. Second, billing is enforced end to end without operator
+intervention---the orchestrator meters running sessions, the gateway debits a
+double-entry ledger, and exhaustion of a balance propagates back to the
+orchestrator as a termination signal.
 
-\begin{tabularx}{\textwidth}{
-    >{\raggedright\arraybackslash\bfseries}p{0.24\textwidth}
-    >{\raggedright\arraybackslash}X
+\small
+\renewcommand{\arraystretch}{1.25}
+
+\begin{longtable}{
+    >{\raggedright\arraybackslash\bfseries}p{0.22\textwidth}
+    >{\raggedright\arraybackslash}p{0.72\textwidth}
 }
+\caption{Summary of Hopper's core features}
+\label{tab:core-features}\\
+
 \toprule
-Category & Features \\
+\textbf{Category} & \textbf{Features} \\
 \midrule
+\endfirsthead
 
-Core platform &
-Keycloak-based authentication and session management; plan-based compute-session
-creation; credit validation before provisioning; Kubernetes pod lifecycle
-orchestration through Go and gRPC; persistent session and accounting records;
-double-entry credit tracking; and NATS-based billing and lifecycle events. \\
-
-User-facing capabilities &
-Real-time resource metrics through Server-Sent Events; browser-based terminal and
-editor access; file management; administrative dashboards; SSH key management;
-notifications and unread-count updates; and issue-reporting workflows. \\
-
-Supporting infrastructure &
-SvelteKit frontend, FastAPI gateway, Go orchestration service, Kubernetes workloads,
-PostgreSQL with TimescaleDB, NATS JetStream, Keycloak, Nginx Ingress, and TLS. \\
+\toprule
+\textbf{Category} & \textbf{Features} \\
+\midrule
+\endhead
 
 \bottomrule
-\end{tabularx}
-\end{table}
+\endfoot
+
+Identity and access control &
+Keycloak-backed OpenID Connect sign-in using the authorization-code flow with
+PKCE, covering callback handling, token refresh, and logout with token
+revocation; JSON Web Key Set validation of access tokens with issuer
+verification; HTTP-only session cookies; a student, professor, and admin role
+hierarchy derived from realm roles; API keys for programmatic access alongside
+interactive sign-in; and email verification and code-based password reset. \\
+
+Compute provisioning and orchestration &
+Plan-based session creation across small, medium, and large tiers with fixed CPU,
+memory, disk, and hourly-credit definitions; credit-balance validation performed
+before any cluster operation is attempted; Kubernetes pod lifecycle management in
+a Go service exposed over gRPC, covering creation, termination, status queries,
+node listing, and metric streaming; an informer-driven state machine that
+reconciles observed pod state; per-pod SSH services with generated credentials;
+and selectable language images for Python, Java, and C++ workloads. \\
+
+Admission control and scheduling &
+A capacity-aware scheduler that admits a request only when cluster resources
+allow, and otherwise enqueues it; a persistent queue exposing position and depth
+to the requesting user; a reconciliation pass that requeues requests stuck in the
+admitting state; and database-backed leader election ensuring a single active
+scheduler across replicas, with independent leader election on the orchestrator
+side. \\
+
+Credits, billing, and accounting &
+A double-entry credit ledger in which every transfer writes balanced debit and
+credit entries with a running balance snapshot; per-minute metering of running
+sessions published by the orchestrator over NATS; idempotent consumption of
+billing events in the gateway, keyed by transaction identifier; low-balance
+warning and balance-exhaustion events, the latter propagating back to the
+orchestrator to terminate the affected session; and professor-to-student credit
+allocation governed by a request-and-approval workflow. \\
+
+User-facing workspace capabilities &
+Real-time CPU and memory metrics delivered over Server-Sent Events; a
+browser-based terminal backed by a WebSocket pseudo-terminal session; a
+browser-based editor served through an authenticated code-server proxy with
+per-user settings persistence; file browsing, upload, and download over SFTP,
+with path-traversal protection (deletion and renaming are not currently exposed);
+SSH public-key management with fingerprint computation; a notification feed with
+unread counts delivered over a second Server-Sent Events stream; and an
+issue-reporting workflow with administrative resolution. \\
+
+Administration and oversight &
+Administrative dashboards covering user management, role assignment, course
+records, cluster node inspection, platform statistics, and active-session
+listings; a separate professor dashboard for cohort oversight and credit
+allocation; a professor-role request and approval workflow; request-level audit
+logging with an administrative viewer; and historical usage and spend analytics
+backed by a TimescaleDB hypertable and rendered as usage and spend charts. \\
+
+Operations, reliability, and security &
+A session reaper that terminates expired or credit-exhausted sessions
+automatically; per-session network isolation groups compiled into Cilium network
+policies; request rate limiting at the gateway; a Prometheus, Grafana, and Loki
+observability stack with alerting rules; and a test suite spanning unit,
+integration, end-to-end, load, security, and chaos scenarios. \\
+
+Supporting infrastructure &
+SvelteKit frontend, FastAPI gateway, Go orchestration service, Kubernetes
+workloads, PostgreSQL with TimescaleDB, NATS JetStream, Keycloak, Nginx Ingress,
+and cert-manager-issued TLS; deployment expressed declaratively as a Helm chart
+with Argo~CD applications, alongside Pulumi and Ansible definitions for
+infrastructure provisioning. \\
+
+\end{longtable}
+\normalsize
 \subsection{Tech Stack Overview}
 The frontend uses SvelteKit 2, Svelte 5, TypeScript, and Vite to support server-rendered routes, interactive dashboards, and reusable authenticated components. State is managed through Svelte writable stores, derived state, and route-level server load functions.
 
@@ -1781,21 +1865,25 @@ The results indicate that the deployed landing page loads quickly and remains vi
 stable. The 0\,ms Total Blocking Time shows that JavaScript execution caused no
 measurable main-thread blocking during the audit. The CLS value of 0.001 indicates
 almost no unexpected layout movement, while the 0.8\,s FCP and LCP values demonstrate
-fast initial and primary-content rendering.
+fast initial and primary-content rendering. Figure~\ref{fig:pagespeed-scores} shows the
+category scores reported by the audit, and Figure~\ref{fig:pagespeed-metrics} shows the
+individual metric measurements underlying the performance score.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{figures/pagespeed-results1.png}
-    \caption{Google PageSpeed Insights results for the deployed Hopper landing page.}
-    \label{fig:pagespeed-results}
+    \caption{Google PageSpeed Insights category scores for the deployed Hopper landing
+    page in desktop mode.}
+    \label{fig:pagespeed-scores}
 \end{figure}
 
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{figures/pagespeed-results2.png}
-    \caption{Google PageSpeed Insights results for the deployed Hopper landing page.}
-    \label{fig:pagespeed-results}
+    \caption{Core Web Vitals and supporting metric measurements from the same desktop
+    audit.}
+    \label{fig:pagespeed-metrics}
 \end{figure}
 \subsection{Challenges \& Solutions}
 
@@ -1987,137 +2075,163 @@ development environments. \\
 \appendix
 \section{Screenshots / UI Walkthrough}
 % -----------------------------------------------------------------------
-% Helper: uniform screenshot placeholder
-% Usage: \uiscreen{Label}{Description text}
+% Helper: captured screenshot figure
+% Usage: \uifig{file}{Label}{Description text}
 % -----------------------------------------------------------------------
-\newcommand{\uiscreen}[2]{%
+% Height is capped as well as width so that tall full-page captures scale to
+% fit rather than overflowing the page and detaching their caption.
+\newcommand{\uifig}[3]{%
   \begin{figure}[H]
     \centering
-    \begin{tikzpicture}
-      \draw[rounded corners=4pt, fill=gray!8, draw=gray!50, line width=0.8pt]
-        (0,0) rectangle (\textwidth-2pt, 5.5cm);
-      \node[gray!60, font=\sffamily\bfseries\large] at (0.5\textwidth-1pt, 3.8cm) {#1};
-      \node[gray!50, font=\sffamily\small, text width=0.7\textwidth, align=center]
-        at (0.5\textwidth-1pt, 2.5cm) {#2};
-      \node[gray!40, font=\sffamily\footnotesize] at (0.5\textwidth-1pt, 0.6cm)
-        {\textit{Screenshot not yet captured. Place image in \texttt{report/figures/} and replace this block.}};
-    \end{tikzpicture}
-    \caption{#1}
+    \fbox{\includegraphics[width=0.95\textwidth,height=0.78\textheight,%
+                           keepaspectratio]{figures/#1}}
+    \caption{#2 --- #3}
   \end{figure}%
 }
 
-No UI screenshots have been captured for this submission.
-The figures directory (\texttt{report/figures/}) is reserved for image files.
-Each placeholder below marks the screen that should be captured, its route,
-and the key UI elements it contains.
-When screenshots become available, replace each \texttt{\textbackslash uiscreen}
-block with a standard \texttt{\textbackslash includegraphics} figure.
+The screenshots below were captured from the live deployment at
+\url{https://hopper.farefin.com} at a viewport of $1440\times900$ with a
+2$\times$ device pixel ratio. All twelve screens are captured. Screens
+1--7 and 10--12 use an authenticated \texttt{Student} account; Screen 8
+uses an \texttt{Admin} account authenticated through the University SSO
+(Keycloak OIDC) flow; and Screen 9 uses a \texttt{Teacher} account, each
+console being reachable only by its corresponding role.
 
 % -------------------------------------------------------------------
 % 1. Public landing page
 % -------------------------------------------------------------------
-\uiscreen{Screen 1 --- Public Landing Page (\texttt{/})}{%
-  Hero section with Hopper logo, tagline, and ``Get started'' CTA.
-  Navbar: Product, Use Cases, Docs, Pricing, theme toggle.
-  Feature highlights: credit billing, SSH/VSCode access, zero-trust networking.
-  VM plan cards (Small / Medium / Large) with credit rates.
-  FAQ accordion and animated server-rack illustration.}
+The landing page is roughly three screens tall, so it is reproduced in two
+halves.
+
+\uifig{ui-01a-landing-top.png}{Screen 1a: Public Landing Page --- Upper Half (\texttt{/})}{%
+  Navbar and hero section with the Hopper wordmark, tagline, and primary
+  call-to-action, followed by the feature highlights. Captured logged out.}
+
+\uifig{ui-01b-landing-bottom.png}{Screen 1b: Public Landing Page --- Lower Half (\texttt{/})}{%
+  Continuation of the same page: VM plan cards (Small / Medium / Large)
+  with their per-hour credit rates, the FAQ section, and the page footer.}
 
 % -------------------------------------------------------------------
 % 2. Login page
 % -------------------------------------------------------------------
-\uiscreen{Screen 2 --- Login (\texttt{/login})}{%
-  ``Sign in with email'' heading; email and password fields; ``Forgot password?'' link.
-  ``University SSO'' button for Keycloak OIDC flow.
-  Link to signup page. Theme toggle in header.}
+\uifig{ui-02-login.png}{Screen 2: Login (\texttt{/login})}{%
+  ``Sign in with email'' heading; email and password fields;
+  ``Forgot password?'' link; ``University SSO'' button for the Keycloak
+  OIDC flow; link to the signup page.}
 
 % -------------------------------------------------------------------
 % 3. Student dashboard
 % -------------------------------------------------------------------
-\uiscreen{Screen 3 --- Student Dashboard (\texttt{/dashboard})}{%
-  Stat cards: credit balance, active VMs, total usage.
-  Running VMs table with plan badge, status badge, SSH port.
-  Recent credit-transaction history with debit/credit amounts.
-  Usage-trend chart (Donut or sparkline) and credit-allocation section.}
+\uifig{ui-03-dashboard.png}{Screen 3: Student Dashboard (\texttt{/dashboard})}{%
+  Stat cards for active VMs, credit balance, and 24-hour average CPU and
+  memory. ``Your usage over time'' chart with CPU/Memory and 1h/6h/24h/7d
+  selectors, plan-distribution donut, the user's VM table, and recent
+  credit activity.}
 
 % -------------------------------------------------------------------
 % 4. VM list and launch
 % -------------------------------------------------------------------
-\uiscreen{Screen 4 --- VM List \& Launch (\texttt{/pods})}{%
-  List of the user's VMs with plan, status, SSH port, and action buttons
-  (Open Terminal, Open VSCode, Stop).
-  ``Launch VM'' button opens a confirmation dialog.
-  Plan selector (Small / Medium / Large) with resource and credit-rate details.
-  Availability gauge showing current cluster headroom.}
+\uifig{ui-04-pods.png}{Screen 4: VM List \& Launch (\texttt{/pods})}{%
+  Cluster-availability cards (free CPU, memory, storage, queue depth),
+  the launch form with its resource-plan selector (Small / Medium / Large)
+  and base-image selector (Ubuntu, Python/ML, C/C++, Java), estimated cost,
+  and the user's VM list with Active/History/All filters.}
 
 % -------------------------------------------------------------------
 % 5. VM detail --- Overview tab
 % -------------------------------------------------------------------
-\uiscreen{Screen 5 --- VM Detail: Overview Tab (\texttt{/pods/[id]})}{%
-  VM header: name, plan badge, running/stopped status indicator.
-  Tabs: Overview, Terminal, Files.
-  Overview tab: SSH connection details (host, port, username, copy button),
-  Live Metrics panel (CPU \%, memory \% bars updated via SSE),
-  VM uptime and credit-burn rate.}
+\uifig{ui-05-vm-overview.png}{Screen 5: VM Detail --- Overview Tab (\texttt{/pods/[id]})}{%
+  VM header with ID and status badge; Overview / Terminal / Files tabs;
+  Specifications panel (vCPU, memory, disk, plan, namespace, node, image);
+  Access panel showing the generated SSH command, port, and masked password,
+  plus an ``Open in VS Code'' launcher; Live Metrics panel streaming CPU and
+  memory over SSE (note the \emph{Streaming} indicator); Billing panel with
+  rate, accrued session cost, and total uptime; and the TimescaleDB-backed
+  usage-history chart with CPU/Memory and 1h/6h/24h/7d selectors.
+  Captured against a running VM.}
 
 % -------------------------------------------------------------------
 % 6. VM detail --- Terminal tab
 % -------------------------------------------------------------------
-\uiscreen{Screen 6 --- VM Detail: Terminal Tab (\texttt{/pods/[id]?tab=terminal})}{%
-  Full-height xterm.js terminal panel connected via WebSocket to the VM.
-  Tab bar showing active terminal sessions; ``New terminal'' button.
-  Terminal resize handles; reconnect status indicator on disconnect.}
+\uifig{ui-06-vm-terminal.png}{Screen 6: VM Detail --- Terminal Tab (\texttt{/pods/[id]?tab=terminal})}{%
+  Full-height xterm.js terminal attached to the VM over a WebSocket, showing
+  the session tab bar with its \emph{Connected} status badge and a
+  ``new terminal'' control. The transcript shows the Ubuntu 22.04.5 login
+  banner followed by \texttt{uname -a} and \texttt{ls -la} executed inside
+  the container, confirming a live interactive shell rather than a rendered
+  mock-up.}
 
 % -------------------------------------------------------------------
 % 7. Credits page
 % -------------------------------------------------------------------
-\uiscreen{Screen 7 --- Credits (\texttt{/credits})}{%
-  Credit balance card (large balance display).
-  Transaction history table: timestamp, description, VM ID, amount (debit/credit).
-  Low-balance warning banner when balance is below threshold.
-  For professors: student credit-allocation form (select user, enter amount).}
+\uifig{ui-07-credits.png}{Screen 7: Credits (\texttt{/credits})}{%
+  Credit-balance display and the transaction-history table listing
+  timestamp, description, source VM, and debit/credit amount.}
 
 % -------------------------------------------------------------------
 % 8. Admin console
 % -------------------------------------------------------------------
-\uiscreen{Screen 8 --- Admin Console (\texttt{/admin})}{%
-  Overview tab: stats cards (total users, active VMs, total credits issued).
-  Active VMs table with user, plan, node, uptime columns.
-  Users tab: searchable user table with role badges; role-change dropdown;
-  credit-allocation control.
-  Nodes tab: Kubernetes node inventory with CPU/memory capacity.}
+\uifig{ui-08-admin.png}{Screen 8: Admin Console --- Overview (\texttt{/admin})}{%
+  Platform stat cards (total users, active VMs, all-time VMs, compute nodes)
+  and the full tab bar: Overview, Users, Requests, Active VMs, Issues,
+  Plans, Templates, Nodes, and Audit log. The Overview tab pairs a recent
+  activity feed --- API route, outcome status code, and relative timestamp
+  --- with a cluster-pressure panel showing reserved CPU and memory against
+  capacity and node readiness.}
+
+\uifig{ui-08b-admin-users.png}{Screen 8b: Admin Console --- Users Tab}{%
+  Registered-user table with avatar, name, email, role badge, join date,
+  and per-row administrative actions, backing the role-management and
+  credit-allocation flows.}
+
+\uifig{ui-08c-admin-nodes.png}{Screen 8c: Admin Console --- Nodes Tab}{%
+  Kubernetes node inventory with All / Ready / Not-ready filters, listing
+  each node's status and its CPU, memory, and pod capacity.}
 
 % -------------------------------------------------------------------
 % 9. Teacher console
 % -------------------------------------------------------------------
-\uiscreen{Screen 9 --- Teacher (Professor) Console (\texttt{/teacher})}{%
-  Course-student list with individual credit balances.
-  Bulk credit-allocation form.
-  Student VM activity overview for the professor's course.}
+\uifig{ui-09-teacher.png}{Screen 9: Teacher (Professor) Console (\texttt{/teacher})}{%
+  Summary cards for the professor's own credit balance, enrolled student
+  count, and total credits already allocated. Beneath them, the searchable
+  student roster lists each student's name, email, and current balance with
+  a per-row ``Allocate'' action, implementing the delegated
+  credit-distribution model in which an administrator funds a professor,
+  who in turn funds students.}
+
+\noindent\textbf{Remark on role gating.}
+The \texttt{/admin} and \texttt{/teacher} routes are gated independently
+rather than by a single privilege hierarchy, and this was verified from
+three directions. A \texttt{Student} account is redirected to
+\texttt{/dashboard} from both routes; the \texttt{Admin} account reaches
+\texttt{/admin} but is \emph{also} redirected away from \texttt{/teacher};
+and the \texttt{Teacher} account reaches \texttt{/teacher}. Each console is
+therefore gated on its own specific role, so elevation to administrator
+does not confer access to the professor console.
 
 % -------------------------------------------------------------------
 % 10. Queue page
 % -------------------------------------------------------------------
-\uiscreen{Screen 10 --- VM Queue (\texttt{/pods/queue})}{%
-  Queue entry card showing position, requested plan, and estimated wait.
-  Cancel queue entry button.
-  Rendered when all cluster capacity is occupied and the VM request is queued.}
+\uifig{ui-10-queue.png}{Screen 10: VM Queue (\texttt{/pods/queue})}{%
+  Queue view, shown in its empty state --- the cluster had spare capacity
+  at capture time, so no requests were waiting. When capacity is exhausted,
+  this screen lists each queued request with its position, requested plan,
+  and a cancel control.}
 
 % -------------------------------------------------------------------
 % 11. Settings --- SSH keys
 % -------------------------------------------------------------------
-\uiscreen{Screen 11 --- Settings: SSH Keys (\texttt{/settings/ssh-keys})}{%
-  List of registered SSH public keys with name, fingerprint, and creation date.
-  ``Add SSH key'' form (name + public key textarea).
-  Delete key button with confirmation.}
+\uifig{ui-11-ssh-keys.png}{Screen 11: Settings --- SSH Keys (\texttt{/settings/ssh-keys})}{%
+  Registered SSH public keys with name, fingerprint, and creation date;
+  the ``Add SSH key'' form; and per-key deletion controls.}
 
 % -------------------------------------------------------------------
 % 12. Signup / email verification
 % -------------------------------------------------------------------
-\uiscreen{Screen 12 --- Signup \& Email Verification (\texttt{/signup}, \texttt{/verify-email})}{%
-  Signup form: first name, last name, email, password, role selector
-  (Student / Teacher).
-  Password-policy feedback (min 12 chars, upper, lower, digit).
-  Verification-code entry screen after signup; resend code link.}
+\uifig{ui-12-signup.png}{Screen 12: Signup (\texttt{/signup})}{%
+  Registration form with name, email, and password fields and the
+  password-policy feedback. The subsequent verification-code screen
+  (\texttt{/verify-email}) is reachable only by completing a registration
+  and was therefore not captured.}
 
 \end{document}
