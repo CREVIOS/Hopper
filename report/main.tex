@@ -285,6 +285,48 @@ infrastructure provisioning. \\
 
 \end{longtable}
 \normalsize
+
+\subsection{Verified Feature Inventory}
+For completeness, the repository was also audited feature-by-feature across the
+frontend routes, API routers, service modules, and tests. The following
+inventory is ordered intentionally: the major product capabilities appear first,
+followed by the secondary or supporting capabilities that complete the current
+application.
+
+\textbf{Major product capabilities}
+\begin{enumerate}[leftmargin=*,label=\arabic*.]
+    \item \textbf{VM provisioning and lifecycle management}: launch VM-style pod sessions from the web UI; choose a plan (\texttt{small}, \texttt{medium}, \texttt{large}); choose a base image/template (Ubuntu, Python, C/C++, Java); view session lists and detail pages; and terminate running sessions.
+    \item \textbf{Interactive development access}: connect over SSH, open an in-browser terminal backed by a pseudo-terminal WebSocket, and open a browser-based VS Code/code-server workspace through the authenticated backend proxy.
+    \item \textbf{Queue-based admission control}: when cluster capacity is unavailable, launch requests are queued rather than rejected; users can view queue position and queue depth, queued sessions start automatically as capacity frees up, and still-queued requests can be cancelled.
+    \item \textbf{Credit-based billing}: the platform maintains per-user balances, deducts usage charges while sessions run, stops billing when a session stops, exposes transaction history and spend analytics, warns users about low balances, estimates remaining runtime from current burn rate, and terminates sessions automatically when credits are exhausted.
+    \item \textbf{Usage monitoring}: the dashboard and pod pages expose real-time and historical CPU and memory metrics, per-pod usage charts, per-user aggregated usage summaries, recent activity summaries, and plan-distribution or spend visualizations.
+    \item \textbf{Role-based operation}: the application distinguishes student, professor, and admin roles and exposes different routes, permissions, and workflows to each role.
+    \item \textbf{Authentication and account management}: local email/password sign-in, Keycloak-backed OIDC sign-in, signup, email verification, password reset, token refresh, logout, and current-user session introspection are all implemented.
+    \item \textbf{Teacher workflow}: professors can open a dedicated teaching console, inspect searchable student lists, view student balances, and allocate credits from their own funded budget to students.
+    \item \textbf{Administrative workflow}: administrators can inspect platform statistics, active VMs, cluster nodes, users, teacher-approval requests, issue reports, audit logs, and role-management controls, and they can allocate credits to users.
+\end{enumerate}
+
+\textbf{Remaining confirmed capabilities}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Provisioning constraints}: a user can run at most three concurrent VMs; cluster availability is exposed as free CPU, memory, storage, ready-node count, and queue length.
+    \item \textbf{Network-aware placement}: \texttt{network\_group} placement exists and is restricted to professor or admin initiated sessions.
+    \item \textbf{Dashboard UX}: the student dashboard includes active-VM counts, credit balance, average CPU and memory summaries, plan-distribution charts, recent VM activity, recent credit activity, and low-balance banners.
+    \item \textbf{Queue UX}: the queue page refreshes positions over time, distinguishes queued from admitting entries, and exposes cancel controls only while cancellation is still valid.
+    \item \textbf{Workspace detail UX}: the pod-detail page exposes overview, terminal, and files tabs; access details such as SSH port and password; a VS Code launcher; live metrics; billing panels; and historical usage charts.
+    \item \textbf{File management}: users can browse directories inside a running VM, upload files, and download files, with path-safety validation and ownership enforcement.
+    \item \textbf{SSH-key management}: users can add, list, and delete SSH public keys; fingerprints are computed and displayed; duplicate keys are rejected; and a per-user limit of ten keys is enforced.
+    \item \textbf{Notification center}: users receive a notification feed with unread counts, single-item and mark-all-as-read actions, and live Server-Sent Event delivery.
+    \item \textbf{Issue reporting}: users can report problems, optionally link them to a pod session, review their own submitted issues, and administrators can review and resolve those issues.
+    \item \textbf{API keys}: users can create, list, and revoke API keys for programmatic access, with role-sensitive restrictions retained at the API layer.
+    \item \textbf{Teacher approval}: signups requesting the teacher role are created as pending requests, then approved or rejected by administrators.
+    \item \textbf{Admin safeguards}: the admin role editor prevents invalid role assignments, self-demotion, and demotion of the last remaining administrator.
+    \item \textbf{Account recovery}: the application supports email-code verification, resend-code flows, forgot-password initiation, and password reset confirmation.
+    \item \textbf{Landing and onboarding pages}: the frontend includes a public landing page, login page, signup page, email-verification page, forgot-password page, and authenticated dashboards.
+    \item \textbf{Security controls}: domain-restricted signup is supported, password-policy checks are mirrored before Keycloak submission, rate limiting is applied to authentication and VM-creation flows, and secure cookie handling is used for browser sessions.
+    \item \textbf{Observability and operations}: the repository includes Prometheus, Grafana, Loki, audit logging, health-oriented operational endpoints, and broad unit, integration, end-to-end, load, chaos, and security testing coverage.
+    \item \textbf{Developer/test-only helper}: a dedicated development login route exists for local or automated test workflows and is not part of the normal production user flow.
+\end{itemize}
+
 \subsection{Tech Stack Overview}
 The frontend uses SvelteKit 2, Svelte 5, TypeScript, and Vite to support server-rendered routes, interactive dashboards, and reusable authenticated components. State is managed through Svelte writable stores, derived state, and route-level server load functions.
 
