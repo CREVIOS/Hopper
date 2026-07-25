@@ -1,0 +1,2152 @@
+{
+  "info": {
+    "_postman_id": "34cf4110-a38c-54f3-8c3b-a92defcbb848",
+    "name": "Hopper API",
+    "description": "# Hopper API\n\nVM Cloud Platform — Slice & share compute resources\n\nHopper slices a Kubernetes cluster into per-student VMs with credit-based\nbilling. This collection is generated from the gateway's OpenAPI spec, so it\nmatches the deployed API exactly.\n\n## Getting started\n\n1. Select the **Hopper — Production** environment (top-right).\n2. Set `userEmail` and `userPassword` to your account.\n3. Send **1. Auth & API keys → Login**. That is all the setup there is — the\n   `session_token` cookie lands in Postman's cookie jar and every other request\n   uses it automatically.\n\n## The two ways to authenticate\n\n**Session cookie** (what `Login` gives you) — httpOnly, expires in ~5 minutes,\nrefreshed via `Refresh session`. Best for clicking around.\n\n**API key** — send `X-API-Key: hop_...` (or `Authorization: Bearer hop_...`).\nCreate one with **Create API key** while logged in; the test script stores it in\nthe `apiKey` variable and the collection then prefers it over the cookie.\nBest for scripts and CI.\n\nCollection-level auth is configured as the API-key header. When `apiKey` is\nempty the gateway ignores the header and falls back to the cookie, so both\npaths work without you changing any settings.\n\nTwo constraints worth knowing before you debug a confusing 4xx:\n- A `read_only` key is rejected with **403** on anything that is not\n  GET/HEAD/OPTIONS.\n- Creating or revoking API keys deliberately requires a cookie session, so an\n  API key cannot mint another API key. Log in first.\n\n## Variables\n\n`baseUrl` and credentials live in the environment. Resource ids\n(`podId`, `userId`, `keyId`, ...) are collection variables that the test scripts\nfill in as you go — create a VM and the rest of the pods folder targets it\nwithout you copying anything.\n\n## Rate limits\n\nPer-user for cookie sessions and per-key for API keys, so a script cannot\nexhaust your browser session's budget. Login is 10/min, and 3 failed sign-ins\nper (IP, email) trips a temporary block. A 429 carries `X-RateLimit-*` headers.\n\n## Regenerating\n\n```\npython scripts/api/generate_postman.py\n```\n\nRe-run it after changing any route or schema and commit the result.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Applies to every request in the collection.",
+          "pm.test('No server error', function () {",
+          "  pm.expect(pm.response.code, 'HTTP status').to.be.below(500);",
+          "});",
+          "",
+          "if (pm.response.code === 401) {",
+          "  console.warn('401 - run \"Login\" first, or set apiKey. Sessions expire after ~5 minutes.');",
+          "}",
+          "if (pm.response.code === 403) {",
+          "  console.warn('403 - insufficient role, or a read_only API key on a write request.');",
+          "}",
+          "if (pm.response.code === 429) {",
+          "  console.warn('429 - rate limited. Retry-After:', pm.response.headers.get('Retry-After'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://hopper.farefin.com/api",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "podId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "keyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "queueEntryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "issueId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "planName",
+      "value": "small",
+      "type": "string"
+    },
+    {
+      "key": "imageTemplate",
+      "value": "ubuntu",
+      "type": "string"
+    },
+    {
+      "key": "vscodePath",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Auth & API keys",
+      "id": "e31ddf75-0fed-5722-99a9-9eaac09d7109",
+      "description": "Start here. `Login` seeds Postman's cookie jar with the `session_token` cookie and everything else in this collection will then work.\n\nFor scripted access, run `Create API key` once while logged in, paste the returned `key` into the `apiKey` environment variable, and requests will authenticate with the `X-API-Key` header instead of the cookie. Note that a `read_only` key is rejected on anything other than GET/HEAD/OPTIONS.",
+      "item": [
+        {
+          "name": "Login via SSO (browser)",
+          "id": "80385a7b-320a-583b-8eb4-299c3f90d5ea",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Browser-only. Redirects to Keycloak for the SSO flow. Use `POST /auth/login` from Postman instead.\n\nBegin OIDC auth with PKCE + state + nonce.\n\n`GET /auth/login`"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "id": "b4157d09-c92b-5318-b76c-8efe0acf42aa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Direct email + password grant. Responds with the user object and sets the httpOnly `session_token` cookie, which Postman stores automatically — you do not need to copy a token anywhere.\n\nSet `userEmail` and `userPassword` in your environment first. Passwords must be at least 12 characters to satisfy the Keycloak realm policy.\n\nRate limited to 10/min, and 3 *failed* attempts per (IP, email) trips a temporary 429 block.\n\nThemed email + password login (direct grant). The GET /login above keeps\nthe OIDC redirect flow for SSO.\n\n`POST /auth/login`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeded', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const me = pm.response.json();",
+                  "  pm.collectionVariables.set('userId', me.id);",
+                  "  console.log('Signed in as', me.email, '- role:', me.role);",
+                  "  console.log('The session_token cookie is now in the jar; other requests will use it.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign up",
+          "id": "96612c05-014f-57e9-ad48-3b43c006cb88",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Self-service signup. Students activate immediately; teachers are created\nas students with pending_teacher=true, awaiting admin approval.\n\n`POST /auth/signup`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"name\": \"Ada Lovelace\",\n  \"role\": \"student\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify email",
+          "id": "0941f90b-8a1a-539d-b9d0-7fb42cc06f11",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify-email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "verify-email"
+              ]
+            },
+            "description": "Confirm a signup verification code and mark the account email-verified.\nOn success the client logs in normally (POST /auth/login).\n\n`POST /auth/verify-email`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resend code",
+          "id": "3b355251-4639-523d-8fd0-662aaab1ed3c",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/resend-code",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "resend-code"
+              ]
+            },
+            "description": "Re-send a verification code for a not-yet-verified signup. Always returns\n200 (never reveals whether the account exists / is already verified).\n\n`POST /auth/resend-code`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"purpose\": \"verify_email\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot password",
+          "id": "1f20848f-cbae-532a-b879-270879408963",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Begin a password reset. Always returns 200 so the response can't be used\nto enumerate which emails have accounts.\n\n`POST /auth/forgot-password`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset password",
+          "id": "ce58ba1f-386c-570d-a83c-cb477d6ec64e",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Complete a password reset with the emailed code, then set the new\npassword in Keycloak. The client logs in afterwards.\n\n`POST /auth/reset-password`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"code\": \"123456\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "SSO callback (browser)",
+          "id": "2d562af2-84e3-54bb-a1ea-f97d3cda0970",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/callback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "callback"
+              ],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "",
+                  "description": "Code",
+                  "disabled": true
+                },
+                {
+                  "key": "state",
+                  "value": "",
+                  "description": "State",
+                  "disabled": true
+                },
+                {
+                  "key": "error",
+                  "value": "",
+                  "description": "Error",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Browser-only. Keycloak redirects here after SSO; not callable directly.\n\nHandle OIDC callback — verify state, exchange with PKCE, gate by domain.\n\n`GET /auth/callback`"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh session",
+          "id": "437b8f17-bb0a-58cf-ba48-3e31d538e6cd",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Use the refresh_token cookie to mint a new access token.\n\nOrigin is checked even though the cookie is HttpOnly — defence-in-depth\nagainst a CSRF flow that drives the browser to /auth/refresh from a\nmalicious origin in our CORS allowlist.\n\n`POST /auth/refresh`"
+          },
+          "response": []
+        },
+        {
+          "name": "Current user",
+          "id": "1eae0af8-eda2-59de-a1cc-f1c0d7bfd0e1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "`GET /auth/me`"
+          },
+          "response": []
+        },
+        {
+          "name": "Log out",
+          "id": "c34d34f4-8942-5444-9027-9ddcbc0ba51b",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "RP-initiated logout against Keycloak.\n\nRevokes the refresh token, clears local cookies, and redirects to the\nKeycloak `end_session_endpoint` so the SSO session is also killed. Without\nthis, the user can hit /auth/login and be SSO'd back in without entering\ncredentials.\n\n`POST /auth/logout`"
+          },
+          "response": []
+        },
+        {
+          "name": "List API keys",
+          "id": "8e7c5972-c60b-5d08-b354-c9729788f84a",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "api-keys"
+              ]
+            },
+            "description": "List the caller's API keys (prefix only — secrets are never stored).\n\n`GET /auth/api-keys`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create API key",
+          "id": "6aaa8840-49c8-5c7a-a958-a78993bc1555",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "api-keys"
+              ]
+            },
+            "description": "Returns the plaintext key **once** — only its SHA-256 hash is stored, so a lost key must be revoked and recreated. The test script saves it into the `apiKey` variable for you.\n\nRequires a real cookie session: you cannot mint a new key using an existing API key. `read_only` scope is restricted to GET/HEAD/OPTIONS; use `full_access` if you need to create or delete things.\n\nGenerate a scoped API key. The plaintext key is returned ONCE here and\nonly its SHA-256 hash is stored — copy it now or revoke and re-create.\n\n`POST /auth/api-keys`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"postman\",\n  \"scope\": \"read_only\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('API key created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  // The plaintext key is returned exactly once. Store it now.",
+                  "  pm.collectionVariables.set('apiKey', body.key);",
+                  "  console.log('Saved apiKey. Copy it somewhere safe - it is not retrievable again.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke API key",
+          "id": "7b20613c-f991-5337-88ad-742da494bd29",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/api-keys/{{keyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "api-keys",
+                "{{keyId}}"
+              ]
+            },
+            "description": "Revoke one of the caller's API keys (soft delete, idempotent).\n\nSet `{{keyId}}` in your environment or let an earlier request populate it.\n\n`DELETE /auth/api-keys/{key_id}`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. VMs (pods)",
+      "id": "8494f5dd-a051-5b6d-b6a5-4f7957bb87c0",
+      "description": "A pod is a VM. `Create VM` returns immediately and the VM boots asynchronously, so poll `Get VM` until `state` is `running`.\n\nIf the cluster is full the request is queued rather than rejected — check `Queue position` and `Availability`. `Create VM` saves the new id into the `podId` variable, so the rest of this folder targets it without editing.",
+      "item": [
+        {
+          "name": "List plans",
+          "id": "9017962d-4b3e-58de-9be8-a383c3291978",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "plans"
+              ]
+            },
+            "description": "List available VM plans (admin-managed catalogue) with resources + pricing.\n\n`GET /pods/plans`"
+          },
+          "response": []
+        },
+        {
+          "name": "List base images",
+          "id": "cf8a3b18-63cb-5016-8588-b321c136047e",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/templates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "templates"
+              ]
+            },
+            "description": "List available (active) VM templates with their resolved image + metadata.\n\n`GET /pods/templates`"
+          },
+          "response": []
+        },
+        {
+          "name": "List VMs",
+          "id": "44fc124e-fa55-56fb-8cc5-1457d239a150",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                ""
+              ]
+            },
+            "description": "List VMs for the current user.\n\n`GET /pods/`"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Listed VMs', () => pm.response.to.have.status(200));",
+                  "const pods = pm.response.code === 200 ? pm.response.json() : [];",
+                  "if (Array.isArray(pods) && pods.length && !pm.collectionVariables.get('podId')) {",
+                  "  pm.collectionVariables.set('podId', pods[0].id);",
+                  "  console.log('Seeded podId from the first VM:', pods[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create VM",
+          "id": "a051a226-52a9-5577-9ebd-9a250c570c8c",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pods/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                ""
+              ]
+            },
+            "description": "Creates a VM. Returns immediately — the VM boots asynchronously, so poll `Get VM` until `state` is `running`.\n\nIf the cluster has no room the request is admitted to a queue instead of failing; the response carries a queue position. `plan` is one of `small`, `medium`, `large`. `template` is one of `ubuntu`, `python-ml`, `cpp`, `java`. Leave `image` null to use the template's default image.\n\nCreate a new VM instance.\n\nThis allocates a slice of the host machine's CPU/RAM to the user as an\nisolated container with SSH access. Resources are capped by the chosen plan.\n\n`POST /pods/`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"small\",\n  \"template\": \"ubuntu\",\n  \"image\": null,\n  \"network_group\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('VM accepted', () => pm.expect(pm.response.code).to.be.oneOf([200, 201, 202]));",
+                  "if (pm.response.code < 300) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.id) {",
+                  "    pm.collectionVariables.set('podId', body.id);",
+                  "    console.log('Saved podId =', body.id, '- state:', body.state);",
+                  "  }",
+                  "  if (body.queue_position !== undefined && body.queue_position !== null) {",
+                  "    console.log('Cluster is full; queued at position', body.queue_position);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cluster availability",
+          "id": "540ccc2d-df62-55c0-9785-b4eceba02d87",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "availability"
+              ]
+            },
+            "description": "Free capacity across the cluster. A VM reserves a quarter of its plan's CPU and bursts to the full limit when cores are idle, so the reserved figure is what admission actually checks against.\n\nBest-effort cluster capacity readout for the VM create UI.\n\nNever 500s: if the orchestrator is unreachable the capacity fields come\nback null while the queue length (read straight from the DB) stays real.\n\n`GET /pods/availability`"
+          },
+          "response": []
+        },
+        {
+          "name": "Queue position",
+          "id": "b68ca6b6-86fe-573c-b8e5-f57157766a27",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "queue"
+              ]
+            },
+            "description": "List the caller's own pending queue entries (queued/admitting).\n\n`GET /pods/queue`"
+          },
+          "response": []
+        },
+        {
+          "name": "Leave the queue",
+          "id": "b36ce06a-b88a-5146-8351-f28c1985b833",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/queue/{{queueEntryId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "queue",
+                "{{queueEntryId}}"
+              ]
+            },
+            "description": "Cancel a still-queued VM request owned by the caller.\n\nOnly a 'queued' entry can be cancelled: once it is 'admitting' the\norchestrator create is already in flight, so we refuse with 409.\n\nSet `{{queueEntryId}}` in your environment or let an earlier request populate it.\n\n`DELETE /pods/queue/{entry_id}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Get VM",
+          "id": "45a85bff-3f4f-565e-91e5-75dd77f86895",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/{{podId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "{{podId}}"
+              ]
+            },
+            "description": "Get VM details.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`GET /pods/{pod_id}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Terminate VM",
+          "id": "85e58b16-03fa-596a-b7ca-6fd1e3c6b3e9",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/{{podId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "{{podId}}"
+              ]
+            },
+            "description": "Terminate a VM.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`DELETE /pods/{pod_id}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Stream VM metrics",
+          "id": "3a0d7204-9913-5dcb-93f2-cecf3a443c09",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pods/{{podId}}/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pods",
+                "{{podId}}",
+                "metrics"
+              ]
+            },
+            "description": "Stream CPU/RAM metrics via SSE.\n\nThe orchestrator publishes metrics on subject ``metrics.<pod_name>`` where\npod_name is the orchestrator-side identifier (``vm-<unix_nano>``), not the\nAPI UUID we use in URLs. We resolve session.pod_name here so the\nsubscription actually matches what's being published.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`GET /pods/{pod_id}/metrics`"
+          },
+          "response": []
+        },
+        {
+          "name": "VS Code proxy (browser-only)",
+          "id": "3867059d-1074-5ec2-a3e8-906891c7eecc",
+          "description": "Passthrough to the code-server running inside a VM. These exist so the browser IDE works through the gateway; calling them from Postman is rarely useful.",
+          "item": [
+            {
+              "name": "VS Code proxy — GET",
+              "id": "0c9d4b02-b924-504a-becf-6ad815f5c3ad",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pods/{{podId}}/vscode/{{vscodePath}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pods",
+                    "{{podId}}",
+                    "vscode",
+                    "{{vscodePath}}"
+                  ]
+                },
+                "description": "Set `{{podId}}`, `{{vscodePath}}` in your environment or let an earlier request populate it.\n\n`GET /pods/{pod_id}/vscode/{path}`"
+              },
+              "response": []
+            },
+            {
+              "name": "VS Code proxy — POST",
+              "id": "8e516f9d-bf68-5b1c-84d3-5ea1d983ffad",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pods/{{podId}}/vscode/{{vscodePath}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pods",
+                    "{{podId}}",
+                    "vscode",
+                    "{{vscodePath}}"
+                  ]
+                },
+                "description": "Set `{{podId}}`, `{{vscodePath}}` in your environment or let an earlier request populate it.\n\n`POST /pods/{pod_id}/vscode/{path}`"
+              },
+              "response": []
+            },
+            {
+              "name": "VS Code proxy — PUT",
+              "id": "27e3210e-69d1-551e-a53d-ebd5d2cfd8ce",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pods/{{podId}}/vscode/{{vscodePath}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pods",
+                    "{{podId}}",
+                    "vscode",
+                    "{{vscodePath}}"
+                  ]
+                },
+                "description": "Set `{{podId}}`, `{{vscodePath}}` in your environment or let an earlier request populate it.\n\n`PUT /pods/{pod_id}/vscode/{path}`"
+              },
+              "response": []
+            },
+            {
+              "name": "VS Code proxy — DELETE",
+              "id": "3f79db4d-2fd8-5bf4-9316-b2d468edc6ba",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pods/{{podId}}/vscode/{{vscodePath}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pods",
+                    "{{podId}}",
+                    "vscode",
+                    "{{vscodePath}}"
+                  ]
+                },
+                "description": "Set `{{podId}}`, `{{vscodePath}}` in your environment or let an earlier request populate it.\n\n`DELETE /pods/{pod_id}/vscode/{path}`"
+              },
+              "response": []
+            },
+            {
+              "name": "VS Code proxy — PATCH",
+              "id": "e47b2f8c-1151-51f0-8077-97bafb687054",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pods/{{podId}}/vscode/{{vscodePath}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pods",
+                    "{{podId}}",
+                    "vscode",
+                    "{{vscodePath}}"
+                  ]
+                },
+                "description": "Set `{{podId}}`, `{{vscodePath}}` in your environment or let an earlier request populate it.\n\n`PATCH /pods/{pod_id}/vscode/{path}`"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Credits",
+      "id": "b89a97fa-9746-5fd8-8ffb-1d8ac36f2679",
+      "description": "Credit balances and transfers. Admins allocate to teachers, teachers allocate to their students. VMs bill per hour against the owner's balance while they are in the `running` state.",
+      "item": [
+        {
+          "name": "My balance",
+          "id": "433298d6-d236-5478-9362-54aacf6875be",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credits/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credits",
+                "balance"
+              ]
+            },
+            "description": "Get current credit balance.\n\n`GET /credits/balance`"
+          },
+          "response": []
+        },
+        {
+          "name": "Transaction history",
+          "id": "eedeca3e-4219-55cb-bb9c-2fdd873e1c3e",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credits/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credits",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Limit",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Offset",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get credit transaction history.\n\n`GET /credits/history`"
+          },
+          "response": []
+        },
+        {
+          "name": "List teachers",
+          "id": "33751d78-90be-57cb-ae0f-09a67b1424f7",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credits/teachers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credits",
+                "teachers"
+              ]
+            },
+            "description": "Teachers (professors) with balances — for the admin grant view.\n\n`GET /credits/teachers`"
+          },
+          "response": []
+        },
+        {
+          "name": "List students",
+          "id": "754f2539-2762-511b-86e0-f8e79acd73ad",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/credits/students",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credits",
+                "students"
+              ]
+            },
+            "description": "Students with balances — for the teacher allocation view.\n\n`GET /credits/students`"
+          },
+          "response": []
+        },
+        {
+          "name": "Allocate credits",
+          "id": "08f9aec2-ab34-5233-bb8d-6fa02970de79",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/credits/allocate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "credits",
+                "allocate"
+              ]
+            },
+            "description": "Admins allocate to teachers; teachers allocate to their own students. Allocating to a user outside your scope returns 403.\n\nCredit delegation, role-aware:\n\n- **admin** grants credits to a user from the system account (used to fund\n  teachers). This can't overdraw — the system account is the ledger source.\n- **professor** allocates from *their own* balance to a student, and is\n  rejected with 402 if they lack the credits.\n\n`POST /credits/allocate`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"amount\": 100,\n  \"description\": \"allocation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Usage & metrics",
+      "id": "79da7f02-a5bf-572d-995a-06947a4497ad",
+      "description": "Per-VM resource samples and the aggregated series behind the dashboard charts.",
+      "item": [
+        {
+          "name": "Usage for a VM",
+          "id": "02210ab5-477e-58ca-84ba-0fa4e5bdd6db",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usage/{{podId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usage",
+                "{{podId}}"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "1h",
+                  "description": "Range",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get time-series usage data for a pod.\n\nUses TimescaleDB time_bucket for efficient aggregation.\nFalls back to simple GROUP BY if TimescaleDB is not available.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`GET /usage/{pod_id}`"
+          },
+          "response": []
+        },
+        {
+          "name": "My usage series",
+          "id": "7ecc8da5-6260-5fa4-8d72-8074ec4b34fc",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usage/summary/me/series",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usage",
+                "summary",
+                "me",
+                "series"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "24h",
+                  "description": "Range",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Aggregated time-series across all of the current user's pods.\n\nUsed by the dashboard to show busyness over time instead of a single\nsnapshot. Bucket size scales with the requested range so the response\nstays small enough to render directly without client-side downsampling.\n\n`GET /usage/summary/me/series`"
+          },
+          "response": []
+        },
+        {
+          "name": "My usage summary",
+          "id": "6db04138-8d11-5569-a250-a370f58caf44",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usage/summary/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usage",
+                "summary",
+                "me"
+              ]
+            },
+            "description": "Get usage summary for the current user.\n\n`GET /usage/summary/me`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Files",
+      "id": "7d36daa2-bb42-5658-aea7-bd6a75773d24",
+      "description": "Browse, upload and download files inside a running VM's workspace.",
+      "item": [
+        {
+          "name": "List directory",
+          "id": "bc3e07e8-6cc5-5de4-ba2c-35d13f9dcc83",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{podId}}/list",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{podId}}",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "/home",
+                  "description": "Path",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List a directory inside the VM so the UI can render a browser.\n\nReturned entries: {name, is_dir, size, mtime}. Sorted: dirs first then\nfiles, both case-insensitive alpha. The path is quoted before being\ninlined into the remote command — never substituted raw — so a filename\nwith spaces or quotes can't break out of the ls argument.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`GET /files/{pod_id}/list`"
+          },
+          "response": []
+        },
+        {
+          "name": "Upload file",
+          "id": "414b3c9c-90b6-5968-82ae-4f06079d7440",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{podId}}/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{podId}}",
+                "upload"
+              ],
+              "query": [
+                {
+                  "key": "dest_path",
+                  "value": "/home",
+                  "description": "Dest Path",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "multipart/form-data. Pick a local file for the `file` form field in Postman's Body tab before sending; the exported collection cannot embed file contents.\n\nUpload a file to the VM via SCP.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`POST /files/{pod_id}/upload`",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Choose a local file in Postman's Body tab."
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download file",
+          "id": "30fca0f6-b0dc-52a5-b743-97079ff6b98b",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/files/{{podId}}/download?path=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "files",
+                "{{podId}}",
+                "download"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "",
+                  "description": "Path",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Download a file from the VM via SCP.\n\nSet `{{podId}}` in your environment or let an earlier request populate it.\n\n`GET /files/{pod_id}/download`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. SSH keys",
+      "id": "12965ddf-a772-5f1d-bd2b-0dd832d4cc08",
+      "description": "Public keys injected into VMs at boot so you can SSH in directly.",
+      "item": [
+        {
+          "name": "List SSH keys",
+          "id": "48db5052-a500-5992-854c-21fb989e6da4",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh-keys/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh-keys",
+                ""
+              ]
+            },
+            "description": "List user's SSH public keys.\n\n`GET /ssh-keys/`"
+          },
+          "response": []
+        },
+        {
+          "name": "Add SSH key",
+          "id": "06e8d430-3e0a-5638-a55d-e2e94c72b04d",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ssh-keys/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh-keys",
+                ""
+              ]
+            },
+            "description": "Add an SSH public key.\n\n`POST /ssh-keys/`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"laptop\",\n  \"public_key\": \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyReplaceMe you@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('keyId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete SSH key",
+          "id": "1a44d921-b411-5a02-a467-9e6215411620",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh-keys/{{keyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh-keys",
+                "{{keyId}}"
+              ]
+            },
+            "description": "Delete an SSH key.\n\nSet `{{keyId}}` in your environment or let an earlier request populate it.\n\n`DELETE /ssh-keys/{key_id}`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Settings",
+      "id": "a6d178a9-2fef-5f85-a6ae-7a464ccdf4b4",
+      "description": "Per-user preferences, currently the VS Code editor settings blob.",
+      "item": [
+        {
+          "name": "Read VS Code settings",
+          "id": "5739467f-dfff-5659-8f6d-8af8aa3af01e",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settings/vscode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "vscode"
+              ]
+            },
+            "description": "Return the user's persisted VS Code settings blob ({} if none saved).\n\n`GET /settings/vscode`"
+          },
+          "response": []
+        },
+        {
+          "name": "Save VS Code settings",
+          "id": "e7418ba6-a1a6-52d9-9055-de7bb522fd65",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/settings/vscode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settings",
+                "vscode"
+              ]
+            },
+            "description": "Persist the user's VS Code settings blob (per-user, upserted).\n\nPreviously this accepted the body and discarded it. It is now stored in the\nDB so it survives across sessions (a future enhancement can sync it into the\nVM's code-server config on launch).\n\n`PUT /settings/vscode`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"vs-dark\",\n  \"fontSize\": 14,\n  \"tabSize\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Notifications",
+      "id": "f03d5392-41b5-5a4b-b2df-babec52f063c",
+      "description": "In-app notifications. `Stream` is Server-Sent Events — Postman shows it as a long-running response rather than a normal JSON body.",
+      "item": [
+        {
+          "name": "List notifications",
+          "id": "7ebfd08e-6c80-5b6f-ba6c-1d0bad489dbe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Limit",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Recent notifications for the current user, newest first.\n\n`GET /notifications/`"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark all read",
+          "id": "48236ad8-21c4-5a43-b6c5-73e6c23a4e72",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "Mark every notification for the current user as read.\n\n`POST /notifications/read-all`"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark one read",
+          "id": "2fc634cf-2c04-5528-a458-af6336145461",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "Mark a single notification as read.\n\nSet `{{notificationId}}` in your environment or let an earlier request populate it.\n\n`POST /notifications/{notification_id}/read`"
+          },
+          "response": []
+        },
+        {
+          "name": "Stream notifications (SSE)",
+          "id": "882b52b1-2a8d-5f48-a21a-b70d3c8a2f17",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "stream"
+              ]
+            },
+            "description": "Server-Sent Events. This response never completes — Postman will show it streaming until you cancel it. That is expected, not a hang.\n\nLive notification stream (SSE) for the current user.\n\n`GET /notifications/stream`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Issues",
+      "id": "4767e642-7ecb-5376-bcb4-be9677af1300",
+      "description": "Student-reported problems and the admin queue that resolves them.",
+      "item": [
+        {
+          "name": "Report issue",
+          "id": "0099e4f9-c9ad-5a7e-8622-84cbf6e45a43",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/issues/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                ""
+              ]
+            },
+            "description": "Report a problem with an active session.\n\n`POST /issues/`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pod_id\": \"{{podId}}\",\n  \"description\": \"The VM is stuck in the provisioning state.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code < 300) {",
+                  "  const b = pm.response.json();",
+                  "  if (b.id) pm.collectionVariables.set('issueId', b.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My issues",
+          "id": "a5a2b96b-5ef7-58d0-b2a5-de4480655c82",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "me"
+              ]
+            },
+            "description": "`GET /issues/me`"
+          },
+          "response": []
+        },
+        {
+          "name": "All issues",
+          "id": "0a80225d-eca0-5383-b77d-5c990abf91d3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "admin"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Status",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "`GET /issues/admin`"
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve issue",
+          "id": "b5ca7a7d-a845-52c1-93af-2c6abfce2d56",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/admin/{{issueId}}/resolve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "admin",
+                "{{issueId}}",
+                "resolve"
+              ]
+            },
+            "description": "Set `{{issueId}}` in your environment or let an earlier request populate it.\n\n`POST /issues/admin/{issue_id}/resolve`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Admin",
+      "id": "cc762e5b-0c30-5af3-8c83-588f46394d19",
+      "description": "Admin-only. A non-admin session gets 403 on every request in this folder.\n\nCovers user and role management, teacher approvals, the plan and image catalogues, cluster nodes, audit logs and platform stats.",
+      "item": [
+        {
+          "name": "List users",
+          "id": "e41d4cb8-33b3-50f4-80f7-dcb3bff1c1cb",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ]
+            },
+            "description": "List all users (admin only).\n\n`GET /admin/users`"
+          },
+          "response": []
+        },
+        {
+          "name": "Pending teacher requests",
+          "id": "a49effb3-5e42-55e4-9db6-6d019fc404df",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/teacher-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "teacher-requests"
+              ]
+            },
+            "description": "Users who signed up as a teacher and await approval (admin only).\n\n`GET /admin/teacher-requests`"
+          },
+          "response": []
+        },
+        {
+          "name": "Approve teacher",
+          "id": "90c8261b-3e45-579d-b1c2-9a745edd8f6e",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/teacher-requests/{{userId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "teacher-requests",
+                "{{userId}}",
+                "approve"
+              ]
+            },
+            "description": "Approve a pending teacher: promote to professor and clear the flag.\n\nSet `{{userId}}` in your environment or let an earlier request populate it.\n\n`POST /admin/teacher-requests/{user_id}/approve`"
+          },
+          "response": []
+        },
+        {
+          "name": "Reject teacher",
+          "id": "86e5dd58-35ac-52ca-a912-acb5da1aee51",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/teacher-requests/{{userId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "teacher-requests",
+                "{{userId}}",
+                "reject"
+              ]
+            },
+            "description": "Reject a pending teacher: clear the flag, the user stays a student.\n\nSet `{{userId}}` in your environment or let an earlier request populate it.\n\n`POST /admin/teacher-requests/{user_id}/reject`"
+          },
+          "response": []
+        },
+        {
+          "name": "List courses",
+          "id": "824273a5-80d8-5a40-a0c2-767bba248991",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "courses"
+              ]
+            },
+            "description": "List courses and their resource quotas.\n\nNot yet implemented — no course model in the DB.\nReturns an empty list for the POC.\n\n`GET /admin/courses`"
+          },
+          "response": []
+        },
+        {
+          "name": "List cluster nodes",
+          "id": "600c9d16-1b78-5fd0-8fcd-eafe214b8cfb",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/nodes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "nodes"
+              ]
+            },
+            "description": "List compute nodes and their resource usage.\n\nCalls the orchestrator's ListNodes gRPC to get real K8s node info\nincluding CPU/memory capacity, allocatable resources, and pod counts.\n\n`GET /admin/nodes`"
+          },
+          "response": []
+        },
+        {
+          "name": "Platform stats",
+          "id": "37fd129d-141c-5115-83a0-ddecc2d3b7a3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stats"
+              ]
+            },
+            "description": "Dashboard stats: total users, active VMs, etc.\n\n`GET /admin/stats`"
+          },
+          "response": []
+        },
+        {
+          "name": "Active VMs",
+          "id": "e2fb382a-1398-5967-8cf8-8e83046aad01",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/active-vms",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "active-vms"
+              ]
+            },
+            "description": "List currently active VMs across all users with owner email/name.\n\n`GET /admin/active-vms`"
+          },
+          "response": []
+        },
+        {
+          "name": "Change user role",
+          "id": "4b1403ec-d6d4-5287-a990-25433623c3da",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{userId}}/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{userId}}",
+                "role"
+              ]
+            },
+            "description": "Change a user's app role.\n\nUpdates Keycloak (canonical source) first, then mirrors to the local\n`users.role` column, then force-logs-out the user so their next request\nreceives a JWT with the new role. Refuses to:\n  - demote yourself\n  - drop the admin count to zero\n  - assign an unknown role\nWrites an audit_logs row with old/new role for accountability.\n\nSet `{{userId}}` in your environment or let an earlier request populate it.\n\n`PATCH /admin/users/{user_id}/role`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"teacher\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Audit logs",
+          "id": "414631c1-40a3-5184-b730-1936c0ae3a31",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Limit",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Offset",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "View audit logs (admin only).\n\n`GET /admin/audit-logs`"
+          },
+          "response": []
+        },
+        {
+          "name": "List plans (catalogue)",
+          "id": "962753aa-9879-5fae-a7d9-9b3d6b7a055a",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "plans"
+              ]
+            },
+            "description": "List every plan, including inactive ones (admin view).\n\n`GET /admin/plans`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create plan",
+          "id": "9f577a12-3e5a-5286-8979-5ef2f11271f6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "plans"
+              ]
+            },
+            "description": "Create a new VM plan.\n\n`POST /admin/plans`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"xlarge\",\n  \"display_name\": \"Extra Large\",\n  \"cpu\": \"8\",\n  \"memory\": \"16Gi\",\n  \"disk\": \"40Gi\",\n  \"credits_per_hour\": 8.0,\n  \"workspace_gb\": 200\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update plan",
+          "id": "8406d0db-dc0e-523d-bd3b-b24ceb145225",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plans/{{planName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "plans",
+                "{{planName}}"
+              ]
+            },
+            "description": "Update a plan's resources / pricing / active flag (name is immutable).\n\nSet `{{planName}}` in your environment or let an earlier request populate it.\n\n`PUT /admin/plans/{name}`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display_name\": \"Extra Large\",\n  \"credits_per_hour\": 8.0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete plan",
+          "id": "8a017217-7928-5139-adc7-7f1e14dbb005",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/plans/{{planName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "plans",
+                "{{planName}}"
+              ]
+            },
+            "description": "Soft-delete (deactivate) a plan. Existing pods on it keep billing.\n\nSet `{{planName}}` in your environment or let an earlier request populate it.\n\n`DELETE /admin/plans/{name}`"
+          },
+          "response": []
+        },
+        {
+          "name": "List base images (catalogue)",
+          "id": "e3b95153-43c7-58e0-a9df-65246408e05f",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "images"
+              ]
+            },
+            "description": "List every image/template, including inactive ones (admin view).\n\n`GET /admin/images`"
+          },
+          "response": []
+        },
+        {
+          "name": "Create base image",
+          "id": "6e654539-ef64-522c-a71b-608afd42966e",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/images",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "images"
+              ]
+            },
+            "description": "Create a new VM template → image mapping.\n\n`POST /admin/images`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"template\": \"rust\",\n  \"display_name\": \"Rust\",\n  \"image\": \"ghcr.io/crevios/hopper-vm-rust:latest\",\n  \"description\": \"Rust toolchain preinstalled\",\n  \"is_default\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update base image",
+          "id": "567b9e64-58eb-5c8c-9547-42ecbaa0b6dc",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/images/{{imageTemplate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "images",
+                "{{imageTemplate}}"
+              ]
+            },
+            "description": "Update a template's image / metadata / active + default flags.\n\nSet `{{imageTemplate}}` in your environment or let an earlier request populate it.\n\n`PUT /admin/images/{template}`",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display_name\": \"Rust\",\n  \"is_default\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete base image",
+          "id": "88e4e22e-1cb0-5373-901b-7411b879dd03",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/images/{{imageTemplate}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "images",
+                "{{imageTemplate}}"
+              ]
+            },
+            "description": "Soft-delete (deactivate) a template.\n\nSet `{{imageTemplate}}` in your environment or let an earlier request populate it.\n\n`DELETE /admin/images/{template}`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11. Health probes",
+      "id": "85654238-e6e1-5ed1-a3d9-b127f27acfb4",
+      "description": "Unauthenticated probes. `/healthz` is liveness (shallow by design — restarting the pod cannot fix a down database). `/readyz` is readiness and returns 503 with a per-dependency breakdown when the gateway cannot serve real traffic.",
+      "item": [
+        {
+          "name": "Liveness",
+          "id": "6d284a6f-6590-5fe0-a281-56d28eb681b3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "`GET /healthz`"
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "id": "cf701355-60c8-569b-85e7-92ddede60f59",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "description": "`GET /readyz`"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Gateway is ready', () => pm.response.to.have.status(200));",
+                  "const checks = pm.response.json().checks || {};",
+                  "Object.keys(checks).forEach((dep) => {",
+                  "  pm.test('dependency up: ' + dep, () => pm.expect(checks[dep]).to.be.true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
