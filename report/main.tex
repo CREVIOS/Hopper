@@ -845,6 +845,164 @@ curl -X POST "https://hopper.farefin.com/api/pods/" \
 }
 \end{lstlisting}
 
+\textbf{Example 3: queued pod creation response}
+
+When cluster capacity is temporarily exhausted, the same \path|POST /api/pods/| request is accepted into the admission queue instead of being created immediately. The API then returns \texttt{202 Accepted} with queue metadata so the frontend can show live position updates.
+
+\begin{lstlisting}[language=bash,caption={Representative queued pod creation request}]
+curl -X POST "https://hopper.farefin.com/api/pods/" \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_token=[REDACTED]" \
+  -d '{
+    "plan": "medium",
+    "template": "python"
+  }'
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative queued pod creation response body}]
+{
+  "id": "5d477c6d-8f51-4be6-8e3e-431c1bd0a0d2",
+  "state": "queued",
+  "plan": "medium",
+  "position": 2,
+  "queued": true
+}
+\end{lstlisting}
+
+\textbf{Example 4: credit balance request}
+
+The platform also exposes a simple authenticated read endpoint for wallet state. The following example reflects the \path|GET /api/credits/balance| route and the \path|CreditBalanceResponse| schema used by the student and teacher dashboards.
+
+\begin{lstlisting}[language=bash,caption={Representative credit balance request}]
+curl -X GET "https://hopper.farefin.com/api/credits/balance" \
+  -H "Accept: application/json" \
+  -H "Cookie: session_token=[REDACTED]"
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative credit balance response body}]
+{
+  "account_id": "7aa20ec1-5f52-4676-8a7e-8dd6de3b8fc1",
+  "balance": 42.5
+}
+\end{lstlisting}
+
+\textbf{Example 5: queue status lookup}
+
+After a pod request has been queued, the frontend can poll \path|GET /api/pods/queue| to display current waiting jobs and their positions. This is the route used to keep the queue page synchronized with backend state.
+
+\begin{lstlisting}[language=bash,caption={Representative queue status request}]
+curl -X GET "https://hopper.farefin.com/api/pods/queue" \
+  -H "Accept: application/json" \
+  -H "Cookie: session_token=[REDACTED]"
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative queue status response body}]
+[
+  {
+    "id": "5d477c6d-8f51-4be6-8e3e-431c1bd0a0d2",
+    "plan": "medium",
+    "template": "python",
+    "state": "queued",
+    "position": 2,
+    "created_at": "2026-07-19T12:05:00Z"
+  }
+]
+\end{lstlisting}
+
+\textbf{Example 6: cluster availability request}
+
+To help users understand whether a VM is likely to start immediately, Hopper exposes a summarized capacity endpoint at \path|GET /api/pods/availability|. The values below illustrate the normal case in which the orchestrator is reachable and aggregate resource metrics are available.
+
+\begin{lstlisting}[language=bash,caption={Representative availability request}]
+curl -X GET "https://hopper.farefin.com/api/pods/availability" \
+  -H "Accept: application/json" \
+  -H "Cookie: session_token=[REDACTED]"
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative availability response body}]
+{
+  "cpu": {
+    "total_cores": 16.0,
+    "used_cores": 10.0,
+    "free_cores": 6.0
+  },
+  "memory": {
+    "total_gib": 64.0,
+    "used_gib": 40.0,
+    "free_gib": 24.0
+  },
+  "storage": {
+    "total_gib": 500.0,
+    "used_gib": 190.0,
+    "free_gib": 310.0
+  },
+  "nodes_ready": 3,
+  "queue_length": 2
+}
+\end{lstlisting}
+
+\textbf{Example 7: notification feed request}
+
+The notification center is backed by \path|GET /api/notifications/|, which returns a recent rolling window of events together with the unread count shown in the UI badge.
+
+\begin{lstlisting}[language=bash,caption={Representative notifications request}]
+curl -X GET "https://hopper.farefin.com/api/notifications/?limit=2" \
+  -H "Accept: application/json" \
+  -H "Cookie: session_token=[REDACTED]"
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative notifications response body}]
+{
+  "notifications": [
+    {
+      "id": "c63a0b4f-130b-41af-b843-cb9b32f37d5e",
+      "type": "success",
+      "title": "Credits received",
+      "body": "You received 10 credits from Prof. Rahman.",
+      "data": {
+        "amount": 10,
+        "from": "Prof. Rahman"
+      },
+      "read": false,
+      "created_at": "2026-07-19T12:08:00Z"
+    },
+    {
+      "id": "91c7ce7d-5c9f-4141-998c-97f7a83ee0ab",
+      "type": "info",
+      "title": "VM ready",
+      "body": "Your VM is now running and ready for SSH access.",
+      "data": {
+        "pod_id": "9bc3d6ee-4b7a-4482-a9de-4948fdde2ce1"
+      },
+      "read": true,
+      "created_at": "2026-07-19T12:00:31Z"
+    }
+  ],
+  "unread_count": 1
+}
+\end{lstlisting}
+
+\textbf{Example 8: SSH key upload request}
+
+Hopper allows users to register public keys for passwordless access through \path|POST /api/ssh-keys/|. The API stores the submitted key, derives a SHA-256 fingerprint, and returns the new identifier on success.
+
+\begin{lstlisting}[language=bash,caption={Representative SSH key upload request}]
+curl -X POST "https://hopper.farefin.com/api/ssh-keys/" \
+  -H "Content-Type: application/json" \
+  -H "Cookie: session_token=[REDACTED]" \
+  -d '{
+    "name": "laptop-ed25519",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBExampleKeyMaterialForReportOnly user@laptop"
+  }'
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Representative SSH key upload response body}]
+{
+  "id": "4e2f4d25-9c2f-4e6f-8d45-215fe8ac2fcb",
+  "fingerprint": "SHA256:Zk9kYVh6R3E0b2NQdXl0S3lBbjJxQ0h4R0l2Q0JmR2J5d1NxS3pPWT0"
+}
+\end{lstlisting}
+
 \section{Authentication \& Security}
 This section documents security mechanisms verified in the Hopper repository as of the inspected tree. It does not assert that the platform is free of vulnerabilities; gaps called out below were confirmed by reading application code, Kubernetes manifests, CI workflows, and automated tests.
 
