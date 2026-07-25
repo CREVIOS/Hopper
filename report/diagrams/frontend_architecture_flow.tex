@@ -1,0 +1,70 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Latex,
+    node distance=7mm and 10mm,
+    proc/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        text width=42mm,
+        minimum height=9mm,
+        inner sep=2mm,
+        fill=blue!8
+    },
+    datastore/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        text width=40mm,
+        minimum height=9mm,
+        inner sep=2mm,
+        fill=green!9
+    },
+    choice/.style={
+        draw,
+        diamond,
+        aspect=1.7,
+        align=center,
+        inner sep=1pt,
+        text width=18mm,
+        fill=orange!12
+    },
+    flow/.style={->, thick},
+    feedback/.style={->, thick, dashed},
+    lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+
+\node[proc] (browser) {Browser requests route or action};
+\node[proc, below=of browser] (layoutload) {SvelteKit SSR load gathers route data};
+\node[choice, below=of layoutload] (sessioncheck) {Valid\\session?};
+
+\node[datastore, below left=of sessioncheck] (refresh) {\texttt{/auth/refresh} performs silent renewal};
+\node[datastore, below right=of sessioncheck] (authme) {\texttt{/auth/me} and balance fetch confirm user state};
+\node[proc, below=16mm of sessioncheck] (pagefetch) {Route-specific server load fetches page data};
+\node[proc, below=of pagefetch] (render) {HTML renders with user and initial state};
+\node[proc, below=of render] (hydrate) {Client hydration boots the shell layout};
+\node[proc, below=of hydrate] (clientapi) {Credentialed browser API fetches start};
+\node[choice, below=of clientapi] (needsreplay) {401 on\\API?};
+\node[proc, below=of needsreplay] (realtime) {Open SSE / WebSocket channels for notifications, metrics, and terminal};
+\node[datastore, below=of realtime] (stores) {Stores and local state update the UI};
+
+\draw[flow] (browser) -- (layoutload);
+\draw[flow] (layoutload) -- (sessioncheck);
+\draw[flow] (sessioncheck) -- node[lab, above left] {no / expired} (refresh);
+\draw[flow] (sessioncheck) -- node[lab, above right] {yes} (authme);
+\draw[flow] (refresh.south) |- node[lab, left] {new cookie} (pagefetch.west);
+\draw[flow] (authme.south) |- node[lab, right] {balance + user} (pagefetch.east);
+\draw[flow] (pagefetch) -- (render);
+\draw[flow] (render) -- (hydrate);
+\draw[flow] (hydrate) -- (clientapi);
+\draw[flow] (clientapi) -- (needsreplay);
+\draw[flow] (needsreplay) -- node[lab, right] {no} (realtime);
+\draw[flow]
+    (needsreplay.west)
+    -- ++(-12mm,0)
+    |- node[lab, left, pos=0.35] {yes, retry once}
+    (refresh.south);
+\draw[flow] (realtime) -- (stores);
+\draw[feedback] (stores.east) to[out=0,in=0,looseness=1.5] node[lab, right] {reactive rerender} (render.east);
+
+\end{tikzpicture}

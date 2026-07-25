@@ -6,39 +6,47 @@
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{4}{section.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Problem Definition \& Context}{4}{subsection.1.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Target Users \& Use Cases}{4}{subsection.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Core Features}{4}{subsection.1.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Primary target users and confirmed Hopper use cases}}{5}{table.caption.2}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:target-users-use-cases}{{1}{5}{Primary target users and confirmed Hopper use cases}{table.caption.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Core Features}{5}{subsection.1.3}\protected@file@percent }
 \gdef \LT@i {\LT@entry 
     {1}{111.65349pt}\LT@entry 
     {1}{338.13744pt}}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Summary of Hopper's core features}}{5}{table.1}\protected@file@percent }
-\newlabel{tab:core-features}{{1}{5}{Summary of Hopper's core features}{table.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Verified Feature Inventory}{7}{subsection.1.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.5}Tech Stack Overview}{9}{subsection.1.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Summary of the Hopper technology stack}}{10}{table.caption.2}\protected@file@percent }
-\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
-\newlabel{tab:tech-stack}{{2}{10}{Summary of the Hopper technology stack}{table.caption.2}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {2}System Architecture}{11}{section.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}High-Level Architecture Diagram}{11}{subsection.2.1}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files.}}{12}{figure.caption.3}\protected@file@percent }
-\newlabel{fig:hopper-high-level-architecture}{{1}{12}{Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files}{figure.caption.3}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Main request and data flow for VM creation, monitoring, and interactive access.}}{13}{figure.caption.4}\protected@file@percent }
-\newlabel{fig:hopper-request-flow}{{2}{13}{Main request and data flow for VM creation, monitoring, and interactive access}{figure.caption.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Frontend Architecture}{13}{subsection.2.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces How Hopper's three user groups map onto the platform lifecycle}}{6}{figure.caption.3}\protected@file@percent }
+\newlabel{fig:user-lifecycle-map}{{1}{6}{How Hopper's three user groups map onto the platform lifecycle}{figure.caption.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Summary of Hopper's core features}}{6}{table.2}\protected@file@percent }
+\newlabel{tab:core-features}{{2}{6}{Summary of Hopper's core features}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Verified Feature Inventory}{8}{subsection.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.5}Tech Stack Overview}{10}{subsection.1.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Summary of the Hopper technology stack}}{11}{table.caption.4}\protected@file@percent }
+\newlabel{tab:tech-stack}{{3}{11}{Summary of the Hopper technology stack}{table.caption.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}System Architecture}{12}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}High-Level Architecture Diagram}{12}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Frontend Architecture}{12}{subsection.2.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files.}}{13}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:hopper-high-level-architecture}{{2}{13}{Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files}{figure.caption.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Main request and data flow for VM creation, monitoring, and interactive access.}}{14}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:hopper-request-flow}{{3}{14}{Main request and data flow for VM creation, monitoring, and interactive access}{figure.caption.6}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Backend Architecture}{14}{subsection.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Database Design}{15}{subsection.2.4}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only.}}{16}{figure.caption.5}\protected@file@percent }
-\newlabel{fig:hopper-core-erd}{{3}{16}{Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only}{figure.caption.5}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying.}}{17}{figure.caption.6}\protected@file@percent }
-\newlabel{fig:hopper-ui-sync}{{4}{17}{Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying}{figure.caption.6}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {3}API Documentation}{18}{section.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}API Design Overview}{18}{subsection.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Frontend architecture flow: SSR authentication, server-side page loading, browser-side retry, and real-time channel setup.}}{15}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:frontend-architecture-flow}{{4}{15}{Frontend architecture flow: SSR authentication, server-side page loading, browser-side retry, and real-time channel setup}{figure.caption.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Backend architecture flow: synchronous admission, queued fallback, gRPC orchestration, and asynchronous event fan-out.}}{16}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:backend-architecture-flow}{{5}{16}{Backend architecture flow: synchronous admission, queued fallback, gRPC orchestration, and asynchronous event fan-out}{figure.caption.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Database Design}{17}{subsection.2.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only.}}{18}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:hopper-core-erd}{{6}{18}{Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only}{figure.caption.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying.}}{19}{figure.caption.10}\protected@file@percent }
+\newlabel{fig:hopper-ui-sync}{{7}{19}{Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying}{figure.caption.10}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}API Documentation}{19}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}API Design Overview}{19}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Endpoint Reference}{20}{subsection.3.2}\protected@file@percent }
 \gdef \LT@ii {\LT@entry 
     {1}{54.09953pt}\LT@entry 
     {1}{112.58067pt}\LT@entry 
     {1}{126.16914pt}\LT@entry 
     {1}{62.75392pt}\LT@entry 
     {1}{71.81522pt}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Endpoint Reference}{19}{subsection.3.2}\protected@file@percent }
 \gdef \LT@iii {\LT@entry 
     {1}{54.09953pt}\LT@entry 
     {1}{112.58067pt}\LT@entry 
@@ -63,85 +71,85 @@
     {1}{126.16914pt}\LT@entry 
     {1}{62.75392pt}\LT@entry 
     {1}{71.81522pt}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{23}{subsection.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Sample Request \& Response}{23}{subsection.3.4}\protected@file@percent }
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Representative login request to the Hopper API}}{23}{lstlisting.1}\protected@file@percent }
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}{\ignorespaces Representative login response body}}{23}{lstlisting.2}\protected@file@percent }
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}{\ignorespaces Representative pod creation request}}{24}{lstlisting.3}\protected@file@percent }
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}{\ignorespaces Representative pod creation response body}}{24}{lstlisting.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Authentication \& Security}{24}{section.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Authentication Strategy}{24}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Authorization \& Role Management}{26}{subsection.4.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Security Measures}{27}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Swagger / Postman Collection Link}{24}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Sample Request \& Response}{24}{subsection.3.4}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Representative login request to the Hopper API}}{24}{lstlisting.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}{\ignorespaces Representative login response body}}{25}{lstlisting.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}{\ignorespaces Representative pod creation request}}{25}{lstlisting.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}{\ignorespaces Representative pod creation response body}}{25}{lstlisting.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Authentication \& Security}{26}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Authentication Strategy}{26}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Authorization \& Role Management}{27}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Security Measures}{28}{subsection.4.3}\protected@file@percent }
 \gdef \LT@vii {\LT@entry 
     {1}{83.8037pt}\LT@entry 
     {1}{106.05348pt}\LT@entry 
     {1}{106.05348pt}\LT@entry 
     {1}{124.16914pt}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Known Vulnerabilities \& Mitigations}{28}{subsection.4.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Testing \& Quality Assurance}{29}{section.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Testing Strategy}{29}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Test Coverage Summary}{30}{subsection.5.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Automated test results and coverage by layer}}{31}{table.caption.7}\protected@file@percent }
-\newlabel{tab:coverage}{{9}{31}{Automated test results and coverage by layer}{table.caption.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Bug Tracking \& Resolution Log}{31}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Known Vulnerabilities \& Mitigations}{30}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Testing \& Quality Assurance}{31}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Testing Strategy}{31}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Test Coverage Summary}{32}{subsection.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Automated test results and coverage by layer}}{32}{table.caption.11}\protected@file@percent }
+\newlabel{tab:coverage}{{10}{32}{Automated test results and coverage by layer}{table.caption.11}{}}
 \gdef \LT@viii {\LT@entry 
     {1}{83.93187pt}\LT@entry 
     {1}{80.68643pt}\LT@entry 
     {1}{148.9733pt}\LT@entry 
     {1}{140.4374pt}}
-\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces All bugs tracked in \texttt  {BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}}{32}{table.10}\protected@file@percent }
-\newlabel{tab:bugs}{{10}{32}{All bugs tracked in \texttt {BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}{table.10}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Sample Test Cases}{35}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}CI/CD \& Deployment}{36}{section.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{36}{subsection.6.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Environments}{38}{subsection.6.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Deployment environments}}{38}{table.caption.8}\protected@file@percent }
-\newlabel{tab:envs}{{11}{38}{Deployment environments}{table.caption.8}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment Steps}{39}{subsection.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Hosting Platform \& Live URL}{40}{subsection.6.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Monitoring \& Logging}{40}{subsection.6.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Repository \& Documentation Quality}{41}{section.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Branching Strategy \& Commit Conventions}{41}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}README Completeness Checklist}{42}{subsection.7.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces README completeness audit}}{43}{table.caption.9}\protected@file@percent }
-\newlabel{tab:readme}{{12}{43}{README completeness audit}{table.caption.9}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Code Organization / Folder Structure}{43}{subsection.7.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Top-level repository structure}}{44}{table.caption.10}\protected@file@percent }
-\newlabel{tab:structure}{{13}{44}{Top-level repository structure}{table.caption.10}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Local Setup Instructions}{45}{subsection.7.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Evaluation \& Reflection}{46}{section.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{46}{subsection.8.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Desktop Lighthouse audit results generated through Google PageSpeed Insights.}}{46}{table.caption.11}\protected@file@percent }
-\newlabel{tab:desktop-pagespeed}{{14}{46}{Desktop Lighthouse audit results generated through Google PageSpeed Insights}{table.caption.11}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Google PageSpeed Insights category scores for the deployed Hopper landing page in desktop mode.}}{47}{figure.caption.12}\protected@file@percent }
-\newlabel{fig:pagespeed-scores}{{5}{47}{Google PageSpeed Insights category scores for the deployed Hopper landing page in desktop mode}{figure.caption.12}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Core Web Vitals and supporting metric measurements from the same desktop audit.}}{47}{figure.caption.13}\protected@file@percent }
-\newlabel{fig:pagespeed-metrics}{{6}{47}{Core Web Vitals and supporting metric measurements from the same desktop audit}{figure.caption.13}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{47}{subsection.8.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Limitations \& Future Work}{48}{subsection.8.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Lessons Learned}{49}{subsection.8.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Bug Tracking \& Resolution Log}{33}{subsection.5.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces All bugs tracked in \texttt  {BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}}{33}{table.11}\protected@file@percent }
+\newlabel{tab:bugs}{{11}{33}{All bugs tracked in \texttt {BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}{table.11}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Sample Test Cases}{36}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}CI/CD \& Deployment}{38}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Pipeline Overview}{39}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Environments}{40}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Deployment environments}}{41}{table.caption.12}\protected@file@percent }
+\newlabel{tab:envs}{{12}{41}{Deployment environments}{table.caption.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment Steps}{41}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Hosting Platform \& Live URL}{42}{subsection.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Monitoring \& Logging}{43}{subsection.6.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Repository \& Documentation Quality}{44}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Branching Strategy \& Commit Conventions}{44}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}README Completeness Checklist}{45}{subsection.7.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces README completeness audit}}{45}{table.caption.13}\protected@file@percent }
+\newlabel{tab:readme}{{13}{45}{README completeness audit}{table.caption.13}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Code Organization / Folder Structure}{46}{subsection.7.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Top-level repository structure}}{46}{table.caption.14}\protected@file@percent }
+\newlabel{tab:structure}{{14}{46}{Top-level repository structure}{table.caption.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Local Setup Instructions}{47}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Evaluation \& Reflection}{48}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Web Performance \& Core Web Vitals}{48}{subsection.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Challenges \& Solutions}{48}{subsection.8.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Desktop Lighthouse audit results generated through Google PageSpeed Insights.}}{49}{table.caption.15}\protected@file@percent }
+\newlabel{tab:desktop-pagespeed}{{15}{49}{Desktop Lighthouse audit results generated through Google PageSpeed Insights}{table.caption.15}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Google PageSpeed Insights category scores for the deployed Hopper landing page in desktop mode.}}{49}{figure.caption.16}\protected@file@percent }
+\newlabel{fig:pagespeed-scores}{{8}{49}{Google PageSpeed Insights category scores for the deployed Hopper landing page in desktop mode}{figure.caption.16}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Core Web Vitals and supporting metric measurements from the same desktop audit.}}{49}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:pagespeed-metrics}{{9}{49}{Core Web Vitals and supporting metric measurements from the same desktop audit}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Limitations \& Future Work}{50}{subsection.8.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Lessons Learned}{51}{subsection.8.4}\protected@file@percent }
 \gdef \LT@ix {\LT@entry 
     {1}{93.5309pt}\LT@entry 
     {1}{138.83044pt}\LT@entry 
     {1}{229.42265pt}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Individual Responsibility}{50}{subsection.8.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Individual responsibilities and contribution summary}}{50}{table.15}\protected@file@percent }
-\newlabel{tab:individual-responsibility}{{15}{50}{Individual responsibilities and contribution summary}{table.15}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{51}{appendix.A}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Screen 1a: Public Landing Page --- Upper Half (\texttt  {/}) --- Navbar and hero section with the Hopper wordmark, tagline, and primary call-to-action, followed by the feature highlights. Captured logged out.}}{52}{figure.caption.14}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Screen 1b: Public Landing Page --- Lower Half (\texttt  {/}) --- Continuation of the same page: VM plan cards (Small / Medium / Large) with their per-hour credit rates, the FAQ section, and the page footer.}}{53}{figure.caption.15}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Screen 2: Login (\texttt  {/login}) --- ``Sign in with email'' heading; email and password fields; ``Forgot password?'' link; ``University SSO'' button for the Keycloak OIDC flow; link to the signup page.}}{54}{figure.caption.16}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Screen 3: Student Dashboard (\texttt  {/dashboard}) --- Stat cards for active VMs, credit balance, and 24-hour average CPU and memory. ``Your usage over time'' chart with CPU/Memory and 1h/6h/24h/7d selectors, plan-distribution donut, the user's VM table, and recent credit activity.}}{55}{figure.caption.17}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Screen 4: VM List \& Launch (\texttt  {/pods}) --- Cluster-availability cards (free CPU, memory, storage, queue depth), the launch form with its resource-plan selector (Small / Medium / Large) and base-image selector (Ubuntu, Python/ML, C/C++, Java), estimated cost, and the user's VM list with Active/History/All filters.}}{56}{figure.caption.18}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Screen 5: VM Detail --- Overview Tab (\texttt  {/pods/[id]}) --- VM header with ID and status badge; Overview / Terminal / Files tabs; Specifications panel (vCPU, memory, disk, plan, namespace, node, image); Access panel showing the generated SSH command, port, and masked password, plus an ``Open in VS Code'' launcher; Live Metrics panel streaming CPU and memory over SSE (note the \emph  {Streaming} indicator); Billing panel with rate, accrued session cost, and total uptime; and the TimescaleDB-backed usage-history chart with CPU/Memory and 1h/6h/24h/7d selectors. Captured against a running VM.}}{57}{figure.caption.19}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Screen 6: VM Detail --- Terminal Tab (\texttt  {/pods/[id]?tab=terminal}) --- Full-height xterm.js terminal attached to the VM over a WebSocket, showing the session tab bar with its \emph  {Connected} status badge and a ``new terminal'' control. The transcript shows the Ubuntu 22.04.5 login banner followed by \texttt  {uname -a} and \texttt  {ls -la} executed inside the container, confirming a live interactive shell rather than a rendered mock-up.}}{58}{figure.caption.20}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Screen 7: Credits (\texttt  {/credits}) --- Credit-balance display and the transaction-history table listing timestamp, description, source VM, and debit/credit amount.}}{59}{figure.caption.21}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Screen 8: Admin Console --- Overview (\texttt  {/admin}) --- Platform stat cards (total users, active VMs, all-time VMs, compute nodes) and the full tab bar: Overview, Users, Requests, Active VMs, Issues, Plans, Templates, Nodes, and Audit log. The Overview tab pairs a recent activity feed --- API route, outcome status code, and relative timestamp --- with a cluster-pressure panel showing reserved CPU and memory against capacity and node readiness.}}{60}{figure.caption.22}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces Screen 8b: Admin Console --- Users Tab --- Registered-user table with avatar, name, email, role badge, join date, and per-row administrative actions, backing the role-management and credit-allocation flows.}}{61}{figure.caption.23}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Screen 8c: Admin Console --- Nodes Tab --- Kubernetes node inventory with All / Ready / Not-ready filters, listing each node's status and its CPU, memory, and pod capacity.}}{62}{figure.caption.24}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces Screen 9: Teacher (Professor) Console (\texttt  {/teacher}) --- Summary cards for the professor's own credit balance, enrolled student count, and total credits already allocated. Beneath them, the searchable student roster lists each student's name, email, and current balance with a per-row ``Allocate'' action, implementing the delegated credit-distribution model in which an administrator funds a professor, who in turn funds students.}}{63}{figure.caption.25}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {19}{\ignorespaces Screen 10: VM Queue (\texttt  {/pods/queue}) --- Queue view, shown in its empty state --- the cluster had spare capacity at capture time, so no requests were waiting. When capacity is exhausted, this screen lists each queued request with its position, requested plan, and a cancel control.}}{64}{figure.caption.26}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {20}{\ignorespaces Screen 11: Settings --- SSH Keys (\texttt  {/settings/ssh-keys}) --- Registered SSH public keys with name, fingerprint, and creation date; the ``Add SSH key'' form; and per-key deletion controls.}}{65}{figure.caption.27}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {21}{\ignorespaces Screen 12: Signup (\texttt  {/signup}) --- Registration form with name, email, and password fields and the password-policy feedback. The subsequent verification-code screen (\texttt  {/verify-email}) is reachable only by completing a registration and was therefore not captured.}}{66}{figure.caption.28}\protected@file@percent }
-\gdef \@abspage@last{67}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Individual Responsibility}{52}{subsection.8.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Individual responsibilities and contribution summary}}{52}{table.16}\protected@file@percent }
+\newlabel{tab:individual-responsibility}{{16}{52}{Individual responsibilities and contribution summary}{table.16}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Screenshots / UI Walkthrough}{53}{appendix.A}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Screen 1a: Public Landing Page --- Upper Half (\texttt  {/}) --- Navbar and hero section with the Hopper wordmark, tagline, and primary call-to-action, followed by the feature highlights. Captured logged out.}}{54}{figure.caption.18}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {11}{\ignorespaces Screen 1b: Public Landing Page --- Lower Half (\texttt  {/}) --- Continuation of the same page: VM plan cards (Small / Medium / Large) with their per-hour credit rates, the FAQ section, and the page footer.}}{55}{figure.caption.19}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {12}{\ignorespaces Screen 2: Login (\texttt  {/login}) --- ``Sign in with email'' heading; email and password fields; ``Forgot password?'' link; ``University SSO'' button for the Keycloak OIDC flow; link to the signup page.}}{56}{figure.caption.20}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {13}{\ignorespaces Screen 3: Student Dashboard (\texttt  {/dashboard}) --- Stat cards for active VMs, credit balance, and 24-hour average CPU and memory. ``Your usage over time'' chart with CPU/Memory and 1h/6h/24h/7d selectors, plan-distribution donut, the user's VM table, and recent credit activity.}}{57}{figure.caption.21}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {14}{\ignorespaces Screen 4: VM List \& Launch (\texttt  {/pods}) --- Cluster-availability cards (free CPU, memory, storage, queue depth), the launch form with its resource-plan selector (Small / Medium / Large) and base-image selector (Ubuntu, Python/ML, C/C++, Java), estimated cost, and the user's VM list with Active/History/All filters.}}{58}{figure.caption.22}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {15}{\ignorespaces Screen 5: VM Detail --- Overview Tab (\texttt  {/pods/[id]}) --- VM header with ID and status badge; Overview / Terminal / Files tabs; Specifications panel (vCPU, memory, disk, plan, namespace, node, image); Access panel showing the generated SSH command, port, and masked password, plus an ``Open in VS Code'' launcher; Live Metrics panel streaming CPU and memory over SSE (note the \emph  {Streaming} indicator); Billing panel with rate, accrued session cost, and total uptime; and the TimescaleDB-backed usage-history chart with CPU/Memory and 1h/6h/24h/7d selectors. Captured against a running VM.}}{59}{figure.caption.23}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {16}{\ignorespaces Screen 6: VM Detail --- Terminal Tab (\texttt  {/pods/[id]?tab=terminal}) --- Full-height xterm.js terminal attached to the VM over a WebSocket, showing the session tab bar with its \emph  {Connected} status badge and a ``new terminal'' control. The transcript shows the Ubuntu 22.04.5 login banner followed by \texttt  {uname -a} and \texttt  {ls -la} executed inside the container, confirming a live interactive shell rather than a rendered mock-up.}}{60}{figure.caption.24}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {17}{\ignorespaces Screen 7: Credits (\texttt  {/credits}) --- Credit-balance display and the transaction-history table listing timestamp, description, source VM, and debit/credit amount.}}{61}{figure.caption.25}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {18}{\ignorespaces Screen 8: Admin Console --- Overview (\texttt  {/admin}) --- Platform stat cards (total users, active VMs, all-time VMs, compute nodes) and the full tab bar: Overview, Users, Requests, Active VMs, Issues, Plans, Templates, Nodes, and Audit log. The Overview tab pairs a recent activity feed --- API route, outcome status code, and relative timestamp --- with a cluster-pressure panel showing reserved CPU and memory against capacity and node readiness.}}{62}{figure.caption.26}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {19}{\ignorespaces Screen 8b: Admin Console --- Users Tab --- Registered-user table with avatar, name, email, role badge, join date, and per-row administrative actions, backing the role-management and credit-allocation flows.}}{63}{figure.caption.27}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {20}{\ignorespaces Screen 8c: Admin Console --- Nodes Tab --- Kubernetes node inventory with All / Ready / Not-ready filters, listing each node's status and its CPU, memory, and pod capacity.}}{64}{figure.caption.28}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {21}{\ignorespaces Screen 9: Teacher (Professor) Console (\texttt  {/teacher}) --- Summary cards for the professor's own credit balance, enrolled student count, and total credits already allocated. Beneath them, the searchable student roster lists each student's name, email, and current balance with a per-row ``Allocate'' action, implementing the delegated credit-distribution model in which an administrator funds a professor, who in turn funds students.}}{65}{figure.caption.29}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {22}{\ignorespaces Screen 10: VM Queue (\texttt  {/pods/queue}) --- Queue view, shown in its empty state --- the cluster had spare capacity at capture time, so no requests were waiting. When capacity is exhausted, this screen lists each queued request with its position, requested plan, and a cancel control.}}{66}{figure.caption.30}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {23}{\ignorespaces Screen 11: Settings --- SSH Keys (\texttt  {/settings/ssh-keys}) --- Registered SSH public keys with name, fingerprint, and creation date; the ``Add SSH key'' form; and per-key deletion controls.}}{67}{figure.caption.31}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {24}{\ignorespaces Screen 12: Signup (\texttt  {/signup}) --- Registration form with name, email, and password fields and the password-policy feedback. The subsequent verification-code screen (\texttt  {/verify-email}) is reachable only by completing a registration and was therefore not captured.}}{68}{figure.caption.32}\protected@file@percent }
+\gdef \@abspage@last{69}

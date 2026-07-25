@@ -23,6 +23,7 @@
 \usepackage{setspace}
 \usepackage{ragged2e}
 \usepackage{parskip}
+\usepackage[section]{placeins}
 \usepackage{pdflscape}
 \usepackage{amssymb}
 % Add to the preamble
@@ -34,20 +35,30 @@
 \tcbset{
     featurebox/.style={
         enhanced,
-        colback=blue!3,
-        colframe=blue!45!black,
-        boxrule=0.7pt,
-        arc=3mm,
-        left=4mm,
-        right=4mm,
-        top=3mm,
-        bottom=3mm,
+        colback=blue!2,
+        colframe=blue!55!black,
+        colbacktitle=blue!85!black,
+        coltitle=white,
+        boxrule=0.9pt,
+        arc=4mm,
+        left=4.5mm,
+        right=4.5mm,
+        top=3.5mm,
+        bottom=3.5mm,
+        attach boxed title to top left={xshift=0mm,yshift*=-\tcboxedtitleheight/2},
+        boxed title style={
+            enhanced,
+            sharp corners=all,
+            boxrule=0pt,
+            colframe=blue!85!black,
+            colback=blue!85!black
+        },
         fonttitle=\bfseries,
-        coltitle=black
+        drop shadow=black!18!white
     }
 }
 
-\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
 
 \graphicspath{{figures/}}
 \hypersetup{
@@ -84,6 +95,13 @@
 \cfoot{\thepage}
 \setlength{\headheight}{14.5pt}
 \setstretch{1.15}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
 
 \titleformat{\section}{\large\bfseries\color{headingblue}}{\thesection.}{0.5em}{}
 \titleformat{\subsection}{\normalsize\bfseries\color{headingblue}}{\thesubsection}{0.5em}{}
@@ -132,7 +150,7 @@
 
     \vfill
 
-    {\large \textbf{\todo{Add batch information}}\par}
+    {\large \textbf{Batch 28}\par}
     \vspace{0.25cm}
     {\large Department of Computer Science \& Engineering\par}
     {\large University of Dhaka\par}
@@ -160,6 +178,8 @@
     \hline
     API Docs (Swagger/Postman) -- public link & \url{https://hopper.farefin.com/api/docs} \\
     \hline
+    Postman Collection / API Documentation & \url{https://documenter.getpostman.com/view/56891420/2sBY4QtLGS} \\
+    \hline
     Demo Video & \todo{Add public demo video URL} \\
     \hline
 \end{tabularx}
@@ -173,9 +193,66 @@ Hopper is a self-hosted compute provisioning platform intended for university en
 The codebase shows that the project addresses several operational problems at once. First, shared academic compute infrastructure requires stronger isolation than ad hoc account sharing or manually provisioned hosts. Second, institutions need a practical way to manage fair usage, including per-session billing and automatic shutdown when credits are exhausted. Third, a university deployment must integrate with centralized identity management rather than maintaining a separate manual authentication system. Hopper therefore combines a browser-based control plane, an API layer, an orchestration service, a relational ledger-backed data model, and Keycloak-based authentication in one deployable platform.
 
 \subsection{Target Users \& Use Cases}
-The system defines three application roles: student, professor, and admin. These roles are declared in the Keycloak realm configuration, carried on the access token, and enforced in both frontend route guards and backend authorization logic. The system therefore serves both end users who consume compute sessions and privileged users who supervise access, credits, and platform status.
+Hopper serves three distinct user groups whose responsibilities are enforced through Keycloak roles and mirrored in both frontend route guards and backend authorization checks. Rather than treating every authenticated user as a generic cluster consumer, the platform separates runtime consumption, academic resource distribution, and infrastructure governance into clearly bounded workflows. This role split is visible in the implemented routes: students mainly operate within the dashboard, pod, credit-history, and SSH settings screens; professors work through the teaching console to fund students; and administrators manage the wider platform from the admin console.
 
-Students are the primary runtime users. Confirmed use cases include signing in through the authentication flow, viewing available plans, creating and terminating compute sessions, monitoring CPU and memory usage, opening browser-based development access, using SSH-related settings, and reviewing their credit balance and usage history. Professors and administrators have additional operational and oversight use cases, including allocating credits, inspecting node or platform statistics, reviewing users, and accessing administrative workflows exposed through dedicated backend and frontend routes.
+\begin{tcolorbox}[featurebox,title=Role-Oriented Product Surface]
+\small
+\textbf{Student} users consume compute time and interact directly with provisioned environments. \textbf{Professor} users act as academic resource managers who distribute credits to learners. \textbf{Admin} users supervise the platform itself, including identity, approvals, capacity visibility, and system-wide funding decisions. The result is a product surface that aligns with how a university lab actually operates: request, fund, supervise.
+\end{tcolorbox}
+
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{table}[!htbp]
+\centering
+\caption{Primary target users and confirmed Hopper use cases}
+\label{tab:target-users-use-cases}
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash\bfseries}p{0.16\textwidth}|>{\RaggedRight\arraybackslash}p{0.19\textwidth}|>{\RaggedRight\arraybackslash}p{0.26\textwidth}|>{\RaggedRight\arraybackslash}X|}
+\hline
+\textbf{User Group} & \textbf{Primary Goal} & \textbf{Main Interfaces} & \textbf{Confirmed Use Cases} \\
+\hline
+Student & Access course compute environments on demand & Dashboard, Pods, Pod Detail, Credits, SSH Settings & Sign up and sign in, launch a VM from a plan, wait in the provisioning queue when capacity is full, open terminal and file access, connect over SSH, monitor usage and remaining credits, terminate sessions, and report runtime issues for admin follow-up. \\
+\hline
+Professor & Distribute teaching resources to students fairly & Teacher Console, Credits API, user-authenticated dashboard flows & Review available teaching balance, inspect student balances, allocate credits to individual students, and manage course support without requiring direct infrastructure access. \\
+\hline
+Admin & Govern users, budgets, and cluster operations & Admin Console, approval flows, audit and platform views & Approve pending teacher requests, grant credits, inspect users and roles, review active VMs, monitor node and platform statistics, inspect audit information, and resolve platform-level issues raised by users. \\
+\hline
+\end{tabularx}
+\end{table}
+\normalsize
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=8mm and 7mm,
+    stage/.style={draw=headingblue, rounded corners=2mm, thick, fill=blue!4, minimum width=0.2\textwidth, minimum height=11mm, align=center},
+    actor/.style={draw, rounded corners=2mm, thick, minimum width=0.14\textwidth, minimum height=10mm, align=center, font=\bfseries},
+    note/.style={font=\small, align=center, text width=0.18\textwidth}
+]
+    \node[stage] (access) {Access\\Authentication \& Entry};
+    \node[stage, right=of access] (funding) {Funding\\Credits \& Approval};
+    \node[stage, right=of funding] (runtime) {Runtime\\Provisioning \& Use};
+    \node[stage, right=of runtime] (oversight) {Oversight\\Monitoring \& Control};
+
+    \node[actor, fill=green!10, draw=green!50!black, below=11mm of access] (student) {Student};
+    \node[actor, fill=orange!12, draw=orange!70!black, below=11mm of funding] (professor) {Professor};
+    \node[actor, fill=red!10, draw=red!65!black, below=11mm of oversight] (admin) {Admin};
+
+    \draw[-{Latex[length=2.4mm]}, thick, green!50!black] (student.north) -- (access.south);
+    \draw[-{Latex[length=2.4mm]}, thick, green!50!black] (student.north east) to[out=80,in=260] (runtime.south);
+    \draw[-{Latex[length=2.4mm]}, thick, orange!70!black] (professor.north) -- (funding.south);
+    \draw[-{Latex[length=2.4mm]}, thick, orange!70!black] (professor.north east) to[out=70,in=250] (oversight.south west);
+    \draw[-{Latex[length=2.4mm]}, thick, red!65!black] (admin.north) -- (oversight.south);
+    \draw[-{Latex[length=2.4mm]}, thick, red!65!black] (admin.north west) to[out=110,in=290] (funding.south east);
+
+    \node[note, below=2mm of student] {Requests compute, opens terminal, uses SSH, tracks spending};
+    \node[note, below=2mm of professor] {Funds students and supports course delivery};
+    \node[note, below=2mm of admin] {Approves, audits, and supervises cluster health};
+\end{tikzpicture}
+\caption{How Hopper's three user groups map onto the platform lifecycle}
+\label{fig:user-lifecycle-map}
+\end{figure}
+
+The visual split above highlights the system's central design decision: Hopper is not only a VM launcher for students, but also a teaching-budget workflow for faculty and an operations console for administrators. That separation makes the platform suitable for institutional deployment, where fairness, approval, and observability are as important as raw compute access.
 
 \subsection{Core Features}
 Hopper is a multi-service compute-management platform that combines federated
@@ -336,7 +413,7 @@ PostgreSQL with TimescaleDB stores relational and time-series data. NATS JetStre
 
 Deployment is based on Kubernetes, Nginx Ingress, Helm, and infrastructure files under \texttt{k8s/}, \texttt{charts/}, and \texttt{infrastructure/}. Docker Compose supports local development, cert-manager automates TLS certificates, Cilium enforces network policies, and optional email delivery is configured through Brevo or SMTP.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \caption{Summary of the Hopper technology stack}
 \label{tab:tech-stack}
@@ -403,7 +480,7 @@ The deployed system is organized as a browser-facing frontend, a Python API gate
 
 At runtime, the orchestrator is the component that directly manages Kubernetes resources. The FastAPI gateway does not create pods itself; instead it creates or updates the application-facing database state, invokes the orchestrator over gRPC, and consumes follow-up events such as billing, pod lifecycle changes, and metrics updates. PostgreSQL stores the authoritative relational state for users, sessions, the credit ledger, notifications, queue entries, and other application records, while TimescaleDB features are used where available for metrics retention and hypertable support.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \input{diagrams/high_level_architecture.tex}
     \caption{Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files.}
@@ -412,7 +489,7 @@ At runtime, the orchestrator is the component that directly manages Kubernetes r
 
 Figure~\ref{fig:hopper-high-level-architecture} reflects the concrete implementation rather than an aspirational design. In particular, the current repository confirms the following communication paths: browser-to-frontend delivery over ingress, frontend-to-gateway HTTP calls, gateway-to-orchestrator gRPC calls, orchestrator-to-Kubernetes lifecycle control, orchestrator-to-NATS event publication, gateway-side NATS consumers for billing and metrics, and Keycloak-mediated authentication with cookie-backed application sessions.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \input{diagrams/request_flow.tex}
     \caption{Main request and data flow for VM creation, monitoring, and interactive access.}
@@ -430,6 +507,13 @@ State management remains lightweight and is implemented with built-in Svelte mec
 
 The API layer is split between server-side and browser-side helpers. On the browser side, \path|frontend/src/lib/api/client.ts| wraps \path|fetch|, automatically includes credentials, retries once after a silent refresh on non-login \path|401| responses, and exposes a small SSE helper. On the server side, the route loaders call the backend directly through \path|apiUrl()|. This division is suitable for a SvelteKit application because it allows SSR data fetching, cookie forwarding, and browser reactivity without duplicating request logic in every route.
 
+\begin{figure}[!htbp]
+    \centering
+    \resizebox{!}{0.55\textheight}{\input{diagrams/frontend_architecture_flow.tex}}
+    \caption{Frontend architecture flow: SSR authentication, server-side page loading, browser-side retry, and real-time channel setup.}
+    \label{fig:frontend-architecture-flow}
+\end{figure}
+
 The real-time and interactive frontend features are implemented explicitly rather than implicitly. The notification store opens an EventSource connection to \path|/api/notifications/stream|, the pod detail page opens an EventSource to \path|/api/pods/{id}/metrics|, and the terminal component opens a WebSocket to \path|/api/pods/{id}/terminal|. Browser-based editor access is routed through the backend proxy path rather than by direct pod exposure. The repository therefore confirms three distinct frontend interaction modes: SSR page loading, credentialed REST-style API calls, and long-lived SSE or WebSocket channels.
 
 \subsection{Backend Architecture}
@@ -438,6 +522,13 @@ The backend is implemented as a FastAPI-based API gateway in \path|services/api-
 The gateway is not a passive CRUD layer. It coordinates synchronous HTTP work with asynchronous background processes and remote orchestration. The \path|pods| router, for example, validates access, checks user credits, enforces per-user limits, invokes admission logic in \path|vm_scheduler| and \path|vm_queue|, persists \path|PodSession| state, and then calls the Go orchestrator through the async gRPC wrapper in \path|orchestrator_client.py|. If synchronous admission is not possible, the same router returns a queued response instead of failing immediately. This demonstrates an application-service style workflow centered in router handlers and helper service modules.
 
 Several backend services are event-driven. During application startup, the gateway connects to NATS, starts the billing consumer, and starts the metrics consumer. The billing consumer processes \texttt{billing.deducted} and \texttt{billing.exhausted} events, applies idempotent credit deductions, manages grace-period behavior, and triggers user notifications. The metrics consumer stores periodic metrics snapshots in the database. The notification service persists rolling user notifications and also subscribes to pod lifecycle events so that \texttt{pod.started}, \texttt{pod.stopped}, and \texttt{pod.failed} can be reflected in the user interface. The result is a hybrid backend architecture combining request-response APIs, background event processing, and stateful session updates.
+
+\begin{figure}[!htbp]
+    \centering
+    \resizebox{!}{0.50\textheight}{\input{diagrams/backend_architecture_flow.tex}}
+    \caption{Backend architecture flow: synchronous admission, queued fallback, gRPC orchestration, and asynchronous event fan-out.}
+    \label{fig:backend-architecture-flow}
+\end{figure}
 
 The admission queue is an especially important architectural feature. The service \path|vm_scheduler.py| elects a single leader through the \path|scheduler_leader| table and runs a first-come, first-served admission loop that considers cluster capacity computed from orchestrator node data plus current \path|PodSession| reservations. The queue service persists queued requests in \path|vm_queue_entries|. This means queueing is implemented inside the application database rather than delegated to an external job queue. The code explicitly documents that the loop is head-of-line and does not backfill smaller requests behind a blocked older request.
 
@@ -448,7 +539,7 @@ The current backend does not implement a dedicated repository abstraction layer.
 \subsection{Database Design}
 The database design combines normalized relational entities for identity, sessions, credits, and operational metadata with a time-series metrics table that can be promoted to a TimescaleDB hypertable when the extension is available. The foundational migration creates separate tables for users, accounts, transfers, ledger entries, pod sessions, and metrics. Later migrations adapt the original GPU-oriented session model into plan-based VM sessions, add notification and queueing support, and introduce API key and network-group support.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{diagrams/core_erd.tex}}
     \caption{Core entity relationships derived from SQLAlchemy models and Alembic migrations. Solid arrows indicate database-enforced foreign keys; dashed arrows indicate application-level links stored by identifier only.}
@@ -465,7 +556,7 @@ The notification and metrics subsystems are also specialized rather than overloa
 
 Several auxiliary tables exist outside the core ERD and contribute to operational completeness: \texttt{audit\_logs}, \texttt{ssh\_keys}, \texttt{issue\_reports}, \texttt{email\_codes}, \texttt{scheduler\_leader}, and \texttt{api\_keys}. These support auditing, SSH management, issue reporting, email verification and reset flows, leader election for the scheduler loop, and scoped programmatic access. Because Section 2 focuses on the main architectural data paths, they are described here textually rather than all being included in one overloaded ERD figure.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{diagrams/ui_sync_flow.tex}}
     \caption{Verified automatic UI data-sync mechanisms: SSR refresh, SSE streams, and WebSocket proxying.}
@@ -695,7 +786,7 @@ The report focuses on the important public application endpoints that are intend
 \subsection{Swagger / Postman Collection Link}
 The FastAPI gateway exposes the default Swagger UI, and the repository's ingress configuration makes it reachable publicly at \url{https://hopper.farefin.com/api/docs}. This URL is verified from the combination of the gateway's default FastAPI documentation settings and the ingress rule that forwards the external \path|/api| prefix to the backend service.
 
-No Postman collection URL was found in the inspected repository. The report therefore retains that gap explicitly: \todo{Add a public Postman collection URL if the team publishes one later.}
+The public Postman Documenter page is available at \url{https://documenter.getpostman.com/view/56891420/2sBY4QtLGS}. Together, the Swagger UI and the published Postman collection provide both an implementation-native API explorer and a shareable external API reference.
 
 \subsection{Sample Request \& Response}
 \textbf{Example 1: direct login request}
@@ -959,7 +1050,7 @@ staging runs.
 Coverage is measured independently per layer and aggregated by the
 \texttt{coverage-report} CI job. Figures are sourced from the artifacts
 recorded on \textbf{2026-07-18}.
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \caption{Automated test results and coverage by layer}
 \label{tab:coverage}
@@ -1222,7 +1313,10 @@ BUG-2026-07-18-20 &
 
 \subsection{Sample Test Cases}
 
-The six cases below are drawn directly from the repository test suites.
+The sample cases below are drawn directly from the repository test suites and
+are intentionally spread across unit, integration, end-to-end, security, and
+chaos coverage so that the report reflects the actual verification breadth of
+the codebase rather than only a single testing layer.
 
 \begin{sloppypar}
 \begin{description}[leftmargin=0pt,labelindent=0pt,style=nextline]
@@ -1246,20 +1340,23 @@ The six cases below are drawn directly from the repository test suites.
 \_and\_balanced\_entries}.
 
 \item[\textbf{TC-3 --- Orchestrator: pod lifecycle state transitions}]
-  \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
-  \textit{passed}.
-  The Go contract suite exercises two sub-tests:
+  \textit{Suite:} \texttt{tests/orchestrator/lifecycle\_test.go} ---
+  \textit{passed in Go tests}.
+  The Go suite exercises multiple transition rules. Two core sub-tests are:
   \texttt{TestPodLifecycleValidTransitions} asserts the legal path REQUESTED
-  $\to$ RUNNING $\to$ TERMINATED, and
+  $\to$ CREATING $\to$ RUNNING $\to$ STOPPING $\to$ TERMINATED, and
   \texttt{TestPodLifecycleRejectsInvalidTransition} confirms that
-  TERMINATED $\to$ RUNNING returns an error.
+  skipping required intermediate states is rejected. The same suite also checks
+  failure transitions from active states and idempotent concurrent creation.
 
 \item[\textbf{TC-4 --- Orchestrator: VM plan billing rates}]
-  \textit{Suite:} \texttt{test-results/contracts/go-contracts.json} ---
-  \textit{passed}.
+  \textit{Suite:} \texttt{tests/orchestrator/billing\_pricing\_test.go} ---
+  \textit{passed in Go tests}.
   \texttt{TestVMPlanHourlyRates} checks Small=1, Medium=2, Large=4
   credits/hour. \texttt{TestPartialHourBillingUsesPerMinuteRate} verifies
-  per-minute pro-ration at session end.
+  per-minute pro-ration at session end, while
+  \texttt{TestStopAndProrateProducesFinalIdempotencyKey} verifies that final
+  billing events produce a stable deduplication key.
 
 \item[\textbf{TC-5 --- E2E: professor credit allocation (TC-CREDIT-004)}]
   \textit{Suite:} \texttt{tests/e2e/specs/credits-and-teaching.spec.ts} ---
@@ -1274,6 +1371,61 @@ The six cases below are drawn directly from the repository test suites.
   When all capacity is occupied, a launch request returns a queued response and
   the frontend redirects the user to \texttt{/pods/queue}.
   The test asserts the queue page renders the in-queue entry.
+
+\item[\textbf{TC-7 --- E2E: login sets secure session cookies (TC-AUTH-001)}]
+  \textit{Suite:} \texttt{tests/e2e/specs/auth-and-access.spec.ts} ---
+  \textit{covered}.
+  This Playwright case signs in through the real application login form,
+  confirms the user lands on the dashboard, and verifies that both
+  \texttt{session\_token} and \texttt{refresh\_token} are issued as
+  \texttt{HttpOnly} cookies.
+
+\item[\textbf{TC-8 --- E2E: cross-tenant isolation and unauthenticated API denial (TC-AUTH-003 / TC-AUTH-005)}]
+  \textit{Suite:} \texttt{tests/e2e/specs/auth-and-access.spec.ts} ---
+  \textit{covered}.
+  The suite injects another student's pod into mock state, confirms a logged-in
+  student receives \texttt{403} when requesting that pod through the API, and
+  separately asserts that anonymous access to \texttt{/api/pods/} returns
+  \texttt{401}.
+
+\item[\textbf{TC-9 --- E2E: terminal reconnect after WebSocket drop (TC-TERM-003)}]
+  \textit{Suite:} \texttt{tests/e2e/specs/runtime-and-terminal.spec.ts} ---
+  \textit{covered}.
+  The mock terminal is configured to disconnect shortly after connect; the test
+  then verifies the terminal surfaces a reconnecting state and later returns to
+  a connected, usable shell.
+
+\item[\textbf{TC-10 --- Integration: pod creation persists runtime connection details}]
+  \textit{Suite:} \texttt{tests/integration/test\_pods\_api.py} ---
+  \textit{passed when Docker-backed integration tests are enabled}.
+  \texttt{test\_create\_pod\_persists\_running\_session\_details} stubs the
+  orchestrator response and verifies that a successful \texttt{POST /pods/}
+  persists and returns the running state together with SSH port, VS Code port,
+  and generated SSH password.
+
+\item[\textbf{TC-11 --- Integration: pod termination updates session state and tears down access paths}]
+  \textit{Suite:} \texttt{tests/integration/test\_pods\_api.py} ---
+  \textit{passed when Docker-backed integration tests are enabled}.
+  \texttt{test\_terminate\_pod\_marks\_session\_terminated} seeds a running
+  session, invokes \texttt{DELETE /pods/{id}}, and asserts that the orchestrator
+  termination call and local port-forward shutdown are both triggered.
+
+\item[\textbf{TC-12 --- Security: network and admission-policy isolation probes}]
+  \textit{Suite:} \texttt{tests/security/run-security.sh} with
+  \texttt{tests/security/test-network-isolation.sh} and manifest probes ---
+  \textit{staging-oriented security coverage}.
+  The security harness performs admission dry-runs for forbidden pod patterns
+  such as \texttt{hostNetwork}, \texttt{hostPath}, and privileged containers,
+  and also probes east-west isolation between student namespaces and internal
+  services such as NATS and PostgreSQL.
+
+\item[\textbf{TC-13 --- Chaos/invariant verification: ledger conservation and running-session consistency}]
+  \textit{Suite:} \texttt{tests/chaos/verify-invariants.sh} ---
+  \textit{post-chaos verification coverage}.
+  After chaos experiments, the script verifies three critical invariants:
+  total signed ledger sum remains zero, no account has a negative latest
+  balance, and the count of application sessions marked \texttt{running} matches
+  the count of Kubernetes student pods currently running.
 
 \end{description}
 \end{sloppypar}
@@ -1692,7 +1844,7 @@ generated proto stubs, build artefacts, and local IDE directories.
 The root \texttt{README.md} (11\,704 bytes) covers the following topics,
 verified by direct inspection:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \caption{README completeness audit}
 \label{tab:readme}
@@ -1743,7 +1895,7 @@ The \texttt{docs/} directory contains
 The repository is organised around service and concern boundaries. The
 top-level layout (verified by directory listing) is:
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \caption{Top-level repository structure}
 \label{tab:structure}
@@ -1881,7 +2033,7 @@ Since Hopper is primarily intended for desktop-based compute management, the des
 audit is treated as the main performance evaluation. The desktop test achieved a
 performance score of 99, with strong results across all measured categories.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \caption{Desktop Lighthouse audit results generated through Google PageSpeed Insights.}
 \label{tab:desktop-pagespeed}
@@ -1914,7 +2066,7 @@ fast initial and primary-content rendering. Figure~\ref{fig:pagespeed-scores} sh
 category scores reported by the audit, and Figure~\ref{fig:pagespeed-metrics} shows the
 individual metric measurements underlying the performance score.
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.9\textwidth]{figures/pagespeed-results1.png}
     \caption{Google PageSpeed Insights category scores for the deployed Hopper landing
@@ -1923,7 +2075,7 @@ individual metric measurements underlying the performance score.
 \end{figure}
 
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.9\textwidth]{figures/pagespeed-results2.png}
     \caption{Core Web Vitals and supporting metric measurements from the same desktop
@@ -2126,7 +2278,7 @@ development environments. \\
 % Height is capped as well as width so that tall full-page captures scale to
 % fit rather than overflowing the page and detaching their caption.
 \newcommand{\uifig}[3]{%
-  \begin{figure}[H]
+  \begin{figure}[!htbp]
     \centering
     \fbox{\includegraphics[width=0.95\textwidth,height=0.78\textheight,%
                            keepaspectratio]{figures/#1}}

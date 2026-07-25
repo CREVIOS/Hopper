@@ -1,0 +1,87 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Latex,
+    node distance=7mm and 10mm,
+    proc/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        text width=42mm,
+        minimum height=9mm,
+        inner sep=2mm,
+        fill=blue!8
+    },
+    svc/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        text width=40mm,
+        minimum height=9mm,
+        inner sep=2mm,
+        fill=green!9
+    },
+    choice/.style={
+        draw,
+        diamond,
+        aspect=1.7,
+        align=center,
+        inner sep=1pt,
+        text width=18mm,
+        fill=orange!12
+    },
+    flow/.style={->, thick},
+    event/.style={->, thick, dashed},
+    lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+
+\node[proc] (request) {HTTP request hits the FastAPI router};
+\node[proc, below=of request] (auth) {Auth, ownership checks, rate limits, and validation run};
+\node[choice, below=of auth] (credits) {Credits \&\\policy OK?};
+\node[choice, below=of credits] (capacity) {Capacity\\available?};
+\node[svc, below=16mm of capacity] (session) {Create or update \texttt{PodSession} state};
+\node[svc, below=of session] (grpc) {Call the Go orchestrator via gRPC};
+\node[svc, below=of grpc] (k8s) {Orchestrator creates, watches, or stops the Kubernetes pod};
+\node[svc, below=of k8s] (nats) {Lifecycle and billing events are published to NATS};
+\node[svc, below=of nats] (consumers) {Gateway consumers process billing, metrics, and notifications};
+\node[svc, below=of consumers] (stream) {SSE / WebSocket fan-out pushes updates to the frontend};
+\node[proc, below=of stream] (response) {Client receives 201/202 plus later live updates};
+
+\node[svc, left=18mm of capacity] (queue) {Persist queued request in \texttt{vm\_queue\_entries}};
+\node[svc, right=18mm of session] (db) {Write ledger, metrics, notifications, and audit state};
+
+\draw[flow] (request) -- (auth);
+\draw[flow] (auth) -- (credits);
+\draw[flow] (credits) -- node[lab, right] {yes} (capacity);
+\draw[flow]
+    (credits.west)
+    -- ++(-18mm,0)
+    |- node[lab, left, pos=0.22] {no}
+    (response.west);
+\draw[flow] (capacity) -- node[lab, right] {yes} (session);
+\draw[flow] (capacity) -- node[lab, above] {no} (queue);
+\draw[flow]
+    (queue.south)
+    -- ++(0,-52mm)
+    -| node[lab, below, pos=0.18] {202 queued}
+    (response.west);
+\draw[flow] (session) -- (grpc);
+\draw[flow] (grpc) -- (k8s);
+\draw[event] (k8s) -- (nats);
+\draw[event] (nats) -- (consumers);
+\draw[flow] (consumers) -- (stream);
+\draw[flow] (stream) -- (response);
+\draw[flow]
+    (session.east)
+    -- ++(10mm,0)
+    |- (db.north);
+\draw[flow]
+    (consumers.east)
+    -- ++(12mm,0)
+    |- (db.south);
+\draw[flow]
+    (grpc.west)
+    -- ++(-10mm,0)
+    |- node[lab, left, pos=0.26] {201 created}
+    (response.west);
+
+\end{tikzpicture}
