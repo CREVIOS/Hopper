@@ -1,0 +1,57 @@
+##############################################################################
+# Pre-rollout database migrations (companion to scripts/cd/k8s-rollout.sh)
+#
+# Teaching: the rollout only does `kubectl set image` — it never touched the
+# schema, so a PR that added a table shipped code that 500'd until someone ran
+# `alembic upgrade head` by hand (the plans/templates bug). The rollout script
+# now runs a short-lived `db-migrate` Job (with the NEW api-gateway image)
+# BEFORE swapping images. Migrations are additive/expand-only, so the old pods
+# keep serving happily against the new schema during the brief window.
+#
+# The namespace default-denies traffic and the app-mesh policy only covers the
+# long-running services, so the migrate Job pod (label app=db-migrate, no
+# `app: api-gateway` label) needs its own narrow allowance to reach Postgres —
+# exactly like the pg-backup Job. These policies are applied once, out-of-band:
+#   kubectl apply -f k8s/deploy/07-migrate.yaml
+# (The rollout script also re-applies an identical copy each deploy so a
+# CD run piped over SSH doesn't depend on the repo being checked out on the VPS.)
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-db-migrate-egress
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      app: db-migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-from-db-migrate
+  namespace: hopper
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: db-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
