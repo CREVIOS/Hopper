@@ -75,6 +75,8 @@ func (pm *PodManager) SetMetricsClient(m metricsv.Interface) {
 	pm.metrics = m
 }
 
+func boolPtr(b bool) *bool { return &b }
+
 type CreatePodOpts struct {
 	PodName string
 	PodID   string
@@ -372,17 +374,29 @@ func (pm *PodManager) CreatePod(ctx context.Context, opts CreatePodOpts) (PodPor
 		},
 	}
 
-	_, err = pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
+	createdPod, err := pm.client.CoreV1().Pods(pm.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return PodPorts{}, fmt.Errorf("creating pod %s: %w", opts.PodName, err)
 	}
 
-	// Create a NodePort Service so the user can SSH into the pod from outside
+	// Create a NodePort Service so the user can SSH into the pod from outside.
+	// It's owned by the Pod (ownerReference) so Kubernetes garbage-collects the
+	// Service automatically whenever the Pod is deleted — no orphan services
+	// even if a pod is removed out-of-band (a bare `kubectl delete pod`, a
+	// reconciler, or a code path that skips DeletePod).
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("ssh-%s", opts.PodName),
 			Namespace: pm.namespace,
 			Labels:    labels,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion:         "v1",
+				Kind:               "Pod",
+				Name:               createdPod.Name,
+				UID:                createdPod.UID,
+				Controller:         boolPtr(true),
+				BlockOwnerDeletion: boolPtr(true),
+			}},
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     corev1.ServiceTypeNodePort,
