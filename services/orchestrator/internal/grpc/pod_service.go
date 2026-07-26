@@ -195,29 +195,42 @@ func (s *PodOrchestratorService) GetPodStatus(ctx context.Context, req *podv1.Po
 func (s *PodOrchestratorService) TerminatePod(ctx context.Context, req *podv1.PodId) (*podv1.TerminateResponse, error) {
 	s.server.logger.Info("TerminatePod", zap.String("pod_id", req.Id))
 
+	// Resolve the pod regardless of which key the caller has. The manager keys
+	// pods by name at CreatePod time but by session UUID after a restart-time
+	// Reconcile, and the gateway always sends the pod name — so a plain
+	// Get(req.Id) misses after any restart and terminate used to silently
+	// no-op, leaving the pod (and its billing ticker) alive forever. Fall back
+	// to a lookup by pod name; if the pod isn't tracked at all, still delete it
+	// from k8s best-effort so terminate is idempotent and never leaks.
 	p, ok := s.server.podManager.Get(req.Id)
 	if !ok {
-		return &podv1.TerminateResponse{Success: false, Message: "pod not found"}, nil
+		p, ok = s.server.podManager.GetByPodName(req.Id)
 	}
 
-	if err := s.server.podManager.Transition(req.Id, pod.StateStopping); err != nil {
-		return &podv1.TerminateResponse{Success: false, Message: err.Error()}, nil
+	if !ok {
+		// Untracked (e.g. never reconciled): treat req.Id as the pod name and
+		// delete directly. DeletePod is idempotent — a missing pod is fine.
+		podName := req.Id
+		s.server.ticker.Stop(req.Id)
+		if err := s.server.k8sPods.DeletePod(ctx, podName); err != nil {
+			s.server.logger.Warn("failed to delete untracked k8s pod", zap.String("pod", podName), zap.Error(err))
+		}
+		return &podv1.TerminateResponse{Success: true, Message: "pod terminated (untracked; deleted from k8s)"}, nil
 	}
 
-	// Stop billing
-	s.server.ticker.Stop(req.Id)
+	// Use the pod's real manager key (p.ID) for state + billing, and p.PodName
+	// for the k8s delete — req.Id may be either the UUID or the pod name.
+	_ = s.server.podManager.Transition(p.ID, pod.StateStopping)
+	s.server.ticker.Stop(p.ID)
 
-	// Delete the actual K8s pod + service
 	if err := s.server.k8sPods.DeletePod(ctx, p.PodName); err != nil {
 		s.server.logger.Warn("failed to delete k8s pod", zap.Error(err))
 	}
 
-	// Transition to terminated
-	_ = s.server.podManager.Transition(req.Id, pod.StateTerminated)
+	_ = s.server.podManager.Transition(p.ID, pod.StateTerminated)
 
-	// Publish event
 	_ = events.Publish(s.server.nc, events.SubjectPodStopped, map[string]string{
-		"pod_id":  req.Id,
+		"pod_id":  p.ID,
 		"user_id": p.UserID,
 	})
 

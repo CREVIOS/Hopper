@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     jwt_algorithm: str = "RS256"
     debug: bool = False
+    # Echo every SQL statement (SQLAlchemy engine echo). Off by default — it's
+    # deliberately independent of `debug` so prod (debug=true) doesn't flood
+    # logs. Set HOPPER_SQL_ECHO=true for a targeted query-debugging session.
+    sql_echo: bool = False
     node_ip: str = "127.0.0.1"
 
     # Self-registration email-domain allowlist. Use lowercase, no @.
