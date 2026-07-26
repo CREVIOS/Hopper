@@ -7,12 +7,15 @@ from app.models.session import PodSession
 from app.models.user import User
 from app.routers.admin import (
     _require_admin,
+    admin_clear_quota,
     admin_create_image,
     admin_create_plan,
     admin_delete_image,
     admin_delete_plan,
+    admin_get_quota,
     admin_list_images,
     admin_list_plans,
+    admin_set_quota,
     admin_update_image,
     admin_update_plan,
     approve_teacher,
@@ -25,6 +28,7 @@ from app.routers.admin import (
 )
 from app.schemas.image import ImageCreateRequest, ImageUpdateRequest
 from app.schemas.plan import PlanCreateRequest, PlanUpdateRequest
+from app.schemas.quota import QuotaSetRequest
 from app.schemas.user import TokenPayload
 
 
@@ -542,3 +546,62 @@ async def test_admin_delete_image_deactivates(monkeypatch):
 
     assert result == {"message": "deactivated", "template": "rust"}
     assert calls["deactivated"] == "rust"
+
+
+# --- Per-user quotas ---------------------------------------------------------
+
+
+async def test_admin_get_quota_returns_effective(monkeypatch):
+    async def fake_effective(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_effective)
+
+    result = await admin_get_quota("user-2", current_user=_payload("admin"), db=FakeDB())
+
+    assert result.max_concurrent_vms == 3
+    assert result.max_workspace_gb == 100
+    assert result.is_custom is False
+
+
+async def test_admin_set_quota_upserts_then_returns_override(monkeypatch):
+    saved = {}
+
+    async def fake_set(db, user_id, *, max_concurrent_vms, max_workspace_gb):
+        saved.update(user_id=user_id, cvm=max_concurrent_vms, ws=max_workspace_gb)
+
+    async def fake_effective(db, user_id):
+        return {"max_concurrent_vms": 10, "max_workspace_gb": 500, "is_custom": True}
+
+    monkeypatch.setattr("app.routers.admin.quota_service.set_quota", fake_set)
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_effective)
+
+    result = await admin_set_quota(
+        "user-2",
+        QuotaSetRequest(max_concurrent_vms=10, max_workspace_gb=500),
+        current_user=_payload("admin"),
+        db=FakeDB(),
+    )
+
+    assert saved == {"user_id": "user-2", "cvm": 10, "ws": 500}
+    assert result.max_concurrent_vms == 10
+    assert result.is_custom is True
+
+
+async def test_admin_clear_quota_reverts_to_default(monkeypatch):
+    calls = {}
+
+    async def fake_clear(db, user_id):
+        calls["cleared"] = user_id
+        return True
+
+    async def fake_effective(db, user_id):
+        return {"max_concurrent_vms": 3, "max_workspace_gb": 100, "is_custom": False}
+
+    monkeypatch.setattr("app.routers.admin.quota_service.clear_quota", fake_clear)
+    monkeypatch.setattr("app.routers.admin.quota_service.get_effective_quota", fake_effective)
+
+    result = await admin_clear_quota("user-2", current_user=_payload("admin"), db=FakeDB())
+
+    assert calls["cleared"] == "user-2"
+    assert result.is_custom is False

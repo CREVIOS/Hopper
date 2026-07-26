@@ -9,6 +9,7 @@ from app.models.scheduler_leader import SchedulerLeader
 from app.models.session import PodSession
 from app.models.ssh_key import SSHKey
 from app.models.user import User
+from app.models.user_quota import UserQuota
 from app.models.user_setting import UserSetting
 from app.models.user_workspace import UserWorkspace
 from app.models.vm_image import VmImageRow
@@ -29,6 +30,7 @@ __all__ = [
     "SSHKey",
     "Transfer",
     "User",
+    "UserQuota",
     "UserSetting",
     "UserWorkspace",
     "VmImageRow",
