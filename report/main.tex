@@ -16,6 +16,7 @@
 \usepackage{fancyhdr}
 \usepackage{hyperref}
 \usepackage{xurl}
+\usepackage[htt]{hyphenat}
 \usepackage{listings}
 \usepackage{tikz}
 \usepackage{enumitem}
@@ -95,6 +96,8 @@
 \cfoot{\thepage}
 \setlength{\headheight}{14.5pt}
 \setstretch{1.15}
+\setlength{\emergencystretch}{3em}
+\sloppy
 \renewcommand{\topfraction}{0.9}
 \renewcommand{\bottomfraction}{0.8}
 \renewcommand{\textfraction}{0.07}
@@ -180,7 +183,7 @@
     \hline
     Postman Collection / API Documentation & \url{https://documenter.getpostman.com/view/56891420/2sBY4QtLGS} \\
     \hline
-    Demo Video & \todo{Add public demo video URL} \\
+    Demo Video & \url{https://youtu.be/9BCcEsXJXi0} \\
     \hline
 \end{tabularx}
 
@@ -222,6 +225,7 @@ Admin & Govern users, budgets, and cluster operations & Admin Console, approval 
 
 \begin{figure}[!htbp]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
     node distance=8mm and 7mm,
     stage/.style={draw=headingblue, rounded corners=2mm, thick, fill=blue!4, minimum width=0.2\textwidth, minimum height=11mm, align=center},
@@ -248,6 +252,7 @@ Admin & Govern users, budgets, and cluster operations & Admin Console, approval 
     \node[note, below=2mm of professor] {Funds students and supports course delivery};
     \node[note, below=2mm of admin] {Approves, audits, and supervises cluster health};
 \end{tikzpicture}
+}
 \caption{How Hopper's three user groups map onto the platform lifecycle}
 \label{fig:user-lifecycle-map}
 \end{figure}
@@ -417,6 +422,8 @@ Deployment is based on Kubernetes, Nginx Ingress, Helm, and infrastructure files
 \centering
 \caption{Summary of the Hopper technology stack}
 \label{tab:tech-stack}
+\small
+\setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.25}
 \begin{tabularx}{\textwidth}{
     >{\raggedright\arraybackslash\bfseries}p{0.20\textwidth}
@@ -473,6 +480,7 @@ Supports verification, password-reset, and notification emails, with production 
 
 \bottomrule
 \end{tabularx}
+\normalsize
 \end{table}
 \section{System Architecture}
 \subsection{High-Level Architecture Diagram}
@@ -480,7 +488,7 @@ The deployed system is organized as a browser-facing frontend, a Python API gate
 
 At runtime, the orchestrator is the component that directly manages Kubernetes resources. The FastAPI gateway does not create pods itself; instead it creates or updates the application-facing database state, invokes the orchestrator over gRPC, and consumes follow-up events such as billing, pod lifecycle changes, and metrics updates. PostgreSQL stores the authoritative relational state for users, sessions, the credit ledger, notifications, queue entries, and other application records, while TimescaleDB features are used where available for metrics retention and hypertable support.
 
-\begin{figure}[!htbp]
+\begin{figure}[H]
     \centering
     \input{diagrams/high_level_architecture.tex}
     \caption{Verified high-level Hopper architecture derived from the frontend, gateway, orchestrator, and Kubernetes deployment files.}
@@ -488,13 +496,6 @@ At runtime, the orchestrator is the component that directly manages Kubernetes r
 \end{figure}
 
 Figure~\ref{fig:hopper-high-level-architecture} reflects the concrete implementation rather than an aspirational design. In particular, the current repository confirms the following communication paths: browser-to-frontend delivery over ingress, frontend-to-gateway HTTP calls, gateway-to-orchestrator gRPC calls, orchestrator-to-Kubernetes lifecycle control, orchestrator-to-NATS event publication, gateway-side NATS consumers for billing and metrics, and Keycloak-mediated authentication with cookie-backed application sessions.
-
-\begin{figure}[!htbp]
-    \centering
-    \input{diagrams/request_flow.tex}
-    \caption{Main request and data flow for VM creation, monitoring, and interactive access.}
-    \label{fig:hopper-request-flow}
-\end{figure}
 
 The main operational flow shown in Figure~\ref{fig:hopper-request-flow} is also verified directly in code. The frontend issues requests through the \texttt{/api} path, the gateway checks identity and credits, the scheduler either reserves capacity or enqueues the request, the orchestrator creates or terminates the Kubernetes workload, and asynchronous follow-up state reaches the UI through SSE streams, notification events, and interactive proxies.
 
@@ -507,21 +508,21 @@ State management remains lightweight and is implemented with built-in Svelte mec
 
 The API layer is split between server-side and browser-side helpers. On the browser side, \path|frontend/src/lib/api/client.ts| wraps \path|fetch|, automatically includes credentials, retries once after a silent refresh on non-login \path|401| responses, and exposes a small SSE helper. On the server side, the route loaders call the backend directly through \path|apiUrl()|. This division is suitable for a SvelteKit application because it allows SSR data fetching, cookie forwarding, and browser reactivity without duplicating request logic in every route.
 
-\begin{figure}[!htbp]
-    \centering
-    \resizebox{!}{0.55\textheight}{\input{diagrams/frontend_architecture_flow.tex}}
-    \caption{Frontend architecture flow: SSR authentication, server-side page loading, browser-side retry, and real-time channel setup.}
-    \label{fig:frontend-architecture-flow}
-\end{figure}
-
 The real-time and interactive frontend features are implemented explicitly rather than implicitly. The notification store opens an EventSource connection to \path|/api/notifications/stream|, the pod detail page opens an EventSource to \path|/api/pods/{id}/metrics|, and the terminal component opens a WebSocket to \path|/api/pods/{id}/terminal|. Browser-based editor access is routed through the backend proxy path rather than by direct pod exposure. The repository therefore confirms three distinct frontend interaction modes: SSR page loading, credentialed REST-style API calls, and long-lived SSE or WebSocket channels.
 
+\begin{figure}[H]
+    \centering
+    \input{diagrams/request_flow.tex}
+    \caption{Main request and data flow for VM creation, monitoring, and interactive access.}
+    \label{fig:hopper-request-flow}
+\end{figure}
 \subsection{Backend Architecture}
 The backend is implemented as a FastAPI-based API gateway in \path|services/api-gateway/app/main.py|. Its router registration shows a domain-oriented separation by capability: authentication, pods, credits, admin, settings, SSH keys, files, issues, notifications, and usage each live in their own router modules. Shared concerns are applied through dependency injection and middleware, including database sessions from \path|get_db()|, authentication from \path|get_current_user()|, audit logging, CORS control, and rate limiting. This structure is closer to a thin-router plus service-module design than to a heavy layered controller-service-repository stack.
 
 The gateway is not a passive CRUD layer. It coordinates synchronous HTTP work with asynchronous background processes and remote orchestration. The \path|pods| router, for example, validates access, checks user credits, enforces per-user limits, invokes admission logic in \path|vm_scheduler| and \path|vm_queue|, persists \path|PodSession| state, and then calls the Go orchestrator through the async gRPC wrapper in \path|orchestrator_client.py|. If synchronous admission is not possible, the same router returns a queued response instead of failing immediately. This demonstrates an application-service style workflow centered in router handlers and helper service modules.
 
 Several backend services are event-driven. During application startup, the gateway connects to NATS, starts the billing consumer, and starts the metrics consumer. The billing consumer processes \texttt{billing.deducted} and \texttt{billing.exhausted} events, applies idempotent credit deductions, manages grace-period behavior, and triggers user notifications. The metrics consumer stores periodic metrics snapshots in the database. The notification service persists rolling user notifications and also subscribes to pod lifecycle events so that \texttt{pod.started}, \texttt{pod.stopped}, and \texttt{pod.failed} can be reflected in the user interface. The result is a hybrid backend architecture combining request-response APIs, background event processing, and stateful session updates.
+
 
 \begin{figure}[!htbp]
     \centering
@@ -1306,8 +1307,10 @@ and records \textbf{20 bugs}, all with status \textit{Resolved}.
 Table~\ref{tab:bugs} lists every entry.
 
 \begin{center}
+\footnotesize
 \renewcommand{\arraystretch}{1.25}
-\begin{longtable}{|>{\RaggedRight\arraybackslash}p{2.5cm}|>{\RaggedRight\arraybackslash}p{2.4cm}|>{\RaggedRight\arraybackslash}p{4.8cm}|>{\RaggedRight\arraybackslash}p{4.5cm}|}
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{1.9cm}|>{\RaggedRight\arraybackslash}p{2.0cm}|>{\RaggedRight\arraybackslash}p{3.9cm}|>{\RaggedRight\arraybackslash}p{3.8cm}|}
 \caption{All bugs tracked in \texttt{BUG\_TRACKING\_LOG.md} (20 entries, all Resolved)}
 \label{tab:bugs}\\
 \hline
@@ -1719,11 +1722,11 @@ and are verified by the \texttt{helm-chart} CI job on every push.
 
 \small
 \renewcommand{\arraystretch}{1.2}
-\setlength{\tabcolsep}{5pt}
+\setlength{\tabcolsep}{4pt}
 
 \begin{tabularx}{\textwidth}{
-    >{\raggedright\arraybackslash\bfseries}p{0.15\textwidth}
-    >{\raggedright\arraybackslash}p{0.29\textwidth}
+    >{\raggedright\arraybackslash\bfseries}p{0.17\textwidth}
+    >{\raggedright\arraybackslash}p{0.25\textwidth}
     >{\raggedright\arraybackslash}X
 }
 \toprule
@@ -2057,8 +2060,9 @@ top-level layout (verified by directory listing) is:
 \centering
 \caption{Top-level repository structure}
 \label{tab:structure}
+\setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.2}
-\begin{tabularx}{\textwidth}{|>{\ttfamily\RaggedRight\arraybackslash}p{4.2cm}|>{\RaggedRight\arraybackslash}X|}
+\begin{tabularx}{\textwidth}{|>{\RaggedRight\arraybackslash}p{4.2cm}|>{\RaggedRight\arraybackslash}X|}
 \hline
 \textbf{Path} & \textbf{Contents / Purpose} \\
 \hline
@@ -2350,11 +2354,12 @@ documented distribution of 173 commits and are used only as an approximate
 indicator, since commit count alone does not fully measure implementation effort.
 \small
 \renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
 
 \begin{longtable}{
-    >{\raggedright\arraybackslash}p{0.18\textwidth}
-    >{\raggedright\arraybackslash}p{0.28\textwidth}
-    >{\raggedright\arraybackslash}p{0.48\textwidth}
+    >{\raggedright\arraybackslash}p{0.15\textwidth}
+    >{\raggedright\arraybackslash}p{0.25\textwidth}
+    >{\raggedright\arraybackslash}p{0.44\textwidth}
 }
 \caption{Individual responsibilities and contribution summary}
 \label{tab:individual-responsibility}\\
@@ -2446,7 +2451,7 @@ development environments. \\
 
 The screenshots below were captured from the live deployment at
 \url{https://hopper.farefin.com} at a viewport of $1440\times900$ with a
-2$\times$ device pixel ratio. All twelve screens are captured. Screens
+2$\times$ device pixel ratio. Thirteen screenshots are included. Screens
 1--7 and 10--12 use an authenticated \texttt{Student} account; Screen 8
 uses an \texttt{Admin} account authenticated through the University SSO
 (Keycloak OIDC) flow; and Screen 9 uses a \texttt{Teacher} account, each
@@ -2515,6 +2520,13 @@ halves.
   banner followed by \texttt{uname -a} and \texttt{ls -la} executed inside
   the container, confirming a live interactive shell rather than a rendered
   mock-up.}
+
+\uifig{vscode.png}{Screen 6b: Browser-Based VS Code Workspace}{%
+  The code-server workspace opened from the VM detail page through the
+  authenticated VS Code proxy, showing the Explorer sidebar, an active editor,
+  and the integrated terminal inside the same browser session. This confirms
+  that Hopper provides a full in-browser development environment in addition
+  to the standalone terminal tab.}
 
 % -------------------------------------------------------------------
 % 7. Credits page

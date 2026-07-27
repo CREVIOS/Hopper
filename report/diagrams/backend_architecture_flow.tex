@@ -38,6 +38,7 @@
 \node[proc, below=of request] (auth) {Auth, ownership checks, rate limits, and validation run};
 \node[choice, below=of auth] (credits) {Credits \&\\policy OK?};
 \node[choice, below=of credits] (capacity) {Capacity\\available?};
+\node[proc, left=28mm of credits] (reject) {Reject request};
 \node[svc, below=16mm of capacity] (session) {Create or update \texttt{PodSession} state};
 \node[svc, below=of session] (grpc) {Call the Go orchestrator via gRPC};
 \node[svc, below=of grpc] (k8s) {Orchestrator creates, watches, or stops the Kubernetes pod};
@@ -46,24 +47,32 @@
 \node[svc, below=of consumers] (stream) {SSE / WebSocket fan-out pushes updates to the frontend};
 \node[proc, below=of stream] (response) {Client receives 201/202 plus later live updates};
 
-\node[svc, left=18mm of capacity] (queue) {Persist queued request in \texttt{vm\_queue\_entries}};
-\node[svc, right=18mm of session] (db) {Write ledger, metrics, notifications, and audit state};
+\node[svc, left=26mm of capacity] (queue) {Persist queued request in \texttt{vm\_queue\_entries}};
+\node[svc, right=28mm of session] (db) {Write ledger, metrics, notifications, and audit state};
+\coordinate (merge) at ([xshift=-14mm]response.west);
+\coordinate (leftrail) at ([xshift=-14mm]queue.west);
 
 \draw[flow] (request) -- (auth);
 \draw[flow] (auth) -- (credits);
 \draw[flow] (credits) -- node[lab, right] {yes} (capacity);
+\draw[flow] (credits.west) -- node[lab, above] {no} (reject.east);
 \draw[flow]
-    (credits.west)
-    -- ++(-18mm,0)
-    |- node[lab, left, pos=0.22] {no}
-    (response.west);
+    (reject.south)
+    -- ++(0,-10mm)
+    -| (merge)
+    -- (response.west);
 \draw[flow] (capacity) -- node[lab, right] {yes} (session);
-\draw[flow] (capacity) -- node[lab, above] {no} (queue);
+\draw[flow]
+    (capacity.west)
+    -- ([xshift=6mm]queue.east)
+    node[lab, above, pos=0.55] {no}
+    -- ([xshift=1mm]queue.east);
 \draw[flow]
     (queue.south)
-    -- ++(0,-52mm)
-    -| node[lab, below, pos=0.18] {202 queued}
-    (response.west);
+    -- ++(0,-8mm)
+    -| node[lab, below, pos=0.3] {202 queued}
+    (merge)
+    -- (response.west);
 \draw[flow] (session) -- (grpc);
 \draw[flow] (grpc) -- (k8s);
 \draw[event] (k8s) -- (nats);
@@ -73,15 +82,14 @@
 \draw[flow]
     (session.east)
     -- ++(10mm,0)
-    |- (db.north);
+    |- (db.west);
 \draw[flow]
-    (consumers.east)
-    -- ++(12mm,0)
-    |- (db.south);
+    (consumers.east) -| (db.south);
 \draw[flow]
     (grpc.west)
     -- ++(-10mm,0)
-    |- node[lab, left, pos=0.26] {201 created}
-    (response.west);
+    |- node[lab, left, pos=0.35] {201 created}
+    (merge)
+    -- (response.west);
 
 \end{tikzpicture}
