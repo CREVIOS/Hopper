@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1785159946.07479 "main.tex" "main.pdf" "main" 1785159947.97672 0
+["pdflatex"] 1785248821.84935 "main.tex" "main.pdf" "main" 1785248823.75017 0
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc" 1254269338 2375 baa924870cfb487815765f9094cf3728 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc" 1202520719 2405 5dcf2c1b967ee25cc46c58cd52244aed ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc" 1202520719 2840 216e6e45ad352e2456e1149f28885bee ""
@@ -288,10 +288,10 @@
   "figures/ui-11-ssh-keys.png" 1784733263.63061 450720 f884cc0bccb4cf3d4e0f382906c52cff ""
   "figures/ui-12-signup.png" 1784733263.63485 540042 8d4a432c2d061668da89c2f1ddb8173a ""
   "figures/vscode.png" 1785159779.00687 144356 71bdadb11a5c9eaa9a2d159e233a2037 ""
-  "main.aux" 1785159947.83558 22526 0d59148ef20a55eef6432f4e8e825206 "pdflatex"
-  "main.out" 1785159947.83693 7981 5bf04918639e38ebc90fe6e2e7ddf9e9 "pdflatex"
-  "main.tex" 1785159933.33954 151436 7933745ebb5858ba1576c7091ad14cca ""
-  "main.toc" 1785159947.83723 3950 2caba19dcb56bbc8ef37ffefc890b769 "pdflatex"
+  "main.aux" 1785248823.60243 22526 13b98e8b4717b0342ea8fecd85157c21 "pdflatex"
+  "main.out" 1785248823.60381 7981 5bf04918639e38ebc90fe6e2e7ddf9e9 "pdflatex"
+  "main.tex" 1785248814.02377 152113 d03c327f2b18b060d8e50097cd8ff9cd ""
+  "main.toc" 1785248823.60407 3950 a3ea0745913002f7de75fd2736d80077 "pdflatex"
   (generated)
   "main.aux"
   "main.log"
